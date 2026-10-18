@@ -1,0 +1,20 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python files
+        run: python -m compileall -q main.py config.py cogs tests
+      - name: Run bank transaction tests
+        run: python -m unittest discover -s tests -v
