@@ -14,7 +14,7 @@ from cogs.utility.theme import lobby_embed
 
 class WatermarkView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)
         self.add_item(discord.ui.Button(label="Developed by @neglawy & @17 Nicotine", style=discord.ButtonStyle.secondary, disabled=True))
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
@@ -225,7 +225,7 @@ class DayVoteView(discord.ui.View):
 
 class MafiaLobbyView(discord.ui.View):
     def __init__(self, ctx):
-        super().__init__(timeout=None)
+        super().__init__(timeout=120)
         self.ctx = ctx
         self.players = []
         self.game_started = False
@@ -393,7 +393,7 @@ async def run_mafia_game(ctx, players):
             pass
         
         class RoleRevealView(discord.ui.View):
-            def __init__(self): super().__init__(timeout=None)
+            def __init__(self): super().__init__(timeout=60)
             @discord.ui.button(label="👀 اعرف دورك السري", style=discord.ButtonStyle.primary)
             async def reveal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
                 if interaction.user not in alive:
