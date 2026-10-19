@@ -421,7 +421,7 @@ class Roulette(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name='روليت')
+    @commands.hybrid_command(name='روليت', description='بدء لعبة الروليت الروسي')
     @is_staff_or_owner()
     async def start_roulette(self, ctx):
         """يبدأ لعبة الروليت"""
