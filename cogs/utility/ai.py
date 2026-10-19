@@ -1,4 +1,4 @@
-# cogs/utility/ai.py
+# --- AI CHAT SERVICE ---
 import discord
 from discord.ext import commands
 import aiohttp
@@ -131,7 +131,7 @@ class AI(commands.Cog):
         if not (is_mentioned or is_reply):
             return
 
-        # === AI ACCESS WHITELIST ===
+        # --- AI ACCESS CONTROL ---
         is_authorized = False
         if message.author.id in config.OWNER_IDS:
             is_authorized = True
@@ -144,8 +144,8 @@ class AI(commands.Cog):
                 is_authorized = True
                 
         if not is_authorized:
-            return # Silently ignore unauthorized users
-        # ===========================
+            # --- SILENT DENIAL ---
+            return
 
         prompt_content = message.clean_content.replace(f"@{self.bot.user.name}", "").strip()
         if not prompt_content:
@@ -155,19 +155,19 @@ class AI(commands.Cog):
         if user_id not in self.data["user_history"]:
             self.data["user_history"][user_id] = []
 
-        # Save user message to JSON history
+        # --- USER MESSAGE HISTORY ---
         self.data["user_history"][user_id].append({
             "role": "user",
             "content": f"{message.author.display_name}: {prompt_content}"
         })
         
-        # Keep only the last 10 messages per user to save disk space and context window
+        # --- HISTORY LIMIT ---
         if len(self.data["user_history"][user_id]) > 10:
             self.data["user_history"][user_id] = self.data["user_history"][user_id][-10:]
             
         save_ai_data(self.data)
 
-        # Get channel history for context
+        # --- CHANNEL CONTEXT ---
         channel_history = []
         async for msg in message.channel.history(limit=10):
             if msg.author.bot and msg.author.id != self.bot.user.id:
@@ -206,7 +206,7 @@ class AI(commands.Cog):
                             api_data = await resp.json()
                             ai_reply = api_data['choices'][0]['message']['content'].strip()
                             
-                            # Save bot reply to JSON history
+                            # --- BOT RESPONSE HISTORY ---
                             self.data["user_history"][user_id].append({
                                 "role": "assistant",
                                 "content": ai_reply
