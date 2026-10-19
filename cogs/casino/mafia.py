@@ -37,7 +37,10 @@ async def fetch_avatar(session, user, size):
             circular = Image.new("RGBA", size, (0, 0, 0, 0))
             circular.paste(img, (0, 0), mask)
             return circular
-    except: return Image.new("RGBA", size, (50, 50, 50, 255))
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return Image.new("RGBA", size, (50, 50, 50, 255))
 
 async def generate_billboard(alive_players):
     try:
@@ -102,7 +105,10 @@ async def poke_reminder(user, role_name, view):
                 await user.send("⏳ يا زعيم! الوقت بيجري والضحية هتهرب، خلصنا واختار حد نخلص عليه من القايمة اللي في السيرفر!")
             else:
                 await user.send("⏳ يا دكتور! المريض بيموت في إيدك، انجز واختار هتعالج مين من القايمة اللي في السيرفر!")
-        except: pass
+        except asyncio.CancelledError:
+            raise
+        except discord.HTTPException:
+            pass
 
 class MafiaDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
@@ -472,8 +478,11 @@ async def run_mafia_game(ctx, players):
 
                     for c in m_view.children: c.disabled = True
                     try: await m_msg.edit(view=m_view)
-                    except: pass
-                except: pass
+                    except discord.HTTPException: pass
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pass
             else:
                 await asyncio.sleep(5)
                 
@@ -514,8 +523,11 @@ async def run_mafia_game(ctx, players):
                     
                     for c in d_view.children: c.disabled = True
                     try: await d_msg.edit(view=d_view)
-                    except: pass
-                except: pass
+                    except discord.HTTPException: pass
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pass
             else:
                 await asyncio.sleep(2) 
             
@@ -596,7 +608,7 @@ async def run_mafia_game(ctx, players):
             
             for c in vote_view.children: c.disabled = True
             try: await vote_msg.edit(view=vote_view)
-            except: pass
+            except discord.HTTPException: pass
             
             tally = {}
             for voter, t_id in vote_view.votes.items():
