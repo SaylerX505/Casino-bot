@@ -3,7 +3,7 @@ import re
 import discord
 from discord.ext import commands
 
-from cogs.utility.theme import THEME, base_embed, get_currency
+from cogs.utility.theme import THEME, WatermarkView, base_embed, get_currency
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
