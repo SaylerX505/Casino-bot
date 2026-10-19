@@ -344,11 +344,15 @@ class Currency(commands.Cog):
         self.data = load_data()
 
     def check_whitelist(self, user: discord.Member) -> bool:
-        if user.guild_permissions.administrator or user.id in OWNER_IDS: return True
+        permissions = getattr(user, "guild_permissions", None)
+        if getattr(permissions, "administrator", False) or user.id in OWNER_IDS:
+            return True
         wl = bank.get_whitelist()
-        if user.id in wl["users"]: return True
-        user_role_ids = [role.id for role in user.roles]
-        if any(role_id in wl["roles"] for role_id in user_role_ids): return True
+        if user.id in wl["users"]:
+            return True
+        user_role_ids = [role.id for role in getattr(user, "roles", ())]
+        if any(role_id in wl["roles"] for role_id in user_role_ids):
+            return True
         return False
 
     def update_balance(self, user_id: int, amount: int):
