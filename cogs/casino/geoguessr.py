@@ -306,6 +306,8 @@ async def run_game_loop(ctx, players):
             active_view = ActiveGameView(ctx.author, timer_state)
             
             msg = await ctx.send(embed=game_embed, file=file, view=active_view)
+            active_view.message = msg
+            set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), active_view)
 
             guesses = {}
             guess_data_cache = {} 
