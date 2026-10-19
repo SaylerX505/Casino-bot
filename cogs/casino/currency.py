@@ -331,6 +331,89 @@ class CurrencyHubView(discord.ui.View):
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         await interaction.response.send_message("لوحة إدارة البنك:", view=AdminActionView(self.cog), ephemeral=True)
 
+# --- BANK RESET CONFIRMATION ---
+class BankResetConfirmView(discord.ui.View):
+    def __init__(self, owner_id):
+        super().__init__(timeout=30)
+        self.owner_id = owner_id
+        self.message = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ التأكيد متاح لمالك البوت اللي بدأ العملية بس.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="تأكيد التصفير", style=discord.ButtonStyle.danger, emoji="⚠️")
+    async def confirm_reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        backup_path = os.path.join("data", "backups", f"bank-reset-{time.time_ns()}.db")
+        try:
+            bank.backup_database(backup_path)
+            bank.reset_all()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            for item in self.children:
+                item.disabled = True
+            try:
+                await interaction.message.edit(
+                    embed=discord.Embed(
+                        title="❌ التصفير لم يكتمل",
+                        description="حصل خطأ. راجع سجل البوت؛ متعتبرش العملية ناجحة.",
+                        color=discord.Color.red(),
+                    ),
+                    view=self,
+                )
+            except discord.HTTPException:
+                pass
+            return await interaction.followup.send("فشل التصفير أو النسخ الاحتياطي؛ راجع سجل البوت قبل أي محاولة تانية.", ephemeral=True)
+
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(
+                embed=discord.Embed(
+                    title="✅ تم تصفير البنك",
+                    description="اتمسحت الأرصدة والشنط بعد حفظ نسخة احتياطية.",
+                    color=discord.Color.green(),
+                ),
+                view=self,
+            )
+        except discord.HTTPException:
+            pass
+        await interaction.followup.send("تم حفظ النسخة الاحتياطية قبل التصفير.", ephemeral=True)
+
+    @discord.ui.button(label="إلغاء", style=discord.ButtonStyle.secondary, emoji="✖️")
+    async def cancel_reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(
+            embed=discord.Embed(
+                title="تم الإلغاء",
+                description="البنك زي ما هو؛ مفيش أرصدة اتصفرت.",
+                color=discord.Color.greyple(),
+            ),
+            view=self,
+        )
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(
+                    embed=discord.Embed(
+                        title="انتهى وقت التأكيد",
+                        description="البنك لم يتغير.",
+                        color=discord.Color.greyple(),
+                    ),
+                    view=self,
+                )
+            except discord.HTTPException:
+                pass
+
+
 # --- CURRENCY COG ---
 class Currency(commands.Cog):
     def __init__(self, bot):
@@ -375,14 +458,20 @@ class Currency(commands.Cog):
     def get_inventory(self, user_id: int) -> dict:
         return bank.get_inventory(user_id)
 
-    @commands.command(name='bankreset', aliases=['تصفير'])
+    @commands.hybrid_command(name='bankreset', aliases=['تصفير'], description='تصفير الاقتصاد بعد إنشاء نسخة احتياطية')
     @commands.is_owner()
     async def bank_reset(self, ctx):
-        """Fresh start: wipe ALL balances + inventory (keeps whitelist). Owner only."""
-        bank.reset_all()
-        try: os.replace(DATA_FILE, DATA_FILE + ".bak")
-        except Exception: pass
-        await ctx.send("🧹 تم تصفير البنك كله! كل الأرصدة والشنط بقت صفر. بداية نضيفة يا نجلاوي.")
+        view = BankResetConfirmView(ctx.author.id)
+        embed = discord.Embed(
+            title="⚠️ تأكيد تصفير البنك",
+            description="العملية هتمسح أرصدة الأعضاء والشنط. مش هننفذها غير بعد إنشاء نسخة احتياطية وتأكيدك.",
+            color=discord.Color.red(),
+        )
+        view.message = await ctx.send(
+            embed=embed,
+            view=view,
+            ephemeral=ctx.interaction is not None,
+        )
 
     @commands.command(name='bankmigrate', aliases=['ترحيل'])
     @commands.is_owner()
