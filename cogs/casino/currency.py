@@ -172,7 +172,7 @@ class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
             description=f"✅ Successfully transferred **{fmt(amt)}** {COIN_EMOJI} to <@{target_id}>!",
             color=discord.Color.green()
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         await self.cog.log_action("💸 Transfer", f"From {interaction.user.mention} to <@{target_id}>: {fmt(amt)}", discord.Color.orange())
 
 class AdminActionModal(discord.ui.Modal):
