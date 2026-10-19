@@ -405,6 +405,18 @@ def whitelist_remove(kind, target_id):
         _connect().execute("DELETE FROM whitelist WHERE kind=? AND target_id=?", (str(kind), int(target_id)))
         _connect().commit()
 
+def backup_database(destination):
+    os.makedirs(os.path.dirname(os.path.abspath(destination)), exist_ok=True)
+    with _lock:
+        source = _connect()
+        target = sqlite3.connect(destination)
+        try:
+            source.backup(target)
+            target.commit()
+        finally:
+            target.close()
+
+
 def reset_all():
     with _lock:
         c = _connect()
