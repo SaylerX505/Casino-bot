@@ -454,7 +454,7 @@ class Currency(commands.Cog):
         embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}")
         await ctx.send(embed=embed)
 
-    @commands.command(name='استخدم', aliases=['use', 'افتح'])
+    @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
     async def use_item(self, ctx, item: str = None):
         """استخدم صندوق حظ او تذكرة: +استخدم صندوق / +استخدم تذكرة"""
         if not item:
