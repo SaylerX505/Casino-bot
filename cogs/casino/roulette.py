@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
@@ -319,7 +319,8 @@ class RouletteLobby(discord.ui.View):
                 
                 view = KickView(chosen_player, active_players, has_weapon, currency_cog)
                 msg = await self.ctx.send(content=f"🔔 السلاح في إيدك يا **{chosen_player.mention}** دورك جه!", embed=embed, file=file, view=view)
-                
+                view.message = msg
+                set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), view)
                 await view.wait()
                 
                 for child in view.children: child.disabled = True
