@@ -414,7 +414,7 @@ class RouletteLobby(discord.ui.View):
                 await self.ctx.send(embed=embed, view=WatermarkView())
 
         except asyncio.CancelledError:
-            pass
+            raise
         finally:
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
