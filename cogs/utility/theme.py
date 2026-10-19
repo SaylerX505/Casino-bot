@@ -1,4 +1,4 @@
-# cogs/utility/theme.py
+# --- EMBED THEME ---
 """موحد شكل البوت - الوان الحفرة + helpers"""
 import discord
 import config
