@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
