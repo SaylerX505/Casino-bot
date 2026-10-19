@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
 
-# gosu lets the entrypoint fix mounted-volume ownership, then drop privileges.
+# --- RUNTIME USER ---
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates gosu \
     && rm -rf /var/lib/apt/lists/* \
@@ -16,7 +16,7 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Install dependencies separately so source-only edits can reuse this layer.
+# --- DEPENDENCY LAYERS ---
 COPY requirements.txt /tmp/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r /tmp/requirements.txt \
@@ -24,9 +24,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 COPY . /app
 
-# Keep a read-only seed snapshot outside the mount point. This lets a new,
-# empty persistent volume be initialized without overwriting existing data.
-# Database files are excluded by .dockerignore and must be migrated separately.
+# --- PERSISTENT DATA SEED ---
 RUN mkdir -p /opt/casino/data-seed /app/data \
     && cp -a /app/data/. /opt/casino/data-seed/ \
     && chown -R bot:bot /app \
@@ -36,7 +34,7 @@ RUN mkdir -p /opt/casino/data-seed /app/data \
 COPY docker-entrypoint.sh /usr/local/bin/casino-entrypoint
 RUN chmod 0755 /usr/local/bin/casino-entrypoint
 
-# Configure a JustRunMy.App persistent volume mounted at this exact path.
+# --- PERSISTENT DATA VOLUME ---
 VOLUME ["/app/data"]
 
 ENTRYPOINT ["/usr/local/bin/casino-entrypoint"]
