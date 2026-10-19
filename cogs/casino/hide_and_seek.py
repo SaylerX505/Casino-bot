@@ -420,7 +420,7 @@ class HideAndSeek(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name='غميضه')
+    @commands.hybrid_command(name='غميضه', description='بدء لعبة الغميضة')
     @is_staff_or_owner()
     async def start_hide_seek(self, ctx):
         """يبدأ لعبة الغميضة في الحفرة"""
