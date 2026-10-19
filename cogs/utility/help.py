@@ -231,10 +231,10 @@ class HelpCommand(commands.Cog):
     async def custom_help(self, ctx):
         latency = round(self.bot.latency * 1000)
         view = HelpLayout(ctx.author, latency)
-        view.message = await ctx.send(
-            view=view,
-            ephemeral=ctx.interaction is not None,
-        )
+        if ctx.interaction is not None:
+            view.message = await ctx.send(view=view, ephemeral=True)
+        else:
+            view.message = await ctx.send(view=view)
 
     @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
     async def stop_game(self, ctx):
