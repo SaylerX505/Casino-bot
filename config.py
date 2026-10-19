@@ -25,7 +25,6 @@ STAFF_ROLE_IDS = [
 EMOJIS = {
     "check": "<:check:1511996429630181458>",
     "cross": "<:cross:1512824131232465076>",
-    "ping": "<:ping:1511997619042517013>",
 }
 
 # --- LOGGING CHANNELS ---
