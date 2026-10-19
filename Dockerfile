@@ -24,7 +24,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 COPY . /app
 
-# --- PERSISTENT DATA SEED ---
+# --- DATA SEED (DB EXCLUDED) ---
 RUN mkdir -p /opt/casino/data-seed /app/data \
     && cp -a /app/data/. /opt/casino/data-seed/ \
     && chown -R bot:bot /app \
