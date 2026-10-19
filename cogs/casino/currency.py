@@ -403,7 +403,7 @@ class Currency(commands.Cog):
             try: await channel.send(embed=embed)
             except: pass
 
-    @commands.command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'])
+    @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
     async def balance(self, ctx):
         bal = self.get_balance(ctx.author.id)
         embed = discord.Embed(
