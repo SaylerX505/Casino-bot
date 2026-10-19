@@ -252,14 +252,9 @@ class WheelLobby(discord.ui.View):
                     penalty = 0
 
                 if payout:
-                    credited, _ = currency._credit_balance(player.id, payout) if hasattr(currency, "_credit_balance") else (None, None)
-                    if credited is None:
-                        try:
-                            currency.update_balance(player.id, payout)
-                            credited = True
-                        except OverflowError:
-                            credited = False
-                    if not credited:
+                    try:
+                        currency.update_balance(player.id, payout)
+                    except OverflowError:
                         currency.update_balance(player.id, FEE)
                         balance_after = currency.get_balance(player.id)
                         results.append((player, "balance_limit", balance_before, balance_after))
