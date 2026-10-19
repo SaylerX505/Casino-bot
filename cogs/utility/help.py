@@ -184,9 +184,14 @@ class HelpPageView(LayoutView):
             Separator(),
             accent_color=config.EMBED_COLOR,
         )
-        for name, description in page["fields"]:
-            container.add_item(TextDisplay(f"**`{config.PREFIX}{name}`**\n{description}"))
-            container.add_item(Separator(visible=False))
+        fields = page["fields"]
+        for index in range(0, len(fields), 3):
+            entries = fields[index:index + 3]
+            block = "\n\n".join(
+                f"**`{config.PREFIX}{name}`**\n{description}"
+                for name, description in entries
+            )
+            container.add_item(TextDisplay(block))
 
         row = ActionRow()
         back = discord.ui.Button(
