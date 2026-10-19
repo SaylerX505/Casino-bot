@@ -1,4 +1,4 @@
-"""Regression tests for atomic bank operations against a temporary SQLite DB."""
+"""Regression tests for bank operations"""
 import os
 import tempfile
 import threading
