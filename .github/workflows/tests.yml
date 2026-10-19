@@ -18,3 +18,16 @@ jobs:
         run: python -m compileall -q main.py config.py cogs tests
       - name: Run bank transaction tests
         run: python -m unittest discover -s tests -v
+
+  docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build --pull -t casino-bot:test .
+      - name: Smoke-test startup without a token
+        run: |
+          output="$(docker run --rm -e DISCORD_TOKEN= casino-bot:test)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -F "DISCORD_TOKEN is missing"

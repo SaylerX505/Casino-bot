@@ -36,6 +36,23 @@ Do not delete, replace, or recreate the live database as part of an ordinary cod
 
 AI conversation/state data is stored in `data/ai_data.json`. Treat stored user data and backups as sensitive and restrict access to them.
 
+## Docker deployment
+
+The `Dockerfile` builds a Python 3.11 slim image, installs dependencies in a cache-friendly layer, and runs the bot as an unprivileged user. The image starts the bot with `python -u main.py`; it does not expose a web port because this is a Discord gateway bot.
+
+1. Set `DISCORD_TOKEN` in the hosting panel's environment variables. Add `DEEPSEEK_API_KEY` and `REMBG_API_KEY` only if those integrations are used. Do not bake a real `.env` file into the image.
+2. Attach a **persistent volume mounted at `/app/data`** before starting the container. The entrypoint can initialize missing files from the repository's tracked data snapshot, but it never overwrites files already present in the volume.
+3. Before migrating an existing live instance, stop it and back up its entire active `data/` directory. Restore that data into the persistent volume before the new container starts—especially `data/bank.db`. Database files are deliberately excluded from the Docker build context and are not recoverable from the image. Do not point the new deployment at an empty volume if you need to keep existing balances or state.
+4. Keep an independent backup outside the host. A persistent volume is not a substitute for backups.
+
+Build the image locally with:
+
+```bash
+docker build -t casino-bot .
+```
+
+For a fresh, new installation only, a named volume can be used with `docker run -d --name casino-bot --restart unless-stopped --env-file .env -v casino-data:/app/data casino-bot`. Do not use this fresh-volume example to migrate a running bot without restoring the old data first.
+
 ## Checks and tests
 
 Run the syntax check and the isolated test suite from the repository root:
@@ -45,7 +62,7 @@ python -m compileall -q main.py config.py cogs tests
 python -m unittest discover -s tests -v
 ```
 
-The tests use a temporary SQLite database and should not operate on the live economy database. GitHub Actions runs these checks on pushes and pull requests.
+The tests use a temporary SQLite database and should not operate on the live economy database. GitHub Actions runs these checks on pushes and pull requests and builds the Docker image as a deployment smoke check.
 
 ## Deployment notes
 
