@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
 import random
 import config
@@ -256,7 +256,8 @@ class ChairsLobby(discord.ui.View):
                     embed.description = f"🛑 **الموسيقى وقفت!! اقعد بسرعة!!**\n(متاح {num_chairs} كراسي بس)"
                     embed.color = discord.Color.blue()
                     await msg.edit(embed=embed, view=action_view)
-                    
+                    action_view.message = msg
+                    set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)
                     await action_view.wait()
                     
                     for child in action_view.children: child.disabled = True
@@ -278,7 +279,8 @@ class ChairsLobby(discord.ui.View):
                     embed.description = f"🚨 **فخ!! كراسي مكسورة (حمراء)!**\nإياك تقعد!!"
                     embed.color = discord.Color.red()
                     await msg.edit(embed=embed, view=action_view)
-                    
+                    action_view.message = msg
+                    set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)
                     await action_view.wait()
                     
                     for child in action_view.children: child.disabled = True
