@@ -617,7 +617,7 @@ class GeoGuessr(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name='جيو', aliases=["geo", "geoguessr", "خمن"])
+    @commands.hybrid_command(name='جيو', aliases=["geo", "geoguessr", "خمن"], description="ابدأ لعبة تخمين الدولة")
     @is_staff_or_owner()
     async def start_geo(self, ctx):
         """يبدأ لعبة جيوغيسر"""
