@@ -74,7 +74,7 @@ async def load_cogs():
     import pathlib
     base_dir = pathlib.Path(__file__).parent
     cog_directories = ['cogs.casino', 'cogs.utility']
-    # NOTE: theme.py is a helper module, NOT a cog (no setup) -> must be skipped
+    # theme.py is a helper module not cogs.
     utility_allow = {'admin_tools.py', 'help.py', 'ai.py'}
 
     for directory in cog_directories:
@@ -86,7 +86,7 @@ async def load_cogs():
         for filename in sorted(os.listdir(folder_path)):
             if filename.endswith('.py') and not filename.startswith('__'):
                 if directory == 'cogs.casino':
-                    # These files are imported helpers, not loadable Cogs.
+                    # These files are imported helpers, not cogs.
                     allowed = filename not in {'bank.py', 'permissions.py', 'game_registry.py'}
                 elif directory == 'cogs.utility':
                     allowed = filename in utility_allow
