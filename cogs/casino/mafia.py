@@ -738,7 +738,7 @@ class Mafia(commands.Cog):
             )
             await ctx.send(embed=embed)
 
-    @commands.command(name='اكشف', aliases=['scan', 'كشف'])
+    @commands.hybrid_command(name='اكشف', aliases=['scan', 'كشف'], description='استخدم أداة كشف المافيا')
     async def mafia_scan(self, ctx):
         """🔍 استخدم كشف مافيا: تلميح عن مافيا واحد عايش (بيشتغل في قناة اللعبة)"""
         cur_cog = self.bot.get_cog('Currency')
