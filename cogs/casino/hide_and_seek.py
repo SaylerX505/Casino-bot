@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
 from PIL import Image, ImageDraw
 import io
@@ -273,7 +273,8 @@ async def run_game_loop(ctx, players):
         
         hide_view = HidingView(players)
         hide_msg = await ctx.send(embed=hide_embed, file=discord.File(fp=map_bytes, filename="map.png"), view=hide_view)
-        
+        hide_view.message = hide_msg
+        set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), hide_view)
         await hide_view.wait()
         
         for c in hide_view.children: c.disabled = True
@@ -334,7 +335,8 @@ async def run_game_loop(ctx, players):
             
             seek_view = SeekerView(seeker, searched_locations)
             seek_msg = await ctx.send(content=f"🔔 دورك جه يا {seeker.mention}!", embed=seek_embed, view=seek_view)
-            
+            seek_view.message = seek_msg
+            set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), seek_view)
             await seek_view.wait()
             
             for c in seek_view.children: c.disabled = True
