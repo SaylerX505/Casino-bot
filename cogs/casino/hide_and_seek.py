@@ -17,7 +17,7 @@ class WatermarkView(discord.ui.View):
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
 
-# --- COORDINATES FOR THE 25 LOCATIONS ---
+# --- LOCATION COORDINATES ---
 LOCATIONS = {
     1: {"name": "الحفره", "pos": (0.85, 0.20)},
     2: {"name": "محطة الوقود", "pos": (0.65, 0.25)},
@@ -256,7 +256,7 @@ class LobbyView(discord.ui.View):
         await interaction.response.edit_message(embed=self.get_embed())
 
 
-# --- MAIN GAME LOOP ---
+# --- GAME LOOP ---
 async def run_game_loop(ctx, players):
     try:
         map_bytes = await generate_map_with_x([])
@@ -393,7 +393,7 @@ async def run_game_loop(ctx, players):
             await ctx.send(file=discord.File(fp=updated_map, filename="map_update.png"))
             await asyncio.sleep(3)
 
-        # 3. WINNER ANNOUNCEMENT
+        # --- WINNER ANNOUNCEMENT ---
         if len(alive) == 1:
             winner = alive[0]
             win_embed = discord.Embed(
