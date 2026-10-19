@@ -1,5 +1,6 @@
 """Regression tests for bank operations"""
 import os
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -22,6 +23,41 @@ class BankTransactionTests(unittest.TestCase):
         bank._conn = self.original_conn
         bank.DB_FILE = self.original_db_file
         self.tempdir.cleanup()
+
+    def test_bank_backup_preserves_data_before_reset(self):
+        bank.set_balance(120, 250)
+        bank.add_item(120, "shield", 2)
+        bank.whitelist_add("users", 999)
+
+        backup_path = os.path.join(self.tempdir.name, "bank-backup.db")
+        bank.backup_database(backup_path)
+
+        connection = sqlite3.connect(backup_path)
+        try:
+            balance = connection.execute(
+                "SELECT balance FROM users WHERE user_id=?",
+                ("120",),
+            ).fetchone()
+            inventory = connection.execute(
+                "SELECT qty FROM inventory WHERE user_id=? AND item=?",
+                ("120", "shield"),
+            ).fetchone()
+            whitelist = connection.execute(
+                "SELECT target_id FROM whitelist WHERE kind=? AND target_id=?",
+                ("users", 999),
+            ).fetchone()
+        finally:
+            connection.close()
+
+        self.assertEqual(balance[0], 250)
+        self.assertEqual(inventory[0], 2)
+        self.assertIsNotNone(whitelist)
+
+        bank.reset_all()
+
+        self.assertEqual(bank.get_balance(120), 0)
+        self.assertEqual(bank.get_item_count(120, "shield"), 0)
+        self.assertIn(999, bank.get_whitelist()["users"])
 
     def test_transfer_is_atomic_and_prevents_overdraft(self):
         bank.set_balance(1, 100)
