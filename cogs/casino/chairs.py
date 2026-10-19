@@ -13,7 +13,7 @@ from cogs.utility.theme import lobby_embed
 
 class WatermarkView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)
         self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 class ChairActionView(discord.ui.View):
@@ -95,7 +95,7 @@ class ChairActionView(discord.ui.View):
 
 class ChairsLobby(discord.ui.View):
     def __init__(self, ctx):
-        super().__init__(timeout=None)
+        super().__init__(timeout=120)
         self.ctx = ctx
         self.players = []
         self.game_started = False
