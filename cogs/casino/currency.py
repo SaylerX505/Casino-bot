@@ -437,7 +437,7 @@ class Currency(commands.Cog):
         embed.description = desc if desc else "Your inventory is empty!"
         await ctx.send(embed=embed)
 
-    @commands.command(name='بروفايل', aliases=['profile', 'me', 'انا'])
+    @commands.hybrid_command(name='بروفايل', aliases=['profile', 'me', 'انا'], description='عرض بروفايلك أو بروفايل عضو')
     async def profile(self, ctx, target: discord.Member = None):
         """كارت البروفايل بتاعك: رصيد + ستريك + اغراض"""
         user = target or ctx.author
