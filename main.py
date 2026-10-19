@@ -5,7 +5,7 @@ import os
 import asyncio
 import config
 
-# ==================== Bot Setup ====================
+# Bot Setup
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -21,7 +21,7 @@ bot = commands.Bot(
 )
 bot.remove_command('help')
 
-# ==================== Events ====================
+#  Events
 ERROR_LOG_CHANNEL_ID = 1486822134109180049
 
 @bot.event
@@ -68,7 +68,7 @@ async def on_command_error(ctx, error):
     except Exception:
         pass
 
-# ==================== Cog Loader ====================
+# Cog Loader
 async def load_cogs():
     """Automatically loads all python files inside the cogs subfolders"""
     import pathlib
@@ -103,7 +103,7 @@ async def load_cogs():
                 except Exception as e:
                     print(f"⚠️ Failed to load {cog_path}: {e}")
 
-# ==================== Run Bot ====================
+# Run Bot
 async def main():
     if not config.TOKEN:
         print("❌ DISCORD_TOKEN is missing! Put it in the .env file (see .env.example).")
