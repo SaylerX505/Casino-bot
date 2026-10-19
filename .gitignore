@@ -1,7 +1,13 @@
 .env
+.env.*
+!.env.example
 __pycache__/
-*.pyc
+*.py[cod]
 data/*.json
+data/backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
 bot_logs.txt
-
-.env
