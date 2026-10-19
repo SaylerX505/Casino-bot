@@ -15,11 +15,12 @@ from geopy.distance import geodesic
 import config
 
 from cogs.casino.permissions import is_staff_or_owner
+from cogs.utility.theme import lobby_embed
 
 
 class WatermarkView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)
         self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 DATABASE_FILE = "data/database.json"
@@ -468,7 +469,7 @@ async def run_game_loop(ctx, players):
 # --- MENUS AND VIEWS ---
 class GuessGameMenu(discord.ui.View):
     def __init__(self, ctx):
-        super().__init__(timeout=None)
+        super().__init__(timeout=120)
         self.ctx = ctx
         self.players = set()
         self.game_started = False
@@ -477,12 +478,14 @@ class GuessGameMenu(discord.ui.View):
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
-        player_list = "\n".join([f"• {p.mention}" for p in self.players]) if self.players else "خش يا عم يلا انجز"
-        embed = discord.Embed(
-            title="Waiting room الحفره",
-            description=f"يبدأ التحدي تلقائياً بعد **{self.time_left}** ثواني!\nاضغط على 'انضمام' للعب.\n\n**اللاعبون المنضمون:**\n{player_list}",
-            color=discord.Color.gold()
+        embed = lobby_embed(
+            "Waiting room الحفره",
+            "اضغط على 'انضمام' للعب.",
+            sorted(self.players, key=lambda player: player.id),
+            self.time_left,
+            max_players=15,
         )
+        embed.color = discord.Color.gold()
         embed.set_thumbnail(url=SERVER_LOGO_URL)
         return embed
 
@@ -592,7 +595,7 @@ class GuessGameMenu(discord.ui.View):
 
 class ActiveGameView(discord.ui.View):
     def __init__(self, executor, timer_state):
-        super().__init__(timeout=None)
+        super().__init__(timeout=120)
         self.executor = executor
         self.timer_state = timer_state
 
