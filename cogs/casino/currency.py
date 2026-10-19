@@ -121,7 +121,7 @@ class ShopView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(ShopDropdown(cog))
 
-class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
+class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
     def __init__(self, cog):
         super().__init__()
         self.cog = cog
@@ -200,7 +200,7 @@ class AdminActionModal(discord.ui.Modal):
         if self.action == "reset":
             bank.set_balance(target_id, 0)
             embed = discord.Embed(
-                description=f"✅ Account reset for <@{target_id}>!",
+                description=f"✅ تم تصفير رصيد <@{target_id}>!",
                 color=discord.Color.green()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -297,7 +297,7 @@ class CurrencyHubView(discord.ui.View):
         amt = claim["amount"]
         streak = claim["streak"]
         embed = discord.Embed(
-            description=f"✅ Claimed {fmt(amt)} {COIN_EMOJI} daily reward!\n🔥 ستريك **{streak}** يوم (بونص +{fmt(min(streak, 7) * 10)} بكرة)",
+            description=f"✅ استلمت اليومية: {fmt(amt)} {COIN_EMOJI}\n🔥 ستريك **{streak}** يوم (بونص +{fmt(min(streak, 7) * 10)} بكرة)",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -325,7 +325,7 @@ class CurrencyHubView(discord.ui.View):
     async def admin_btn(self, interaction, button):
         if not self.cog.check_whitelist(interaction.user):
             embed = discord.Embed(
-                description="❌ You don't have permission!",
+                description="❌ معندكش صلاحية للوصول للوحة دي.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
