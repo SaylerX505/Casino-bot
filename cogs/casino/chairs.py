@@ -6,6 +6,7 @@ import random
 import config
 
 from cogs.casino.permissions import is_staff_or_owner
+from cogs.utility.theme import lobby_embed
 
 
 # --- UI VIEWS ---
@@ -112,12 +113,12 @@ class ChairsLobby(discord.ui.View):
             "3- لو الكراسي قلبت **أحمر** (فخ)، إياك تضغط! اللي هيضغط هيطير.\n"
             "4- آخر واحد يتبقى هو الفائز.\n\n"
         )
-        player_list = "\n".join([f"**{i+1}** : {p.mention}" for i, p in enumerate(self.players)]) if self.players else "في انتظار اللاعبين..."
-        
-        embed = discord.Embed(
-            title="🪑 لعبة الكراسي الموسيقية",
-            description=f"{rules}**اللاعبين المنضمين ({len(self.players)}/25):**\n{player_list}\n\n⏳ تبدأ اللعبة بعد **{self.time_left}** ثواني...",
-            color=discord.Color.teal()
+        embed = lobby_embed(
+            "🪑 لعبة الكراسي الموسيقية",
+            rules.strip(),
+            self.players,
+            self.time_left,
+            max_players=25,
         )
         embed.set_thumbnail(url=self.logo_url)
         embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=self.logo_url)
