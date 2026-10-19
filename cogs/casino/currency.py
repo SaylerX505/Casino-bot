@@ -262,9 +262,24 @@ class AdminActionView(discord.ui.View):
     async def res_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "reset"))
 
 class CurrencyHubView(discord.ui.View):
-    def __init__(self, cog):
+    def __init__(self, cog, requester):
         super().__init__(timeout=None)
         self.cog = cog
+
+        # Keep the member-facing economy hub clean. The callback still checks
+        # authorization because buttons on public Discord messages are clickable
+        # by other people too.
+        if not cog.check_whitelist(requester):
+            admin_button = next(
+                (
+                    child
+                    for child in self.children
+                    if getattr(child, "custom_id", None) == "hub_admin"
+                ),
+                None,
+            )
+            if admin_button is not None:
+                self.remove_item(admin_button)
         
     @discord.ui.button(label="Daily", style=discord.ButtonStyle.success, emoji="🎁", custom_id="hub_daily")
     async def daily_btn(self, interaction, button):
@@ -399,7 +414,7 @@ class Currency(commands.Cog):
             color=discord.Color.blue()
         )
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
-        await ctx.send(embed=embed, view=CurrencyHubView(self))
+        await ctx.send(embed=embed, view=CurrencyHubView(self, ctx.author))
 
     @commands.command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'])
     async def inventory(self, ctx):
