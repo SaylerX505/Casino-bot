@@ -28,7 +28,7 @@ bot_logs.txt
 Thumbs.db
 **/Thumbs.db
 
-# Never bake mutable SQLite databases or WAL/journal files into an image.
+# --- MUTABLE DATABASES ---
 *.db
 *.db-*
 *.sqlite
