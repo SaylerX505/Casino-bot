@@ -6,7 +6,7 @@ seed_dir="/opt/casino/data-seed"
 
 mkdir -p "$data_dir"
 
-# Seed missing files only. Never replace any existing live data file.
+# --- SAFE DATA SEEDING ---
 if [ -d "$seed_dir" ]; then
     for source in "$seed_dir"/*; do
         [ -f "$source" ] || continue
@@ -21,8 +21,8 @@ if [ -d "$seed_dir" ]; then
     done
 fi
 
-# Persistent volumes may be mounted root-owned by the host.
+# --- VOLUME PERMISSIONS ---
 chown -R bot:bot "$data_dir"
 
-# Replace the shell with the bot process so SIGTERM/SIGINT are forwarded.
+# --- PROCESS SIGNALS ---
 exec gosu bot "$@"
