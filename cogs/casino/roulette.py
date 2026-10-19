@@ -17,6 +17,7 @@ class WatermarkView(discord.ui.View):
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
 from cogs.casino.permissions import is_staff_or_owner
+from cogs.utility.theme import lobby_embed
 
 
 async def fetch_avatar(session, user, size=(80, 80)):
@@ -178,15 +179,16 @@ class RouletteLobby(discord.ui.View):
             "**طريقة اللعب:**\n"
             "1- ستبدأ الجولة وسيتم اختيار قناص عشوائي.\n"
             "2- إذا كنت القناص المختار، ستختار لاعبًا من القائمة ليتم طرده.\n"
-            "3- الفائز النهائي سيحصل على مكافأة **20 عملة**! 💰\n\n"
+            "3- الفائز النهائي سيحصل على مكافأة **20 عملة**! 💰"
         )
-        player_list = "\n".join([f"**{i+1}** : {p.mention}" for i, p in enumerate(self.players)]) if self.players else "في انتظار اللاعبين..."
-        
-        embed = discord.Embed(
-            title="🎯 روليت الحفرة",
-            description=f"{rules}**اللاعبين المنضمين ({len(self.players)}/45):**\n{player_list}\n\n⏳ تبدأ اللعبة بعد **{self.time_left}** ثواني...",
-            color=discord.Color.dark_purple()
+        embed = lobby_embed(
+            "🎯 روليت الحفرة",
+            rules,
+            self.players,
+            self.time_left,
+            max_players=45,
         )
+        embed.color = discord.Color.dark_purple()
         return embed
 
     async def run_timer(self):
