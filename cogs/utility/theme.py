@@ -19,7 +19,7 @@ PREFIX = getattr(config, "PREFIX", "+")
 
 class WatermarkView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)
         self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 
