@@ -40,6 +40,15 @@ def owns_game_task(bot, channel_id, task):
     return _registry(bot).get(channel_id, {}).get("task") is task
 
 
+def set_game_view(bot, channel_id, task, view):
+    """Update the active view only for its owning task."""
+    entry = _registry(bot).get(channel_id)
+    if entry is None or entry.get("task") is not task:
+        return False
+    entry["view"] = view
+    return True
+
+
 def register_game_task(bot, channel_id, task, host_id, name, *, replace_task=None, view=None):
     """Register a lobby or promote its lobby task to the actual game task.
 
