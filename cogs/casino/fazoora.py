@@ -4,7 +4,7 @@ import asyncio
 import random
 import json
 import os
-from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task
+from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task, set_game_message
 
 try:
     from cogs.utility.theme import THEME, WatermarkView, base_embed, get_currency
@@ -57,7 +57,8 @@ class Fazoora(commands.Cog):
                 description=f"**{question}**\n\n⏳ معاكم **30 ثانية**! اول واحد يجاوب صح يكسب **{REWARD}** {COIN_EMOJI}\nاكتب الاجابة في الشات على طول 👇",
                 color=THEME["teal"],
             )
-            await ctx.send(embed=embed)
+            question_message = await ctx.send(embed=embed)
+            set_game_message(self.bot, ctx.channel.id, task, question_message)
 
             def check(message):
                 return (
