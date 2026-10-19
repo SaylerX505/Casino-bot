@@ -378,7 +378,7 @@ async def run_mafia_game(ctx, players):
             
         alive = players.copy()
 
-        # Expose live state for shop-item commands (+اكشف)
+        # --- LIVE GAME STATE ---
         try:
             _state = MafiaGameState()
             _state.alive = alive
