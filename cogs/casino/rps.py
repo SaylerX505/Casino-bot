@@ -55,7 +55,7 @@ class V(discord.ui.View):
 class RPS(commands.Cog):
  def __init__(s,b):s.bot=b
  @commands.hybrid_command(name="حومص",aliases=["rps","حجرة","مقص"], description="تحدَّ عضوًا في حجرة ورقة مقص برهان")
- async def rps(s,ctx,bet=None,opp:discord.Member=None):
+ async def rps(s,ctx,bet: str=None,opp:discord.Member=None):
   try:amt=int(re.sub(r"\D","",bet or ""))
   except:amt=0
   if amt<10:return await ctx.send(embed=base_embed(description=f"❌ مثال: `{ctx.prefix}حومص 100 @صاحبك` (اقل 10)",color=THEME["red_dark"]))
