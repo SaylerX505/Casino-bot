@@ -612,7 +612,7 @@ class ActiveGameView(discord.ui.View):
         await interaction.response.send_message(embed=embed, ephemeral=False)
 
 
-# --- THE COG CLASS ---
+# --- COG COMMANDS ---
 class GeoGuessr(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
