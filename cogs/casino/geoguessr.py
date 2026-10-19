@@ -463,7 +463,7 @@ async def run_game_loop(ctx, players):
         await ctx.send(embed=final_embed, view=WatermarkView())
 
     except asyncio.CancelledError:
-        pass
+        raise
     finally:
         release_game_task(ctx.bot, ctx.channel.id, asyncio.current_task())
 
