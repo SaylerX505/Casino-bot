@@ -129,6 +129,7 @@ class SeekDropdown(discord.ui.Select):
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         
         self.view.choice = int(self.values[0])
+        await interaction.response.send_message("✅ تم تسجيل اختيارك.", ephemeral=True)
         self.view.stop()
 
 class SeekerView(discord.ui.View):
