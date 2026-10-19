@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ==================== Core Settings ====================
-# Secrets are loaded from .env - NEVER hardcode tokens here!
+# Core Settings 
+# Secrets are loaded from .env
 TOKEN = os.getenv("DISCORD_TOKEN", "")
 PREFIX = "+"
 OWNER_IDS = {1265049672024854559, 798280308071596063}
@@ -13,16 +13,16 @@ NEGLAWY_ID = 798280308071596063  # المطور
 BRAND = "Çukur"
 REMBG_API_KEY = os.getenv("REMBG_API_KEY", "")
 
-# ==================== AI Settings ====================
+# AI Settings
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
-# ==================== Staff Roles ====================
-# Add all your Staff / Moderator / Admin Role IDs here who are allowed to host games
+# Staff Roles
+# allowed to host games
 STAFF_ROLE_IDS = [
-    1528494324805927114,  # Example Role ID (Replace/add your actual Staff Role IDs)
+    1528494324805927114,  
 ]
 
-# ==================== Emojis ====================
+# Emojis 
 EMOJIS = {
     "prison":      "<:prison:1511994753489702934>",
     "pardon":      "",
@@ -44,12 +44,12 @@ EMOJIS = {
     "error":       "<:cross:1512824131232465076>",
 }
 
-# ==================== Logging Channels ====================
+# Logging Channels
 LOG_CHANNELS = {
     "command_errors": 1486822134109180049,
 }
 
-# ==================== Role Menus ====================
+# Role Menus 
 COLOR_ROLES = {
     "soft grass":    1486806728854077512,
     "chocolate":     1486810125330022490,
