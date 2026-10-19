@@ -320,7 +320,7 @@ class ChairsLobby(discord.ui.View):
                 await self.ctx.send(content=f"مبروك يا نجم {winner.mention} 👑", embed=embed, view=WatermarkView())
 
         except asyncio.CancelledError:
-            pass
+            raise
         finally:
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
