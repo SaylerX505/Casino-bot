@@ -1,4 +1,3 @@
-#!/bin/sh
 set -eu
 
 data_dir="/app/data"
@@ -6,7 +5,7 @@ seed_dir="/opt/casino/data-seed"
 
 mkdir -p "$data_dir"
 
-# --- SAFE DATA SEEDING ---
+
 if [ -d "$seed_dir" ]; then
     for source in "$seed_dir"/*; do
         [ -f "$source" ] || continue
