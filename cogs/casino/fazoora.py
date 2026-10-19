@@ -4,6 +4,7 @@ import asyncio
 import random
 import json
 import os
+from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task
 
 try:
     from cogs.utility.theme import THEME, WatermarkView, base_embed, get_currency
@@ -37,30 +38,60 @@ class Fazoora(commands.Cog):
 
     @commands.hybrid_command(name="فزورة", aliases=["فزوره", "fazoora", "احزر"], description="ابدأ فزورة جماعية")
     async def fazoora(self, ctx):
-        if hasattr(self.bot, "active_games") and ctx.channel.id in self.bot.active_games:
+        if is_active_game(self.bot, ctx.channel.id):
             return await ctx.send(embed=base_embed(description="❌ فيه لعبة شغالة هنا! استنى تخلص الاول.", color=THEME["red_dark"]))
-        item = random.choice(self.bank)
-        q, answers = item["q"], [normalize(x) for x in item["a"]]
-        e = discord.Embed(title="🧠 فزورة الحفرة", description=f"**{q}**\n\n⏳ معاكم **30 ثانية**! اول واحد يجاوب صح يكسب **{REWARD}** {COIN_EMOJI}\nاكتب الاجابة في الشات على طول 👇", color=THEME["teal"])
-        msg = await ctx.send(embed=e)
 
-        def check(m):
-            return m.channel.id == ctx.channel.id and not m.author.bot and normalize(m.content) in answers
+        currency = get_currency(self.bot)
+        if currency is None:
+            return await ctx.send(embed=base_embed(description="❌ نظام العملات مش متاح حاليًا.", color=THEME["red_dark"]))
+
+        task = asyncio.current_task()
+        if task is None or not register_game_task(self.bot, ctx.channel.id, task, ctx.author.id, "Fazoora"):
+            return await ctx.send(embed=base_embed(description="❌ فيه لعبة شغالة هنا! استنى تخلص الاول.", color=THEME["red_dark"]))
 
         try:
-            win_msg = await self.bot.wait_for("message", check=check, timeout=30.0)
-        except asyncio.TimeoutError:
-            e2 = base_embed(title="⏰ خلص الوقت!", description=f"محدش عرفها يا رجالة! الاجابة كانت: **{item['a'][0]}**\nالجاية اسهل ان شاء الله 😅", color=THEME["red_dark"])
-            return await ctx.send(embed=e2, view=WatermarkView())
-        cur = get_currency(self.bot)
-        if cur:
-            cur.update_balance(win_msg.author.id, REWARD)
-            bal = cur.get_balance(win_msg.author.id)
-        else:
-            bal = 0
-        e3 = discord.Embed(title="🎉 عبقري الحفرة!", description=f"**{win_msg.author.mention}** جاوب صح: **{win_msg.content}**\n\n💰 خد **{REWARD:,}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{bal:,}**", color=THEME["gold"])
-        e3.set_thumbnail(url=win_msg.author.display_avatar.url)
-        await ctx.send(embed=e3, view=WatermarkView())
+            item = random.choice(self.bank)
+            question, answers = item["q"], [normalize(answer) for answer in item["a"]]
+            embed = base_embed(
+                title="🧠 فزورة الحفرة",
+                description=f"**{question}**\n\n⏳ معاكم **30 ثانية**! اول واحد يجاوب صح يكسب **{REWARD}** {COIN_EMOJI}\nاكتب الاجابة في الشات على طول 👇",
+                color=THEME["teal"],
+            )
+            await ctx.send(embed=embed)
+
+            def check(message):
+                return (
+                    message.channel.id == ctx.channel.id
+                    and not message.author.bot
+                    and normalize(message.content) in answers
+                )
+
+            try:
+                winner_message = await self.bot.wait_for("message", check=check, timeout=30.0)
+            except asyncio.TimeoutError:
+                timeout_embed = base_embed(
+                    title="⏰ خلص الوقت!",
+                    description=f"محدش عرفها يا رجالة! الاجابة كانت: **{item['a'][0]}**\nالجاية اسهل ان شاء الله 😅",
+                    color=THEME["red_dark"],
+                )
+                await ctx.send(embed=timeout_embed, view=WatermarkView())
+                return
+
+            try:
+                balance = currency.update_balance(winner_message.author.id, REWARD)
+            except OverflowError:
+                await ctx.send("✅ إجابة صحيحة، لكن رصيدك وصل للحد الأقصى المدعوم؛ المكافأة لم تُصرف.")
+                return
+
+            winner_embed = base_embed(
+                title="🎉 عبقري الحفرة!",
+                description=f"**{winner_message.author.mention}** جاوب صح: **{winner_message.content}**\n\n💰 خد **{REWARD:,}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{balance:,}**",
+                color=THEME["gold"],
+            )
+            winner_embed.set_thumbnail(url=winner_message.author.display_avatar.url)
+            await ctx.send(embed=winner_embed, view=WatermarkView())
+        finally:
+            release_game_task(self.bot, ctx.channel.id, task)
 
 
 async def setup(bot):
