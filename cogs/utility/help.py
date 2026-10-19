@@ -228,6 +228,19 @@ class HelpPageView(LayoutView):
                 pass
 
 
+class HelpEntryView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=180)
+        self.bot = bot
+
+    @discord.ui.button(label="افتح المساعدة الخاصة", emoji="📚", style=discord.ButtonStyle.primary)
+    async def open_help(self, interaction: discord.Interaction, button: discord.ui.Button):
+        latency = round(self.bot.latency * 1000)
+        view = HelpLayout(interaction.user, latency, private_root=True)
+        await interaction.response.send_message(view=view, ephemeral=True)
+        view.message = await interaction.original_response()
+
+
 class HelpCommand(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -235,11 +248,21 @@ class HelpCommand(commands.Cog):
     @commands.hybrid_command(name="help", aliases=["مساعدة", "h"], description="عرض المساعدة والأوامر المتاحة")
     async def custom_help(self, ctx):
         latency = round(self.bot.latency * 1000)
-        view = HelpLayout(ctx.author, latency)
         if ctx.interaction is not None:
+            view = HelpLayout(ctx.author, latency, private_root=True)
             view.message = await ctx.send(view=view, ephemeral=True)
-        else:
-            view.message = await ctx.send(view=view)
+            return
+
+        embed = discord.Embed(
+            title="Çukur • Help Center",
+            description=(
+                f"**Prefix:** `{config.PREFIX}`  ·  **Latency:** {latency}ms\n\n"
+                "افتح قائمة المساعدة الخاصة بيك من الزر تحت."
+            ),
+            color=config.EMBED_COLOR,
+        )
+        embed.set_thumbnail(url=config.SERVER_LOGO_URL)
+        await ctx.send(embed=embed, view=HelpEntryView(self.bot))
 
     @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
     async def stop_game(self, ctx):
