@@ -35,7 +35,7 @@ class Fazoora(commands.Cog):
         self.bot = bot
         self.bank = load_bank()
 
-    @commands.command(name="فزورة", aliases=["فزوره", "fazoora", "احزر"])
+    @commands.hybrid_command(name="فزورة", aliases=["فزوره", "fazoora", "احزر"], description="ابدأ فزورة جماعية")
     async def fazoora(self, ctx):
         if hasattr(self.bot, "active_games") and ctx.channel.id in self.bot.active_games:
             return await ctx.send(embed=base_embed(description="❌ فيه لعبة شغالة هنا! استنى تخلص الاول.", color=THEME["red_dark"]))
