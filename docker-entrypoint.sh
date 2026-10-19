@@ -20,8 +20,7 @@ if [ -d "$seed_dir" ]; then
     done
 fi
 
-# --- VOLUME PERMISSIONS ---
 chown -R bot:bot "$data_dir"
 
-# --- PROCESS SIGNALS ---
+
 exec gosu bot "$@"
