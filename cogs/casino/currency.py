@@ -260,12 +260,12 @@ class AdminActionView(discord.ui.View):
     async def res_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "reset"))
 
 class CurrencyHubView(discord.ui.View):
-    def __init__(self, cog, requester):
+    def __init__(self, cog, requester=None):
         super().__init__(timeout=None)
         self.cog = cog
 
         # --- ADMIN PANEL VISIBILITY ---
-        if not cog.check_whitelist(requester):
+        if requester is not None and not cog.check_whitelist(requester):
             admin_button = next(
                 (
                     child
@@ -508,4 +508,6 @@ class Currency(commands.Cog):
             await ctx.send(embed=embed)
 
 async def setup(bot):
-    await bot.add_cog(Currency(bot))
+    cog = Currency(bot)
+    await bot.add_cog(cog)
+    bot.add_view(CurrencyHubView(cog))
