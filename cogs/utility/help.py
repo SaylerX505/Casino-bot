@@ -116,8 +116,7 @@ class HelpSelect(Select):
             )
 
         category = self.values[0]
-        # Re-check current permissions on every interaction. Hiding a menu option
-        # is a usability feature, never an authorization boundary.
+        # --- INTERACTION PERMISSIONS ---
         if category == "staff" and not has_staff_access(interaction.user):
             return await interaction.response.send_message(
                 "❌ صلاحية الستاف مش متاحة لحسابك حاليًا.",
