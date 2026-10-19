@@ -11,7 +11,8 @@ def t(text: str) -> str:
 def str_to_partial_emoji(emoji_str: str):
     """Convert '<:name:id>' or '<a:name:id>' to discord.PartialEmoji"""
     if not emoji_str.startswith('<'):
-        return emoji_str  # return as is (unicode emoji)
+        # --- EMOJI FALLBACK ---
+        return emoji_str
     
     animated = emoji_str.startswith('<a:')
     parts = emoji_str.strip('<>').split(':')
@@ -73,7 +74,7 @@ class AdminTools(commands.Cog):
                 color=config.EMBED_COLOR
             ))
         
-        # Possible paths where the cog might live
+        # --- EXTENSION LOOKUP ---
         possible_paths = [
             f'cogs.casino.{cog_name}',
             f'cogs.utility.{cog_name}',
