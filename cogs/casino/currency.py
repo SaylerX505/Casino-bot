@@ -467,11 +467,10 @@ class Currency(commands.Cog):
             description="العملية هتمسح أرصدة الأعضاء والشنط. مش هننفذها غير بعد إنشاء نسخة احتياطية وتأكيدك.",
             color=discord.Color.red(),
         )
-        view.message = await ctx.send(
-            embed=embed,
-            view=view,
-            ephemeral=ctx.interaction is not None,
-        )
+        if ctx.interaction is not None:
+            view.message = await ctx.send(embed=embed, view=view, ephemeral=True)
+        else:
+            view.message = await ctx.send(embed=embed, view=view)
 
     @commands.command(name='bankmigrate', aliases=['ترحيل'])
     @commands.is_owner()
