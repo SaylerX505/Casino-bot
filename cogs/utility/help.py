@@ -5,7 +5,6 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Select, Separator, TextDisplay
 
 import config
-from cogs.casino.game_registry import release_game_task
 from cogs.casino.permissions import (
     has_admin_access,
     has_staff_access,
@@ -311,15 +310,16 @@ class HelpCommand(commands.Cog):
         view = game_info.get("view")
         if view is not None:
             for child in view.children:
-                child.disabled = True
+                if hasattr(child, "disabled"):
+                    child.disabled = True
             message = getattr(view, "message", None)
             if message is not None:
                 try:
                     await message.edit(view=view)
                 except discord.HTTPException:
                     pass
+            view.stop()
 
-        release_game_task(self.bot, ctx.channel.id, game_task)
         embed = discord.Embed(
             title="🛑 إيقاف اللعبة",
             description=f"تم إنهاء لعبة **{game_info.get('name', 'غير معروفة')}** بواسطة {ctx.author.mention}.",
