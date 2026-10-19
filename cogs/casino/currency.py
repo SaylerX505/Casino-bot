@@ -414,7 +414,7 @@ class Currency(commands.Cog):
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
         await ctx.send(embed=embed, view=CurrencyHubView(self, ctx.author))
 
-    @commands.command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'])
+    @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
         inv = self.get_inventory(ctx.author.id)
         embed = discord.Embed(
