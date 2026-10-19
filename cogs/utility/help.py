@@ -2,7 +2,7 @@ import random
 
 import discord
 from discord.ext import commands
-from discord.ui import Select, View
+from discord.ui import ActionRow, Container, LayoutView, Select, Separator, TextDisplay
 
 import config
 from cogs.casino.game_registry import release_game_task
@@ -100,7 +100,6 @@ class HelpSelect(Select):
                 emoji="🔒",
                 description="أوامر البوت الحساسة",
             ))
-
         super().__init__(
             placeholder="اختار قسم الأوامر...",
             options=options,
@@ -116,7 +115,6 @@ class HelpSelect(Select):
             )
 
         category = self.values[0]
-        # --- INTERACTION PERMISSIONS ---
         if category == "staff" and not has_staff_access(interaction.user):
             return await interaction.response.send_message(
                 "❌ صلاحية الستاف مش متاحة لحسابك حاليًا.",
@@ -134,33 +132,84 @@ class HelpSelect(Select):
             )
 
         page = HELP_PAGES[category]
-        embed = discord.Embed(
-            title=page["title"],
-            description=page["intro"],
-            color=config.EMBED_COLOR,
-        )
-        for name, description in page["fields"]:
-            command = f"{config.PREFIX}{name}"
-            embed.add_field(
-                name=f"\u200b{command}",
-                value=f"╰ {description}",
-                inline=False,
-            )
-        embed.set_footer(text=f"Prefix: {config.PREFIX} • {config.BRAND}")
-        embed.set_thumbnail(url=config.SERVER_LOGO_URL)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        view = HelpPageView(interaction.user, page)
+        await interaction.response.send_message(view=view, ephemeral=True)
+        view.message = await interaction.original_response()
 
 
-class HelpView(View):
-    def __init__(self, requester):
+class HelpLayout(LayoutView):
+    def __init__(self, requester, latency):
         super().__init__(timeout=180)
         self.requester_id = requester.id
         self.message = None
-        self.add_item(HelpSelect(requester))
+
+        container = Container(
+            TextDisplay(
+                f"# Çukur • Help Center\n"
+                f"**Prefix:** `{config.PREFIX}`  ·  **Latency:** {latency}ms\n\n"
+                "اختار القسم المناسب لصلاحياتك. هتظهر تفاصيل الأوامر بشكل خاص ليك."
+            ),
+            Separator(),
+            accent_color=config.EMBED_COLOR,
+        )
+        row = ActionRow()
+        row.add_item(HelpSelect(requester))
+        container.add_item(row)
+        self.add_item(container)
 
     async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
+        for item in self.walk_children():
+            if hasattr(item, "disabled"):
+                item.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+
+class HelpPageView(LayoutView):
+    def __init__(self, requester, page):
+        super().__init__(timeout=180)
+        self.requester_id = requester.id
+        self.message = None
+
+        container = Container(
+            TextDisplay(f"# {page['title']}\n{page['intro']}"),
+            Separator(),
+            accent_color=config.EMBED_COLOR,
+        )
+        for name, description in page["fields"]:
+            container.add_item(TextDisplay(f"**`{config.PREFIX}{name}`**\n{description}"))
+            container.add_item(Separator(visible=False))
+
+        row = ActionRow()
+        back = discord.ui.Button(
+            label="رجوع للأقسام",
+            emoji="↩️",
+            style=discord.ButtonStyle.secondary,
+        )
+
+        async def go_back(interaction: discord.Interaction):
+            if interaction.user.id != self.requester_id:
+                return await interaction.response.send_message(
+                    "القائمة دي شخصية للي طلب المساعدة.",
+                    ephemeral=True,
+                )
+            latency = round(interaction.client.latency * 1000)
+            view = HelpLayout(interaction.user, latency)
+            await interaction.response.edit_message(view=view)
+            view.message = await interaction.original_response()
+
+        back.callback = go_back
+        row.add_item(back)
+        container.add_item(row)
+        self.add_item(container)
+
+    async def on_timeout(self):
+        for item in self.walk_children():
+            if hasattr(item, "disabled"):
+                item.disabled = True
         if self.message is not None:
             try:
                 await self.message.edit(view=self)
@@ -172,28 +221,16 @@ class HelpCommand(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="help", aliases=["مساعدة", "h"])
+    @commands.hybrid_command(name="help", aliases=["مساعدة", "h"], description="عرض المساعدة والأوامر المتاحة")
     async def custom_help(self, ctx):
-        """Show a permission-aware help menu."""
         latency = round(self.bot.latency * 1000)
-        embed = discord.Embed(
-            title=".ᐟ Help Center .ᐟ",
-            description=(
-                f"اختار القسم المناسب لصلاحياتك. صفحات الأوامر هتظهر لك بشكل خاص.\n"
-                f"Prefix: **{config.PREFIX}**\n\n"
-                f"{config.EMOJIS.get('ping', '🏓')} Latency: {latency}ms"
-            ),
-            color=config.EMBED_COLOR,
+        view = HelpLayout(ctx.author, latency)
+        view.message = await ctx.send(
+            view=view,
+            ephemeral=ctx.interaction is not None,
         )
-        if getattr(config, "RANDOM_IMAGES", None):
-            embed.set_image(url=random.choice(config.RANDOM_IMAGES))
-        embed.set_footer(text=config.BRAND)
-        embed.set_thumbnail(url=config.SERVER_LOGO_URL)
 
-        view = HelpView(ctx.author)
-        view.message = await ctx.send(embed=embed, view=view)
-
-    @commands.command(name="stop", aliases=["ايقاف", "انهاء"])
+    @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
     async def stop_game(self, ctx):
         """Stop the active game when authorized."""
         active_games = getattr(self.bot, "active_games", {})
