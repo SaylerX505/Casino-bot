@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from cogs.casino.game_registry import (
     is_active_game,
     register_game_task,
+    set_game_view,
     release_game_task,
 )
 
@@ -37,6 +38,23 @@ class GameRegistryTests(unittest.IsolatedAsyncioTestCase):
         second.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await second
+
+    async def test_only_owner_task_can_update_active_view(self):
+        task = asyncio.create_task(self.waiter.wait())
+        other_task = asyncio.create_task(self.waiter.wait())
+        first_view = object()
+        next_view = object()
+
+        self.assertTrue(register_game_task(self.bot, self.channel_id, task, 1, "Game"))
+        self.assertTrue(set_game_view(self.bot, self.channel_id, task, first_view))
+        self.assertFalse(set_game_view(self.bot, self.channel_id, other_task, next_view))
+        self.assertIs(self.bot.active_games[self.channel_id]["view"], first_view)
+
+        task.cancel()
+        other_task.cancel()
+        for current in (task, other_task):
+            with self.assertRaises(asyncio.CancelledError):
+                await current
 
     async def test_old_task_cannot_remove_new_game_entry(self):
         old = asyncio.create_task(self.waiter.wait())
