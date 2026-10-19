@@ -54,7 +54,7 @@ class V(discord.ui.View):
  async def sc(s,i,b):await s.pk2(i,"✂️")
 class RPS(commands.Cog):
  def __init__(s,b):s.bot=b
- @commands.command(name="حومص",aliases=["rps","حجرة","مقص"])
+ @commands.hybrid_command(name="حومص",aliases=["rps","حجرة","مقص"], description="تحدَّ عضوًا في حجرة ورقة مقص برهان")
  async def rps(s,ctx,bet=None,opp:discord.Member=None):
   try:amt=int(re.sub(r"\D","",bet or ""))
   except:amt=0
