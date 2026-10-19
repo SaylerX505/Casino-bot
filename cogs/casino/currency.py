@@ -23,12 +23,12 @@ def is_allowed_channel_or_owner():
             return True
         if ctx.channel.id == ALLOWED_CHANNEL_ID:
             return True
-        # Fails silently if used outside the channel by a non-owner
+        # --- DEFAULT DENIAL ---
         return False
     return commands.check(predicate)
 
 def load_data():
-    # Legacy JSON kept only for one-time migration. Live data lives in SQLite (bank.db).
+    # --- LEGACY JSON DATA ---
     os.makedirs("data", exist_ok=True)
     if os.path.exists(DATA_FILE):
         try:
@@ -39,15 +39,13 @@ def load_data():
     return {}
 
 def save_data(data):
-    # No-op: SQLite auto-commits. Kept so old calls don't crash during transition.
+    # --- LEGACY API COMPATIBILITY ---
     return
 
 def fmt(n) -> str:
     return bank.fmt(n)
 
-# ==========================================
-# 🛒 Modals & Views
-# ==========================================
+# --- UI VIEWS ---
 class BuyForm(discord.ui.Modal, title="Purchase Item"):
     def __init__(self, cog, item_id, price, item_name):
         super().__init__()
@@ -266,9 +264,7 @@ class CurrencyHubView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
-        # Keep the member-facing economy hub clean. The callback still checks
-        # authorization because buttons on public Discord messages are clickable
-        # by other people too.
+        # --- ADMIN PANEL VISIBILITY ---
         if not cog.check_whitelist(requester):
             admin_button = next(
                 (
@@ -335,9 +331,7 @@ class CurrencyHubView(discord.ui.View):
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         await interaction.response.send_message("Admin Tools:", view=AdminActionView(self.cog), ephemeral=True)
 
-# ==========================================
-# 🏛️ Currency Cog
-# ==========================================
+# --- CURRENCY COG ---
 class Currency(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
