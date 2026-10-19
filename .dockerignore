@@ -28,7 +28,7 @@ bot_logs.txt
 Thumbs.db
 **/Thumbs.db
 
-# --- MUTABLE DATABASES ---
+
 *.db
 *.db-*
 *.sqlite
