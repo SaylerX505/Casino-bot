@@ -308,17 +308,30 @@ class HelpCommand(commands.Cog):
 
         game_task.cancel()
         view = game_info.get("view")
+        message = getattr(view, "message", None) if view is not None else None
+        message = message or game_info.get("message")
         if view is not None:
             for child in view.children:
                 if hasattr(child, "disabled"):
                     child.disabled = True
-            message = getattr(view, "message", None)
             if message is not None:
                 try:
                     await message.edit(view=view)
                 except discord.HTTPException:
                     pass
             view.stop()
+        elif message is not None:
+            try:
+                await message.edit(
+                    embed=discord.Embed(
+                        title="🛑 تم إيقاف اللعبة",
+                        description=f"تم إيقاف **{game_info.get('name', 'اللعبة')}** بواسطة {ctx.author.mention}.",
+                        color=discord.Color.red(),
+                    ),
+                    view=None,
+                )
+            except discord.HTTPException:
+                pass
 
         embed = discord.Embed(
             title="🛑 إيقاف اللعبة",
