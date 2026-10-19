@@ -1,11 +1,11 @@
-# main.py
+# --- BOT ENTRY POINT ---
 import discord
 from discord.ext import commands
 import os
 import asyncio
 import config
 
-# Bot Setup
+# --- BOT CONFIGURATION ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -21,7 +21,7 @@ bot = commands.Bot(
 )
 bot.remove_command('help')
 
-#  Events
+# --- EVENT HANDLERS ---
 ERROR_LOG_CHANNEL_ID = 1486822134109180049
 
 @bot.event
@@ -68,13 +68,13 @@ async def on_command_error(ctx, error):
     except Exception:
         pass
 
-# Cog Loader
+# --- EXTENSION LOADER ---
 async def load_cogs():
     """Automatically loads all python files inside the cogs subfolders"""
     import pathlib
     base_dir = pathlib.Path(__file__).parent
     cog_directories = ['cogs.casino', 'cogs.utility']
-    # theme.py is a helper module not cogs.
+    # --- HELPER MODULE FILTER ---
     utility_allow = {'admin_tools.py', 'help.py', 'ai.py'}
 
     for directory in cog_directories:
@@ -86,7 +86,7 @@ async def load_cogs():
         for filename in sorted(os.listdir(folder_path)):
             if filename.endswith('.py') and not filename.startswith('__'):
                 if directory == 'cogs.casino':
-                    # These files are imported helpers, not cogs.
+                    # --- NON-COG MODULES ---
                     allowed = filename not in {'bank.py', 'permissions.py', 'game_registry.py'}
                 elif directory == 'cogs.utility':
                     allowed = filename in utility_allow
@@ -103,7 +103,7 @@ async def load_cogs():
                 except Exception as e:
                     print(f"⚠️ Failed to load {cog_path}: {e}")
 
-# Run Bot
+# --- APPLICATION STARTUP ---
 async def main():
     if not config.TOKEN:
         print("❌ DISCORD_TOKEN is missing! Put it in the .env file (see .env.example).")
