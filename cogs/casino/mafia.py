@@ -637,7 +637,7 @@ async def run_mafia_game(ctx, players):
                 else:
                     hanged_player = next((p for p in alive if p.id == top_target_id), None)
                     if hanged_player:
-                        # ⛔ VETO CHECK: target can burn a veto to survive the hanging
+                        # --- VETO RESOLUTION ---
                         try:
                             cur_cog = ctx.bot.get_cog('Currency')
                         except Exception:
@@ -705,7 +705,7 @@ async def mafia_wins(ctx, mafias):
     embed.set_image(url="attachment://reveal.jpg")
     await ctx.send(embed=embed, file=discord.File(fp=reveal_bytes, filename="reveal.jpg"), view=WatermarkView())
 
-# --- COG CLASS ---
+# --- COG COMMANDS ---
 class Mafia(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
