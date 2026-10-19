@@ -49,31 +49,6 @@ LOG_CHANNELS = {
     "command_errors": 1486822134109180049,
 }
 
-# Role Menus 
-COLOR_ROLES = {
-    "soft grass":    1486806728854077512,
-    "chocolate":     1486810125330022490,
-    "roze":          1486810495229890851,
-    "gumball":       1486806282219421726,
-    "violette":      1486806667982012426,
-    "black panther": 1486806539716132976,
-    "clear sky":     1486806394572116121,
-    "sand stone":    1486806610776162364,
-    "crimson moon":  1486806247662551232,
-    "goldie":        1498744933513957426,
-}
-GAME_ROLES = {
-    "minecraft":     1487197718538485760,
-    "pubg":          1487197752843567184,
-    "valorant":      1487197792001724469,
-    "combat master": 1487197844090781706,
-    "among us":      1487197878920151232,
-    "roblox":        1487198366528966798,
-    "rocket league": 1487197958813384848,
-    "code names":    1487198514726305903,
-    "gta":           1487198455053942854,
-}
-OTHER_ROLES = {"game mentions": 1503766099102273556}
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
 EMBED_COLOR = 0x393a41
