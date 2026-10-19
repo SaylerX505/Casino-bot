@@ -84,7 +84,7 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
             embed = discord.Embed(
                 description=(
                     f"❌ رصيدك الحالي {fmt(balance_after)} "
-                    f"{COIN_EMOJI}; you need {fmt(total_cost)} for "
+                    f"{COIN_EMOJI}; محتاج {fmt(total_cost)} علشان تشتري "
                     f"{quantity} × {self.item_name}."
                 ),
                 color=discord.Color.red()
@@ -100,9 +100,9 @@ class ShopDropdown(discord.ui.Select):
     def __init__(self, cog):
         self.cog = cog
         self.prices = {"double_shot": 100, "shield": 275, "mafia_scan": 150, "veto": 200, "roulette_ins": 300, "luck_ticket": 120, "loot_box": 250}
-        self.names = {"double_shot": "Double Shot 🔫", "shield": "درع الحفره 🛡️", "mafia_scan": "كشف مافيا 🔍", "veto": "فيتو ⛔", "roulette_ins": "تأمين روليت 💉", "luck_ticket": "تذكرة حظ 🎟️", "loot_box": "صندوق حظ 🎁"}
+        self.names = {"double_shot": "طلقة مزدوجة 🔫", "shield": "درع الحفره 🛡️", "mafia_scan": "كشف مافيا 🔍", "veto": "فيتو ⛔", "roulette_ins": "تأمين روليت 💉", "luck_ticket": "تذكرة حظ 🎟️", "loot_box": "صندوق حظ 🎁"}
         options = [
-            discord.SelectOption(label="Double Shot 🔫", description="100 | اضرب اتنين في الروليت", value="double_shot", emoji="🔫"),
+            discord.SelectOption(label="طلقة مزدوجة 🔫", description="100 | اضرب اتنين في الروليت", value="double_shot", emoji="🔫"),
             discord.SelectOption(label="درع الحفره 🛡️", description="275 | صد الضربة ورجعها", value="shield", emoji="🛡️"),
             discord.SelectOption(label="كشف مافيا 🔍", description="150 | تلميح عن مافيا واحد", value="mafia_scan", emoji="🔍"),
             discord.SelectOption(label="فيتو ⛔", description="200 | الغي صوت ضدك في مافيا", value="veto", emoji="⛔"),
