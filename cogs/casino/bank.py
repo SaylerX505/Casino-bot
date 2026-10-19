@@ -420,9 +420,14 @@ def backup_database(destination):
 def reset_all():
     with _lock:
         c = _connect()
-        c.execute("DELETE FROM users")
-        c.execute("DELETE FROM inventory")
-        c.commit()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("DELETE FROM users")
+            c.execute("DELETE FROM inventory")
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
 
 def migrate_from_json(data):
     counts = {"users": 0, "items": 0, "wl": 0}
