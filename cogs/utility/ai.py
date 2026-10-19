@@ -97,7 +97,7 @@ class AI(commands.Cog):
         self.bot = bot
         self.data = load_ai_data()
 
-    @commands.command(name="ai", aliases=["محسن", "ذكاء"])
+    @commands.hybrid_command(name="ai", aliases=["محسن", "ذكاء"], description="إدارة إعدادات محسن")
     @is_admin_or_owner()
     async def toggle_ai(self, ctx):
         """تحكم في تشغيل أو إيقاف الذكاء الاصطناعي (محسن)"""
