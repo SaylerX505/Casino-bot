@@ -69,8 +69,9 @@ HELP_PAGES = {
 
 
 class HelpSelect(Select):
-    def __init__(self, requester):
+    def __init__(self, requester, private_root=False):
         self.requester_id = requester.id
+        self.private_root = private_root
         options = [
             discord.SelectOption(
                 label="أوامر الأعضاء",
@@ -133,13 +134,17 @@ class HelpSelect(Select):
 
         page = HELP_PAGES[category]
         view = HelpPageView(interaction.user, page)
-        await interaction.response.send_message(view=view, ephemeral=True)
+        if self.private_root:
+            await interaction.response.edit_message(view=view)
+        else:
+            await interaction.response.send_message(view=view, ephemeral=True)
         view.message = await interaction.original_response()
 
 
 class HelpLayout(LayoutView):
-    def __init__(self, requester, latency):
+    def __init__(self, requester, latency, private_root=False):
         super().__init__(timeout=180)
+        self.private_root = private_root
         self.requester_id = requester.id
         self.message = None
 
@@ -153,7 +158,7 @@ class HelpLayout(LayoutView):
             accent_color=config.EMBED_COLOR,
         )
         row = ActionRow()
-        row.add_item(HelpSelect(requester))
+        row.add_item(HelpSelect(requester, private_root=private_root))
         container.add_item(row)
         self.add_item(container)
 
@@ -197,7 +202,8 @@ class HelpPageView(LayoutView):
                     ephemeral=True,
                 )
             latency = round(interaction.client.latency * 1000)
-            view = HelpLayout(interaction.user, latency)
+            self.message = None
+            view = HelpLayout(interaction.user, latency, private_root=True)
             await interaction.response.edit_message(view=view)
             view.message = await interaction.original_response()
 
