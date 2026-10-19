@@ -1,75 +1,232 @@
-import discord, re
+import re
+
+import discord
 from discord.ext import commands
-from cogs.utility.theme import THEME, WatermarkView, base_embed, get_currency
-COIN="<:ckrcoin:1513743032124575784>"
-NM={"🪨":"حجر","📄":"ورقة","✂️":"مقص"}
-BT={"🪨":"✂️","📄":"🪨","✂️":"📄"}
-class V(discord.ui.View):
- def __init__(s,ctx,a,o,bet):
-  super().__init__(timeout=60);s.ctx=ctx;s.a=a;s.o=o;s.bet=bet;s.pk={};s.done=False
- def emb(s):
-  ca="✅" if s.a.id in s.pk else "⏳";oa="✅" if s.o.id in s.pk else "⏳"
-  pot=int(s.bet*2*0.95)
-  return discord.Embed(title="✊ حومص!",description=f"{s.a.mention} VS {s.o.mention}\n💰 رهان **{s.bet:,}** - الفايز **{pot:,}**\n\n{s.a.mention}: {ca}\n{s.o.mention}: {oa}",color=THEME["teal"])
- async def fin(s,inter=None):
-  if s.done:return
-  s.done=True
-  for c in s.children:c.disabled=True
-  cur=get_currency(s.ctx.bot);pot=int(s.bet*2*0.95);tax=int(s.bet*2*0.05)
-  a=s.pk.get(s.a.id);o=s.pk.get(s.o.id)
-  if a is None or o is None:
-   if cur:cur.update_balance(s.a.id,s.bet);cur.update_balance(s.o.id,s.bet)
-   e=base_embed(description="⏰ حد اتأخر! الفلوس رجعت.",color=THEME["orange"])
-   try:
-    if inter:await inter.response.edit_message(embed=e,view=s)
-    else:await s.ctx.send(embed=e)
-   except:pass
-   return
-  if a==o:
-   if cur:cur.update_balance(s.a.id,s.bet);cur.update_balance(s.o.id,s.bet)
-   e=base_embed(title="🤝 تعادل!",description=f"انتو الاتنين **{NM[a]}**! الفلوس رجعت.",color=THEME["grey"])
-  else:
-   w=s.a if BT[a]==o else s.o;wp=a if BT[a]==o else o;lp=o if BT[a]==o else a
-   if cur:cur.update_balance(w.id,pot)
-   e=base_embed(title="🏆 فايز!",description=f"**{NM[wp]}** يكسب **{NM[lp]}**\n🎉 {w.mention} خد **{pot:,}** {COIN}!\n🧾 ضريبة: **{tax:,}**",color=THEME["gold"])
-   e.set_thumbnail(url=w.display_avatar.url)
-  try:
-   if inter and not inter.response.is_done():await inter.response.edit_message(embed=e,view=s)
-   else:await s.ctx.send(embed=e,view=WatermarkView())
-  except:await s.ctx.send(embed=e,view=WatermarkView())
- async def on_timeout(s):await s.fin()
- async def pk2(s,i,ch):
-  if i.user.id not in (s.a.id,s.o.id):return await i.response.send_message("مش طرف!",ephemeral=True)
-  if i.user.id in s.pk:return await i.response.send_message("اختارت خلاص!",ephemeral=True)
-  s.pk[i.user.id]=ch;await i.response.send_message(f"اختارت **{NM[ch]}** 🤫",ephemeral=True)
-  if len(s.pk)==2:await s.fin(i)
-  else:
-   try:await i.message.edit(embed=s.emb())
-   except:pass
- @discord.ui.button(emoji="🪨",label="حجر",style=discord.ButtonStyle.secondary)
- async def r(s,i,b):await s.pk2(i,"🪨")
- @discord.ui.button(emoji="📄",label="ورقة",style=discord.ButtonStyle.primary)
- async def p(s,i,b):await s.pk2(i,"📄")
- @discord.ui.button(emoji="✂️",label="مقص",style=discord.ButtonStyle.danger)
- async def sc(s,i,b):await s.pk2(i,"✂️")
+
+from cogs.utility.theme import THEME, base_embed, get_currency
+
+COIN = "<:ckrcoin:1513743032124575784>"
+MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
+BEATS = {"🪨": "✂️", "📄": "🪨", "✂️": "📄"}
+MIN_BET = 10
+MAX_BET = 5000
+PAYOUT_RATE = 0.95
+
+
+# --- CHALLENGE VIEW ---
+class RPSView(discord.ui.View):
+    def __init__(self, ctx, player, opponent, bet):
+        super().__init__(timeout=60)
+        self.ctx = ctx
+        self.player = player
+        self.opponent = opponent
+        self.bet = bet
+        self.choices = {}
+        self.done = False
+        self.message = None
+
+    def make_embed(self):
+        player_status = "✅" if self.player.id in self.choices else "⏳"
+        opponent_status = "✅" if self.opponent.id in self.choices else "⏳"
+        prize = int(self.bet * 2 * PAYOUT_RATE)
+        return base_embed(
+            title="✊ حومص!",
+            description=(
+                f"{self.player.mention} **VS** {self.opponent.mention}\n"
+                f"💰 الرهان: **{self.bet:,}** لكل لاعب\n"
+                f"🏆 جائزة الفائز: **{prize:,}** {COIN}\n\n"
+                f"{self.player.mention}: {player_status}\n"
+                f"{self.opponent.mention}: {opponent_status}\n\n"
+                "اختار حركتك بسرية، والنتيجة هتظهر لما الاتنين يختاروا."
+            ),
+            color=THEME["teal"],
+        )
+
+    async def publish_result(self, embed, interaction=None):
+        for item in self.children:
+            item.disabled = True
+
+        try:
+            if interaction is not None and not interaction.response.is_done():
+                await interaction.response.edit_message(embed=embed, view=self)
+            elif self.message is not None:
+                await self.message.edit(embed=embed, view=self)
+            else:
+                await self.ctx.send(embed=embed, view=self)
+        except discord.HTTPException:
+            await self.ctx.send(embed=embed, view=WatermarkView())
+
+    async def finish(self, interaction=None):
+        if self.done:
+            return
+        self.done = True
+
+        currency = get_currency(self.ctx.bot)
+        prize = int(self.bet * 2 * PAYOUT_RATE)
+        tax = self.bet * 2 - prize
+        player_choice = self.choices.get(self.player.id)
+        opponent_choice = self.choices.get(self.opponent.id)
+
+        if player_choice is None or opponent_choice is None:
+            if currency:
+                currency.update_balance(self.player.id, self.bet)
+                currency.update_balance(self.opponent.id, self.bet)
+            embed = base_embed(
+                title="⏰ التحدي انتهى",
+                description="حد اتأخر في الاختيار؛ رجعنا الرهان للطرفين.",
+                color=THEME["orange"],
+            )
+            return await self.publish_result(embed, interaction)
+
+        if player_choice == opponent_choice:
+            if currency:
+                currency.update_balance(self.player.id, self.bet)
+                currency.update_balance(self.opponent.id, self.bet)
+            embed = base_embed(
+                title="🤝 تعادل!",
+                description=(
+                    f"اختارتوا الاتنين **{MOVE_NAMES[player_choice]}**.\n"
+                    "رجعنا الرهان كامل للطرفين."
+                ),
+                color=THEME["grey"],
+            )
+            return await self.publish_result(embed, interaction)
+
+        if BEATS[player_choice] == opponent_choice:
+            winner, winning_move, losing_move = self.player, player_choice, opponent_choice
+        else:
+            winner, winning_move, losing_move = self.opponent, opponent_choice, player_choice
+
+        if currency:
+            try:
+                currency.update_balance(winner.id, prize)
+            except OverflowError:
+                currency.update_balance(self.player.id, self.bet)
+                currency.update_balance(self.opponent.id, self.bet)
+                embed = base_embed(
+                    title="⚠️ تعذر صرف الجائزة",
+                    description="رصيد الفائز وصل للحد الأقصى؛ رجعنا الرهان للطرفين.",
+                    color=THEME["orange"],
+                )
+                return await self.publish_result(embed, interaction)
+
+        embed = base_embed(
+            title="🏆 فايز!",
+            description=(
+                f"**{MOVE_NAMES[winning_move]}** كسبت **{MOVE_NAMES[losing_move]}**.\n\n"
+                f"🎉 الفائز: {winner.mention}\n"
+                f"💰 الجائزة: **{prize:,}** {COIN}\n"
+                f"🧾 ضريبة البنك: **{tax:,}** {COIN}"
+            ),
+            color=THEME["gold"],
+        )
+        embed.set_thumbnail(url=winner.display_avatar.url)
+        await self.publish_result(embed, interaction)
+
+    async def on_timeout(self):
+        await self.finish()
+
+    async def choose(self, interaction: discord.Interaction, move: str):
+        if self.done:
+            return await interaction.response.send_message("التحدي خلص بالفعل.", ephemeral=True)
+        if interaction.user.id not in (self.player.id, self.opponent.id):
+            return await interaction.response.send_message("مش طرف في التحدي.", ephemeral=True)
+        if interaction.user.id in self.choices:
+            return await interaction.response.send_message("اختارت خلاص!", ephemeral=True)
+
+        self.choices[interaction.user.id] = move
+        if len(self.choices) == 2:
+            return await self.finish(interaction)
+
+        await interaction.response.send_message("✅ سجلنا اختيارك بسرية.", ephemeral=True)
+        if self.message is not None:
+            await self.message.edit(embed=self.make_embed(), view=self)
+
+    @discord.ui.button(emoji="🪨", label="حجر", style=discord.ButtonStyle.secondary)
+    async def rock(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.choose(interaction, "🪨")
+
+    @discord.ui.button(emoji="📄", label="ورقة", style=discord.ButtonStyle.primary)
+    async def paper(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.choose(interaction, "📄")
+
+    @discord.ui.button(emoji="✂️", label="مقص", style=discord.ButtonStyle.danger)
+    async def scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.choose(interaction, "✂️")
+
+
+# --- COG COMMANDS ---
 class RPS(commands.Cog):
- def __init__(s,b):s.bot=b
- @commands.hybrid_command(name="حومص",aliases=["rps","حجرة","مقص"], description="تحدَّ عضوًا في حجرة ورقة مقص برهان")
- async def rps(s,ctx,bet: str=None,opp:discord.Member=None):
-  try:amt=int(re.sub(r"\D","",bet or ""))
-  except:amt=0
-  if amt<10:return await ctx.send(embed=base_embed(description=f"❌ مثال: `{ctx.prefix}حومص 100 @صاحبك` (اقل 10)",color=THEME["red_dark"]))
-  if amt>5000:return await ctx.send(embed=base_embed(description="❌ اقصى 5000!",color=THEME["red_dark"]))
-  if opp is None:return await ctx.send(embed=base_embed(description="❌ منشن خصمك!",color=THEME["red_dark"]))
-  if opp.id==ctx.author.id:return await ctx.send(embed=base_embed(description="❌ مش هتلاعب نفسك!",color=THEME["red_dark"]))
-  if opp.bot:return await ctx.send(embed=base_embed(description="❌ البوتات مابتلعبش!",color=THEME["red_dark"]))
-  cur=get_currency(s.bot)
-  if cur is None:return await ctx.send(embed=base_embed(description="❌ الفلوس واقعة! كلم نجلاوي.",color=THEME["red_dark"]))
-  if not cur.place_bet(ctx.author.id,opp.id,amt):
-   a_balance=cur.get_balance(ctx.author.id);o_balance=cur.get_balance(opp.id)
-   if a_balance<amt:return await ctx.send(embed=base_embed(description=f"❌ رصيدك **{a_balance}** محتاج **{amt}**!",color=THEME["red_dark"]))
-   if o_balance<amt:return await ctx.send(embed=base_embed(description=f"❌ {opp.mention} فلوسه ناقصة!",color=THEME["red_dark"]))
-   return await ctx.send(embed=base_embed(description="❌ الرصيد اتغير أثناء تسجيل الرهان. راجع الرصيد وحاول تاني.",color=THEME["red_dark"]))
-  v=V(ctx,ctx.author,opp,amt)
-  await ctx.send(content=f"{opp.mention} ⚔️ {ctx.author.mention} بيتحداك على **{amt}** {COIN}!",embed=v.emb(),view=v)
-async def setup(b):await b.add_cog(RPS(b))
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.hybrid_command(
+        name="حومص",
+        aliases=["rps", "حجرة", "مقص"],
+        description="تحدَّ عضوًا في حجرة ورقة مقص برهان",
+    )
+    async def rps(self, ctx, bet: str = None, opponent: discord.Member = None):
+        try:
+            amount = int(re.sub(r"\D", "", bet or ""))
+        except ValueError:
+            amount = 0
+
+        usage = f"/حومص" if ctx.interaction is not None else f"{ctx.prefix}حومص"
+        if amount < MIN_BET:
+            return await ctx.send(
+                embed=base_embed(
+                    description=f"❌ مثال: `{usage} 100 @صاحبك` (أقل رهان {MIN_BET}).",
+                    color=THEME["red_dark"],
+                )
+            )
+        if amount > MAX_BET:
+            return await ctx.send(
+                embed=base_embed(
+                    description=f"❌ أقصى رهان **{MAX_BET:,}**.",
+                    color=THEME["red_dark"],
+                )
+            )
+        if opponent is None:
+            return await ctx.send(embed=base_embed(description="❌ منشن خصمك!", color=THEME["red_dark"]))
+        if opponent.id == ctx.author.id:
+            return await ctx.send(embed=base_embed(description="❌ مش هتلاعب نفسك!", color=THEME["red_dark"]))
+        if opponent.bot:
+            return await ctx.send(embed=base_embed(description="❌ البوتات مابتلعبش!", color=THEME["red_dark"]))
+
+        currency = get_currency(self.bot)
+        if currency is None:
+            return await ctx.send(embed=base_embed(description="❌ الفلوس واقعة! كلم نجلاوي.", color=THEME["red_dark"]))
+        if not currency.place_bet(ctx.author.id, opponent.id, amount):
+            player_balance = currency.get_balance(ctx.author.id)
+            opponent_balance = currency.get_balance(opponent.id)
+            if player_balance < amount:
+                return await ctx.send(
+                    embed=base_embed(
+                        description=f"❌ رصيدك **{player_balance:,}**، محتاج **{amount:,}**.",
+                        color=THEME["red_dark"],
+                    )
+                )
+            if opponent_balance < amount:
+                return await ctx.send(
+                    embed=base_embed(
+                        description=f"❌ {opponent.mention} رصيده مش كفاية للرهان.",
+                        color=THEME["red_dark"],
+                    )
+                )
+            return await ctx.send(
+                embed=base_embed(
+                    description="❌ الرصيد اتغير أثناء تسجيل الرهان. راجع الرصيد وحاول تاني.",
+                    color=THEME["red_dark"],
+                )
+            )
+
+        view = RPSView(ctx, ctx.author, opponent, amount)
+        view.message = await ctx.send(
+            content=f"{opponent.mention} ⚔️ {ctx.author.mention} بيتحداك على **{amount:,}** {COIN}!",
+            embed=view.make_embed(),
+            view=view,
+        )
+
+
+async def setup(bot):
+    await bot.add_cog(RPS(bot))
