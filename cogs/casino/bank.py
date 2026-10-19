@@ -1,4 +1,4 @@
-# cogs/casino/bank.py
+# --- SQLITE BANK ---
 """SQLite bank: balances, daily, streaks, inventory, whitelist. Thread-safe + atomic."""
 import os
 import sqlite3
