@@ -224,7 +224,7 @@ class ChairsLobby(discord.ui.View):
         self.time_left += 10
         await interaction.response.edit_message(embed=self.get_embed())
 
-    # --- THE CORE MUSICAL CHAIRS LOGIC ---
+    # --- MUSICAL CHAIRS LOOP ---
     async def run_game_loop(self):
         try:
             active_players = self.players.copy()
@@ -304,7 +304,7 @@ class ChairsLobby(discord.ui.View):
                 round_num += 1
                 await asyncio.sleep(3) 
 
-            # --- 3. FINAL WINNER ---
+            # --- WINNER ANNOUNCEMENT ---
             if len(active_players) == 1:
                 winner = active_players[0]
                 embed = discord.Embed(
@@ -322,7 +322,7 @@ class ChairsLobby(discord.ui.View):
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
 
-# --- THE COG CLASS ---
+# --- COG COMMANDS ---
 class Chairs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
