@@ -65,7 +65,7 @@ class AIToggleView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
-    @discord.ui.button(label="Mohsen (ON)", style=discord.ButtonStyle.success, emoji="🟢")
+    @discord.ui.button(label="Mohsen (ON)", style=discord.ButtonStyle.success, emoji="🟢", custom_id="ai_enable")
     async def turn_on(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not has_admin_access(interaction.user):
             return await interaction.response.send_message("للأدمنز والأونرز بس!", ephemeral=True)
@@ -78,7 +78,7 @@ class AIToggleView(discord.ui.View):
         )
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Mohsen (Off)", style=discord.ButtonStyle.danger, emoji="🔴")
+    @discord.ui.button(label="Mohsen (Off)", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="ai_disable")
     async def turn_off(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not has_admin_access(interaction.user):
             return await interaction.response.send_message("للأدمنز والأونرز بس!", ephemeral=True)
@@ -220,4 +220,11 @@ class AI(commands.Cog):
                 print(f"AI Error: {e}")
 
 async def setup(bot):
-    await bot.add_cog(AI(bot))
+    cog = AI(bot)
+    await bot.add_cog(cog)
+    old_view = getattr(bot, "_ai_toggle_view", None)
+    if old_view is not None:
+        bot.remove_view(old_view)
+    view = AIToggleView(cog)
+    bot.add_view(view)
+    bot._ai_toggle_view = view
