@@ -1,8 +1,10 @@
+import asyncio
 import re
 
 import discord
 from discord.ext import commands
 
+from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task
 from cogs.utility.theme import THEME, WatermarkView, base_embed, get_currency
 
 COIN = "<:ckrcoin:1513743032124575784>"
@@ -55,6 +57,8 @@ class RPSView(discord.ui.View):
                 await self.ctx.send(embed=embed, view=self)
         except discord.HTTPException:
             await self.ctx.send(embed=embed, view=WatermarkView())
+        finally:
+            self.stop()
 
     async def finish(self, interaction=None):
         if self.done:
@@ -126,6 +130,21 @@ class RPSView(discord.ui.View):
     async def on_timeout(self):
         await self.finish()
 
+    async def abort(self):
+        if self.done:
+            return
+        self.done = True
+        currency = get_currency(self.ctx.bot)
+        if currency:
+            currency.update_balance(self.player.id, self.bet)
+            currency.update_balance(self.opponent.id, self.bet)
+        embed = base_embed(
+            title="🛑 التحدي اتوقف",
+            description="تم إيقاف التحدي؛ رجعنا الرهان للطرفين.",
+            color=THEME["orange"],
+        )
+        await self.publish_result(embed)
+
     async def choose(self, interaction: discord.Interaction, move: str):
         if self.done:
             return await interaction.response.send_message("التحدي خلص بالفعل.", ephemeral=True)
@@ -166,12 +185,20 @@ class RPS(commands.Cog):
         description="تحدَّ عضوًا في حجرة ورقة مقص برهان",
     )
     async def rps(self, ctx, bet: str = None, opponent: discord.Member = None):
+        if is_active_game(self.bot, ctx.channel.id):
+            return await ctx.send(
+                embed=base_embed(
+                    description="❌ فيه لعبة شغالة في الروم؛ استنوا لما تخلص.",
+                    color=THEME["red_dark"],
+                )
+            )
+
         try:
-            amount = int(re.sub(r"\D", "", bet or ""))
+            amount = int(re.sub(r"\\D", "", bet or ""))
         except ValueError:
             amount = 0
 
-        usage = f"/حومص" if ctx.interaction is not None else f"{ctx.prefix}حومص"
+        usage = "/حومص" if ctx.interaction is not None else f"{ctx.prefix}حومص"
         if amount < MIN_BET:
             return await ctx.send(
                 embed=base_embed(
@@ -221,11 +248,40 @@ class RPS(commands.Cog):
             )
 
         view = RPSView(ctx, ctx.author, opponent, amount)
-        view.message = await ctx.send(
-            content=f"{opponent.mention} ⚔️ {ctx.author.mention} بيتحداك على **{amount:,}** {COIN}!",
-            embed=view.make_embed(),
+        task = asyncio.current_task()
+        if task is None or not register_game_task(
+            self.bot,
+            ctx.channel.id,
+            task,
+            ctx.author.id,
+            "Rock Paper Scissors",
             view=view,
-        )
+        ):
+            currency.update_balance(ctx.author.id, amount)
+            currency.update_balance(opponent.id, amount)
+            return await ctx.send(
+                embed=base_embed(
+                    description="❌ فيه لعبة شغالة في الروم؛ رجعنا الرهان للطرفين.",
+                    color=THEME["red_dark"],
+                )
+            )
+
+        try:
+            view.message = await ctx.send(
+                content=f"{opponent.mention} ⚔️ {ctx.author.mention} بيتحداك على **{amount:,}** {COIN}!",
+                embed=view.make_embed(),
+                view=view,
+            )
+            await view.wait()
+        except asyncio.CancelledError:
+            await view.abort()
+            raise
+        except Exception:
+            if not view.done:
+                await view.abort()
+            raise
+        finally:
+            release_game_task(self.bot, ctx.channel.id, task)
 
 
 async def setup(bot):
