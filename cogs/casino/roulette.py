@@ -30,33 +30,34 @@ async def fetch_avatar(session, user, size=(80, 80)):
 
 async def generate_sniper_image(player):
     width, height = 800, 500
-    # Set entire background to dark grey/black
+    # --- SCENE BACKGROUND ---
     base = Image.new('RGBA', (width, height), (15, 15, 15, 255))
     draw = ImageDraw.Draw(base)
     
     cx, cy = width//2, height//2
-    radius = 180 # Slightly smaller scope to fit logo nicely
+    # --- SCOPE GEOMETRY ---
+    radius = 180
     
-    # 1. Load and place the logo INSIDE the scope
+    # --- SCOPE LOGO ---
     logo_path = os.path.join(os.getcwd(), "server_logo.png")
     if os.path.exists(logo_path):
         try:
             logo = Image.open(logo_path).convert("RGBA")
-            # Resize logo to fit inside the scope radius
+            # --- LOGO SCALING ---
             logo = logo.resize((int(radius * 1.5), int(radius * 1.5)))
             logo = logo.filter(ImageFilter.GaussianBlur(5))
-            # Paste logo centered
+            # --- LOGO POSITIONING ---
             base.paste(logo, (cx - logo.width//2, cy - logo.height//2), logo)
         except Exception as e:
             print(f"Error loading logo: {e}")
             
-    # 2. Draw Scope elements
+    # --- SCOPE DETAILS ---
     draw.ellipse((cx-radius, cy-radius, cx+radius, cy+radius), outline=(255, 50, 50, 200), width=4)
     draw.line((cx, cy-radius, cx, cy+radius), fill=(255, 50, 50, 150), width=2)
     draw.line((cx-radius, cy, cx+radius, cy), fill=(255, 50, 50, 150), width=2)
     draw.ellipse((cx-4, cy-4, cx+4, cy+4), fill=(255, 0, 0, 255))
     
-    # 3. Hunter Avatar (Bottom Left)
+    # --- HUNTER AVATAR ---
     async with aiohttp.ClientSession() as session:
         try:
             avatar = await fetch_avatar(session, player, (80, 80))
@@ -289,7 +290,7 @@ class RouletteLobby(discord.ui.View):
         await interaction.response.edit_message(embed=self.get_embed())
 
 
-    # --- THE MAIN ROULETTE LOGIC ---
+    # --- ROULETTE GAME LOOP ---
     async def run_game_loop(self):
         try:
             active_players = self.players.copy()
@@ -329,7 +330,7 @@ class RouletteLobby(discord.ui.View):
                     for kid in view.kicked_ids:
                         p = next((x for x in active_players if x.id == kid), None)
                         if p:
-                            # 🛡️ SHIELD CHECK LOGIC
+                            # --- SHIELD RESOLUTION ---
                             if currency_cog and currency_cog.get_item_count(p.id, "shield") > 0:
                                 currency_cog.remove_item(p.id, "shield", 1)
                                 embed = discord.Embed(
@@ -344,7 +345,7 @@ class RouletteLobby(discord.ui.View):
                                     kicked_players.append(chosen_player)
                                     attacker_died = True
                             else:
-                                # 💉 ROULETTE INSURANCE: survive a shot once
+                                # --- INSURANCE RESOLUTION ---
                                 if currency_cog and currency_cog.get_item_count(p.id, "roulette_ins") > 0:
                                     currency_cog.remove_item(p.id, "roulette_ins", 1)
                                     embed = discord.Embed(
@@ -355,7 +356,7 @@ class RouletteLobby(discord.ui.View):
                                     continue
                                 kicked_players.append(p)
                                 
-                # Remove duplicates if attacker killed themselves twice somehow
+                # --- DUPLICATE ELIMINATION GUARD ---
                 kicked_players = list(set(kicked_players))
                 
                 if kicked_players:
@@ -386,7 +387,7 @@ class RouletteLobby(discord.ui.View):
                 round_num += 1
                 await asyncio.sleep(4)
 
-            # WINNER
+            # --- WINNER RESOLUTION ---
             if len(active_players) == 1:
                 winner = active_players[0]
                 final_embed = discord.Embed(
@@ -414,7 +415,7 @@ class RouletteLobby(discord.ui.View):
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
 
-# --- THE COG CLASS ---
+# --- COG COMMANDS ---
 class Roulette(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
