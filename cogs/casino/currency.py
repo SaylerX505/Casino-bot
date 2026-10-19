@@ -118,7 +118,7 @@ class ShopDropdown(discord.ui.Select):
 
 class ShopView(discord.ui.View):
     def __init__(self, cog):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)
         self.add_item(ShopDropdown(cog))
 
 class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
@@ -249,7 +249,7 @@ class AdminActionModal(discord.ui.Modal):
 
 class AdminActionView(discord.ui.View):
     def __init__(self, cog):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)
         self.cog = cog
         
     @discord.ui.button(label="Add Coins", style=discord.ButtonStyle.success)
@@ -510,4 +510,9 @@ class Currency(commands.Cog):
 async def setup(bot):
     cog = Currency(bot)
     await bot.add_cog(cog)
-    bot.add_view(CurrencyHubView(cog))
+    old_view = getattr(bot, "_currency_hub_view", None)
+    if old_view is not None:
+        bot.remove_view(old_view)
+    view = CurrencyHubView(cog)
+    bot.add_view(view)
+    bot._currency_hub_view = view
