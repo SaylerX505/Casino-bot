@@ -105,14 +105,15 @@ class KickSelect(discord.ui.Select):
             return await interaction.response.send_message(embed=embed, ephemeral=True)
             
         self.view.kicked_ids.append(selected_id)
-        
+
         if self.view.double_shot_active and len(self.view.kicked_ids) < 2:
             embed = discord.Embed(
                 description="✅ تم تحديد الضحية الأولى! اختار الشخص التاني بسرعة.",
                 color=discord.Color.green()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
+        await interaction.response.send_message("✅ تم اعتماد اختيارك.", ephemeral=True)
         self.view.stop()
 
 class KickView(discord.ui.View):
