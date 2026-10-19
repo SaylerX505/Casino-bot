@@ -691,7 +691,7 @@ async def run_mafia_game(ctx, players):
             day_number += 1
             
     except asyncio.CancelledError:
-        pass
+        raise
     finally:
         release_game_task(ctx.bot, ctx.channel.id, asyncio.current_task())
 
