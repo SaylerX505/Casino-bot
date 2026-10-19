@@ -710,7 +710,7 @@ class Mafia(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name='مافيا')
+    @commands.hybrid_command(name='مافيا', description='بدء لعبة المافيا')
     @is_staff_or_owner()
     async def start_mafia(self, ctx):
         """يبدأ لعبة المافيا في الحفرة"""
