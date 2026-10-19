@@ -327,7 +327,7 @@ class Chairs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name='كراسي')
+    @commands.hybrid_command(name='كراسي', description='بدء لعبة الكراسي الموسيقية')
     @is_staff_or_owner()
     async def start_chairs(self, ctx):
         """يبدأ لعبة الكراسي الموسيقية"""
