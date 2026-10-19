@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
 from PIL import Image, ImageDraw
 import io
@@ -414,7 +414,9 @@ async def run_mafia_game(ctx, players):
             description="🎲 **تم توزيع الأدوار!** اضغط على الزرار عشان تعرف دورك ايه في السر.",
             color=discord.Color.blurple()
         )
-        await ctx.send(embed=embed, view=RoleRevealView())
+        reveal_view = RoleRevealView()
+        reveal_view.message = await ctx.send(embed=embed, view=reveal_view)
+        set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), reveal_view)
         await asyncio.sleep(5) 
         
         day_number = 1
@@ -449,8 +451,10 @@ async def run_mafia_game(ctx, players):
                     m_embed.set_image(url="attachment://mafia_looking.jpg")
                     
                     m_msg = await ctx.send(embed=m_embed, file=mafia_file, view=m_view)
+                    m_view.message = m_msg
+                    set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), m_view)
                     ctx.bot.loop.create_task(poke_reminder(hitman, "mafia", m_view))
-                    
+
                     await m_view.wait()
                     mafia_target_id = m_view.selected_id
                     
@@ -489,8 +493,10 @@ async def run_mafia_game(ctx, players):
                     d_embed.set_image(url="attachment://doctor_looking.jpg")
                     
                     d_msg = await ctx.send(embed=d_embed, file=doc_file, view=d_view)
+                    d_view.message = d_msg
+                    set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), d_view)
                     ctx.bot.loop.create_task(poke_reminder(doctor, "doctor", d_view))
-                    
+
                     await d_view.wait()
                     doctor_target_id = d_view.selected_id
 
@@ -584,7 +590,8 @@ async def run_mafia_game(ctx, players):
             )
             vote_view = DayVoteView(alive)
             vote_msg = await ctx.send(embed=embed, view=vote_view)
-            
+            vote_view.message = vote_msg
+            set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), vote_view)
             await vote_view.wait() 
             
             for c in vote_view.children: c.disabled = True
