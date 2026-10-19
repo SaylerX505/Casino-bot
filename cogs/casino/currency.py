@@ -46,7 +46,7 @@ def fmt(n) -> str:
     return bank.fmt(n)
 
 # --- UI VIEWS ---
-class BuyForm(discord.ui.Modal, title="Purchase Item"):
+class BuyForm(discord.ui.Modal, title="شراء غرض"):
     def __init__(self, cog, item_id, price, item_name):
         super().__init__()
         self.cog = cog
@@ -54,8 +54,8 @@ class BuyForm(discord.ui.Modal, title="Purchase Item"):
         self.price = price
         self.item_name = item_name
         self.add_item(discord.ui.TextInput(
-            label="Quantity", 
-            placeholder="Enter the number of items you want...", 
+            label="الكمية", 
+            placeholder="اكتب عدد القطع...", 
             required=True
         ))
         
@@ -64,14 +64,14 @@ class BuyForm(discord.ui.Modal, title="Purchase Item"):
             quantity = int(self.children[0].value.strip())
         except ValueError:
             embed = discord.Embed(
-                description="❌ Please enter a valid number for quantity.",
+                description="❌ اكتب رقم صحيح للكمية.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
             
         if quantity <= 0:
             embed = discord.Embed(
-                description="❌ Quantity must be at least 1.",
+                description="❌ الكمية لازم تكون 1 على الأقل.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -83,15 +83,15 @@ class BuyForm(discord.ui.Modal, title="Purchase Item"):
         if not purchased:
             embed = discord.Embed(
                 description=(
-                    f"❌ Insufficient balance! Your balance is {fmt(balance_after)} "
+                    f"❌ رصيدك الحالي {fmt(balance_after)} "
                     f"{COIN_EMOJI}; you need {fmt(total_cost)} for "
-                    f"{quantity}x {self.item_name}."
+                    f"{quantity} × {self.item_name}."
                 ),
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         embed = discord.Embed(
-            description=f"✅ Success! You bought **{quantity}x {self.item_name}** for {fmt(total_cost)} {COIN_EMOJI}.\n\nYour new balance is **{fmt(self.cog.get_balance(interaction.user.id))} {COIN_EMOJI}**.",
+            description=f"✅ اشتريت **{quantity} × {self.item_name}** بمبلغ {fmt(total_cost)} {COIN_EMOJI}.\n\nرصيدك الجديد **{fmt(self.cog.get_balance(interaction.user.id))} {COIN_EMOJI}**.",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -110,7 +110,7 @@ class ShopDropdown(discord.ui.Select):
             discord.SelectOption(label="تذكرة حظ 🎟️", description="120 | اكسب لحد 150 (+استخدم تذكرة)", value="luck_ticket", emoji="🎟️"),
             discord.SelectOption(label="صندوق حظ 🎁", description="250 | اكسب لحد 400 (+استخدم صندوق)", value="loot_box", emoji="🎁"),
         ]
-        super().__init__(placeholder="اختار صنف من دكان الحفرة... 🛒", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder="اختار غرض من دكان الحفرة... 🛒", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         v = self.values[0]
@@ -125,8 +125,8 @@ class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
     def __init__(self, cog):
         super().__init__()
         self.cog = cog
-        self.target = discord.ui.TextInput(label="User ID or Mention", placeholder="e.g., 1234567890", required=True)
-        self.amount = discord.ui.TextInput(label="Amount", placeholder="100", required=True)
+        self.target = discord.ui.TextInput(label="العضو أو المنشن", placeholder="مثال: @عضو", required=True)
+        self.amount = discord.ui.TextInput(label="المبلغ", placeholder="100", required=True)
         self.add_item(self.target)
         self.add_item(self.amount)
 
@@ -134,13 +134,13 @@ class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
         try: amt = int(self.amount.value.strip())
         except:
             embed = discord.Embed(
-                description="❌ The amount must be a number!",
+                description="❌ المبلغ لازم يكون رقم صحيح.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         if amt <= 0:
             embed = discord.Embed(
-                description="❌ The amount must be greater than zero!",
+                description="❌ المبلغ لازم يكون أكبر من صفر.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -148,7 +148,7 @@ class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
         nums = re.findall(r'\d+', self.target.value)
         if not nums:
             embed = discord.Embed(
-                description="❌ Invalid ID or mention!",
+                description="❌ منشن العضو أو الـID غير صحيح.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -156,7 +156,7 @@ class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
         
         if target_id == interaction.user.id:
             embed = discord.Embed(
-                description="❌ You cannot transfer coins to yourself!",
+                description="❌ مينفعش تحول لنفسك.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -164,12 +164,12 @@ class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
         transferred, balance_after = bank.transfer_balance(interaction.user.id, target_id, amt)
         if not transferred:
             embed = discord.Embed(
-                description=f"❌ Insufficient balance! Your balance is {fmt(balance_after)} {COIN_EMOJI}.",
+                description=f"❌ رصيدك مش كفاية. رصيدك الحالي {fmt(balance_after)} {COIN_EMOJI}.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         embed = discord.Embed(
-            description=f"✅ Successfully transferred **{fmt(amt)}** {COIN_EMOJI} to <@{target_id}>!",
+            description=f"✅ تم تحويل **{fmt(amt)}** {COIN_EMOJI} إلى <@{target_id}> بنجاح.",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -177,21 +177,21 @@ class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
 
 class AdminActionModal(discord.ui.Modal):
     def __init__(self, cog, action):
-        titles = {"add": "➕ Add Balance", "remove": "➖ Remove Balance", "reset": "⚠️ Reset Balance"}
+        titles = {"add": "➕ إضافة رصيد", "remove": "➖ خصم رصيد", "reset": "⚠️ تصفير الرصيد"}
         super().__init__(title=titles[action])
         self.cog = cog
         self.action = action
-        self.target = discord.ui.TextInput(label="User ID", required=True)
+        self.target = discord.ui.TextInput(label="ID العضو", required=True)
         self.add_item(self.target)
         if action != "reset":
-            self.amount = discord.ui.TextInput(label="Amount", required=True)
+            self.amount = discord.ui.TextInput(label="المبلغ", required=True)
             self.add_item(self.amount)
 
     async def on_submit(self, interaction: discord.Interaction):
         nums = re.findall(r'\d+', self.target.value)
         if not nums:
             embed = discord.Embed(
-                description="❌ Invalid ID!",
+                description="❌ الـID غير صحيح.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -208,14 +208,14 @@ class AdminActionModal(discord.ui.Modal):
         try: amt = int(self.amount.value)
         except:
             embed = discord.Embed(
-                description="❌ Amount must be a number!",
+                description="❌ المبلغ لازم يكون رقم صحيح.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
             
         if amt <= 0:
             embed = discord.Embed(
-                description="❌ Amount must be greater than zero!",
+                description="❌ المبلغ لازم يكون أكبر من صفر.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -224,12 +224,12 @@ class AdminActionModal(discord.ui.Modal):
             credited, balance_after = bank.credit_balance(target_id, amt)
             if not credited:
                 embed = discord.Embed(
-                    description="❌ The amount would exceed the supported account balance range.",
+                    description="❌ المبلغ أكبر من الحد المدعوم للرصيد.",
                     color=discord.Color.red()
                 )
                 return await interaction.response.send_message(embed=embed, ephemeral=True)
             embed = discord.Embed(
-                description=f"✅ Added {fmt(amt)} to <@{target_id}>. New balance: {fmt(balance_after)} {COIN_EMOJI}.",
+                description=f"✅ أضفنا {fmt(amt)} إلى <@{target_id}>. الرصيد الجديد: {fmt(balance_after)} {COIN_EMOJI}.",
                 color=discord.Color.green()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -237,12 +237,12 @@ class AdminActionModal(discord.ui.Modal):
             removed, balance_after = bank.remove_balance(target_id, amt)
             if not removed:
                 embed = discord.Embed(
-                    description=f"❌ Cannot remove {fmt(amt)}; the account only has {fmt(balance_after)} {COIN_EMOJI}.",
+                    description=f"❌ مينفعش تخصم {fmt(amt)}؛ الرصيد الحالي {fmt(balance_after)} {COIN_EMOJI}.",
                     color=discord.Color.red()
                 )
                 return await interaction.response.send_message(embed=embed, ephemeral=True)
             embed = discord.Embed(
-                description=f"✅ Removed {fmt(amt)} from <@{target_id}>",
+                description=f"✅ تم خصم {fmt(amt)} من <@{target_id}>",
                 color=discord.Color.green()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -252,11 +252,11 @@ class AdminActionView(discord.ui.View):
         super().__init__(timeout=180)
         self.cog = cog
         
-    @discord.ui.button(label="Add Coins", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="إضافة عملات", style=discord.ButtonStyle.success)
     async def add_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "add"))
-    @discord.ui.button(label="Remove Coins", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="خصم عملات", style=discord.ButtonStyle.danger)
     async def rem_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "remove"))
-    @discord.ui.button(label="Reset", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="تصفير", style=discord.ButtonStyle.secondary)
     async def res_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "reset"))
 
 class CurrencyHubView(discord.ui.View):
@@ -277,7 +277,7 @@ class CurrencyHubView(discord.ui.View):
             if admin_button is not None:
                 self.remove_item(admin_button)
         
-    @discord.ui.button(label="Daily", style=discord.ButtonStyle.success, emoji="🎁", custom_id="hub_daily")
+    @discord.ui.button(label="اليومية", style=discord.ButtonStyle.success, emoji="🎁", custom_id="hub_daily")
     async def daily_btn(self, interaction, button):
         now = bank.now()
         claim = bank.claim_daily(interaction.user.id, now, random.randint(20, 45))
@@ -289,7 +289,7 @@ class CurrencyHubView(discord.ui.View):
                 )
             next_available_time = int(claim["last_daily"] + 86400)
             embed = discord.Embed(
-                description=f"❌ You already claimed it! Come back <t:{next_available_time}:R>",
+                description=f"❌ أخدت اليومية بالفعل! ارجع <t:{next_available_time}:R>",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -302,26 +302,26 @@ class CurrencyHubView(discord.ui.View):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="Top", style=discord.ButtonStyle.secondary, emoji="🏆", custom_id="hub_top")
+    @discord.ui.button(label="الأغنى", style=discord.ButtonStyle.secondary, emoji="🏆", custom_id="hub_top")
     async def top_btn(self, interaction, button):
         srt = bank.top_balances(10)
         desc = "\n".join([f"**#{i+1}** <@{u}> ➔ **{fmt(b)}** {COIN_EMOJI}" for i, (u, b) in enumerate(srt)])
         embed = discord.Embed(
-            title="🏆 Leaderboard",
-            description=desc or "The vault is empty!",
+            title="🏆 أغنى الأعضاء",
+            description=desc or "الخزنة فاضية لسه!",
             color=discord.Color.gold()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
-    @discord.ui.button(label="Shop", style=discord.ButtonStyle.primary, emoji="🛒", custom_id="hub_shop")
+    @discord.ui.button(label="المتجر", style=discord.ButtonStyle.primary, emoji="🛒", custom_id="hub_shop")
     async def shop_btn(self, interaction, button):
         await interaction.response.send_message(view=ShopView(self.cog), ephemeral=True)
 
-    @discord.ui.button(label="Transfer", style=discord.ButtonStyle.primary, emoji="💸", custom_id="hub_transfer")
+    @discord.ui.button(label="تحويل", style=discord.ButtonStyle.primary, emoji="💸", custom_id="hub_transfer")
     async def transfer_btn(self, interaction, button):
         await interaction.response.send_modal(TransferModal(self.cog))
         
-    @discord.ui.button(label="Admin Panel", style=discord.ButtonStyle.danger, emoji="⚙️", custom_id="hub_admin")
+    @discord.ui.button(label="إدارة البنك", style=discord.ButtonStyle.danger, emoji="⚙️", custom_id="hub_admin")
     async def admin_btn(self, interaction, button):
         if not self.cog.check_whitelist(interaction.user):
             embed = discord.Embed(
@@ -329,7 +329,7 @@ class CurrencyHubView(discord.ui.View):
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
-        await interaction.response.send_message("Admin Tools:", view=AdminActionView(self.cog), ephemeral=True)
+        await interaction.response.send_message("لوحة إدارة البنك:", view=AdminActionView(self.cog), ephemeral=True)
 
 # --- CURRENCY COG ---
 class Currency(commands.Cog):
@@ -407,8 +407,8 @@ class Currency(commands.Cog):
     async def balance(self, ctx):
         bal = self.get_balance(ctx.author.id)
         embed = discord.Embed(
-            title="💳 Bank Account",
-            description=f"Your current balance is:\n**{fmt(bal)}** {COIN_EMOJI}\n\nUse the buttons below to manage your account.",
+            title="🏦 خزنة الحفرة",
+            description=f"رصيدك الحالي:\n**{fmt(bal)}** {COIN_EMOJI}\n\nاستخدم الأزرار لإدارة عملاتك.",
             color=discord.Color.blue()
         )
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
@@ -418,7 +418,7 @@ class Currency(commands.Cog):
     async def inventory(self, ctx):
         inv = self.get_inventory(ctx.author.id)
         embed = discord.Embed(
-            title=f"🎒 {ctx.author.display_name}'s Inventory",
+            title=f"🎒 شنطة {ctx.author.display_name}",
             color=discord.Color.dark_purple()
         )
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
@@ -434,7 +434,7 @@ class Currency(commands.Cog):
             _c = inv.get(_k, 0)
             if _c > 0: desc += f"{_label} {_c}\n"
         
-        embed.description = desc if desc else "Your inventory is empty!"
+        embed.description = desc if desc else "شنطتك فاضية!"
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='بروفايل', aliases=['profile', 'me', 'انا'], description='عرض بروفايلك أو بروفايل عضو')
