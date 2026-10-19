@@ -1,11 +1,11 @@
-# config.py
+# --- CONFIGURATION ---
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Core Settings 
-# Secrets are loaded from .env
+# --- CORE SETTINGS --- 
+# --- ENVIRONMENT SECRETS ---
 TOKEN = os.getenv("DISCORD_TOKEN", "")
 PREFIX = "+"
 OWNER_IDS = {1265049672024854559, 798280308071596063}
@@ -13,23 +13,22 @@ NEGLAWY_ID = 798280308071596063  # المطور
 BRAND = "Çukur"
 REMBG_API_KEY = os.getenv("REMBG_API_KEY", "")
 
-# AI Settings
+# --- AI SETTINGS ---
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
-# Staff Roles
-# allowed to host games
+# --- STAFF GAME ACCESS ---
 STAFF_ROLE_IDS = [
     1528494324805927114,  
 ]
 
-# Emojis
+# --- UI EMOJIS ---
 EMOJIS = {
     "check": "<:check:1511996429630181458>",
     "cross": "<:cross:1512824131232465076>",
     "ping": "<:ping:1511997619042517013>",
 }
 
-# Logging Channels
+# --- LOGGING CHANNELS ---
 LOG_CHANNELS = {
     "command_errors": 1486822134109180049,
 }
