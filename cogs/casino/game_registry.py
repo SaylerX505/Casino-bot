@@ -70,6 +70,8 @@ def register_game_task(bot, channel_id, task, host_id, name, *, replace_task=Non
     entry = {"task": task, "host_id": host_id, "name": name}
     if view is not None:
         entry["view"] = view
+    elif replace_task is not None and current is not None and current.get("view") is not None:
+        entry["view"] = current["view"]
     games[channel_id] = entry
     task.add_done_callback(
         lambda completed: release_game_task(bot, channel_id, completed)
