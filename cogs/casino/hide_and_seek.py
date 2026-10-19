@@ -8,6 +8,7 @@ import random
 import config
 
 from cogs.casino.permissions import is_staff_or_owner
+from cogs.utility.theme import lobby_embed
 
 
 class WatermarkView(discord.ui.View):
@@ -151,12 +152,14 @@ class LobbyView(discord.ui.View):
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
-        player_list = "\n".join([f"• {p.mention}" for p in self.players]) if self.players else "في انتظار اللاعبين..."
-        embed = discord.Embed(
-            title="🙈 غميضة الحفرة",
-            description=f"الخريطة كبيرة واللي هيتمسك هيتطرد بره الحفرة.\n\n⏳ اللعبة هتبدأ بعد **{self.time_left}** ثواني...\n\n**اللاعبين ({len(self.players)}/25):**\n{player_list}",
-            color=discord.Color.dark_gray()
+        embed = lobby_embed(
+            "🙈 غميضة الحفرة",
+            "الخريطة كبيرة واللي هيتمسك هيتطرد بره الحفرة.",
+            self.players,
+            self.time_left,
+            max_players=25,
         )
+        embed.color = discord.Color.dark_gray()
         embed.set_thumbnail(url=SERVER_LOGO_URL)
         return embed
 
