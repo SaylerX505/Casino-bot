@@ -17,6 +17,27 @@ def t(text: str) -> str:
     return f".ᐟ {text} .ᐟ"
 
 
+SLASH_COMMANDS = {
+    "مساعدة": "help",
+    "رصيد": "bal",
+    "شنطتي": "inv",
+    "بروفايل [@عضو]": "بروفايل",
+    "استخدم صندوق أو تذكرة": "استخدم",
+    "حومص 100 @عضو": "حومص",
+    "فزورة": "فزورة",
+    "اكشف": "اكشف",
+    "مافيا": "مافيا",
+    "روليت": "روليت",
+    "غميضه": "غميضه",
+    "جيو": "جيو",
+    "كراسي": "كراسي",
+    "عجلة": "عجلة",
+    "ايقاف": "stop",
+    "ai": "ai",
+    "bankreset": "bankreset",
+}
+
+
 HELP_PAGES = {
     "member": {
         "title": "👤 أوامر الأعضاء",
@@ -187,11 +208,15 @@ class HelpPageView(LayoutView):
         fields = page["fields"]
         for index in range(0, len(fields), 3):
             entries = fields[index:index + 3]
-            block = "\n\n".join(
-                f"**`{config.PREFIX}{name}`**\n{description}"
-                for name, description in entries
-            )
-            container.add_item(TextDisplay(block))
+            lines = []
+            for name, description in entries:
+                primary = name.split(" / ")[0].strip()
+                lines.append(
+                    f"**`{config.PREFIX}{primary}`**"
+                    + (f" · **`/{SLASH_COMMANDS[primary]}`**" if primary in SLASH_COMMANDS else "")
+                    + f"\n{description}"
+                )
+            container.add_item(TextDisplay("\n\n".join(lines)))
 
         row = ActionRow()
         back = discord.ui.Button(
