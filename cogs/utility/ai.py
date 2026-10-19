@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 import aiohttp
 import config
+from cogs.casino.permissions import has_admin_access, is_admin_or_owner
 import json
 import os
 
@@ -66,7 +67,7 @@ class AIToggleView(discord.ui.View):
 
     @discord.ui.button(label="Mohsen (ON)", style=discord.ButtonStyle.success, emoji="🟢")
     async def turn_on(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not (interaction.user.guild_permissions.administrator or interaction.user.id in config.OWNER_IDS):
+        if not has_admin_access(interaction.user):
             return await interaction.response.send_message("للأدمنز والأونرز بس!", ephemeral=True)
             
         self.cog.data["ai_enabled"] = True
@@ -79,7 +80,7 @@ class AIToggleView(discord.ui.View):
 
     @discord.ui.button(label="Mohsen (Off)", style=discord.ButtonStyle.danger, emoji="🔴")
     async def turn_off(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not (interaction.user.guild_permissions.administrator or interaction.user.id in config.OWNER_IDS):
+        if not has_admin_access(interaction.user):
             return await interaction.response.send_message("للأدمنز والأونرز بس!", ephemeral=True)
             
         self.cog.data["ai_enabled"] = False
@@ -97,6 +98,7 @@ class AI(commands.Cog):
         self.data = load_ai_data()
 
     @commands.command(name="ai", aliases=["محسن", "ذكاء"])
+    @is_admin_or_owner()
     async def toggle_ai(self, ctx):
         """تحكم في تشغيل أو إيقاف الذكاء الاصطناعي (محسن)"""
         status = "شغال 🟢" if self.data["ai_enabled"] else "متوقف 🔴"
