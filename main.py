@@ -32,11 +32,13 @@ async def on_ready():
     except Exception as e:
         print(f"⚠️ Presence failed: {e}")
     
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash command(s)")
-    except Exception as e:
-        print(f"❌ Failed to sync slash commands: {e}")
+    if not getattr(bot, "_slash_commands_synced", False):
+        try:
+            synced = await bot.tree.sync()
+            bot._slash_commands_synced = True
+            print(f"✅ Synced {len(synced)} slash command(s)")
+        except Exception as e:
+            print(f"❌ Failed to sync slash commands: {e}")
 
 @bot.event
 async def on_command_error(ctx, error):
