@@ -1,7 +1,9 @@
 import discord
+import os
+import time
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Container, LayoutView, Separator, TextDisplay
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
 
@@ -18,6 +20,85 @@ class AdminResult(LayoutView):
             )
         )
 
+
+class BankResetConfirmPanel(LayoutView):
+    def __init__(self, requester_id: int, guild_id: int):
+        super().__init__(timeout=60)
+        self.requester_id = requester_id
+        self.guild_id = guild_id
+        container = Container(
+            TextDisplay(
+                "# ⚠️ تصفير الاقتصاد\\n"
+                "العملية هتمسح أرصدة الأعضاء وأغراضهم. هنحفظ نسخة احتياطية قبل التصفير."
+            ),
+            Separator(),
+            accent_color=0x8B1E1E,
+        )
+        row = ActionRow()
+        confirm = discord.ui.Button(
+            label="تأكيد التصفير",
+            style=discord.ButtonStyle.danger,
+            custom_id="admin_bank_reset_confirm",
+        )
+        confirm.callback = self.confirm_reset
+        cancel = discord.ui.Button(
+            label="إلغاء",
+            style=discord.ButtonStyle.secondary,
+            custom_id="admin_bank_reset_cancel",
+        )
+        cancel.callback = self.cancel_reset
+        row.add_item(confirm)
+        row.add_item(cancel)
+        container.add_item(row)
+        self.add_item(container)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.requester_id:
+            await interaction.response.send_message(
+                view=AdminResult("تأكيد خاص", "صاحب الطلب فقط يقدر يؤكد العملية.", False),
+                ephemeral=True,
+            )
+            return False
+        if interaction.guild_id != self.guild_id or not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                view=AdminResult("صلاحية غير كافية", "لازم تكون Administrator في نفس السيرفر.", False),
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def confirm_reset(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            os.makedirs(os.path.join("data", "backups"), exist_ok=True)
+            backup_path = os.path.join(
+                "data",
+                "backups",
+                f"bank-reset-{self.guild_id}-{time.time_ns()}.db",
+            )
+            bank.backup_database(backup_path)
+            bank.reset_all()
+        except Exception:
+            await interaction.edit_original_response(
+                view=AdminResult("فشل التصفير", "ماقدرناش نكمل العملية. راجع سجل الأخطاء.", False),
+            )
+            raise
+
+        await interaction.edit_original_response(
+            view=AdminResult("تم تصفير الاقتصاد", f"اتحفظت نسخة احتياطية قبل التصفير: `{os.path.basename(backup_path)}`."),
+        )
+        self.stop()
+
+    async def cancel_reset(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(
+            view=AdminResult("تم الإلغاء", "مفيش أي بيانات اتغيرت."),
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        for item in self.walk_children():
+            if hasattr(item, "disabled"):
+                item.disabled = True
 
 class AdminCommands(commands.Cog):
     admin = app_commands.Group(
@@ -168,6 +249,14 @@ class AdminCommands(commands.Cog):
             ephemeral=True,
         )
 
+    @admin.command(name="bank-reset", description="تصفير الاقتصاد بعد تأكيد ونسخة احتياطية")
+    async def bank_reset(self, interaction: discord.Interaction):
+        if not await self._require_admin(interaction):
+            return
+        await interaction.response.send_message(
+            view=BankResetConfirmPanel(interaction.user.id, interaction.guild_id),
+            ephemeral=True,
+        )
     @admin.command(name="status", description="عرض حالة البوت وأدمنز البوت")
     async def admin_status(self, interaction: discord.Interaction):
         if not await self._require_admin(interaction):
