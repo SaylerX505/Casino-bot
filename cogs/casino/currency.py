@@ -136,11 +136,22 @@ class ShopDropdown(discord.ui.Select):
         )
 
 
-class ShopView(discord.ui.View):
+class ShopView(LayoutView):
     def __init__(self, cog):
         super().__init__(timeout=180)
-        self.add_item(ShopDropdown(cog))
-
+        container = Container(
+            TextDisplay(
+                "# 🛒 دكان الحفرة\\n"
+                "اختار الغرض اللي محتاجه، راجع سعره، وحدد الكمية قبل الشراء.\\n"
+                "عملية الشراء بتتأكد من الرصيد وتضيف الغرض بشكل ذري."
+            ),
+            Separator(),
+            accent_color=config.EMBED_COLOR,
+        )
+        row = ActionRow()
+        row.add_item(ShopDropdown(cog))
+        container.add_item(row)
+        self.add_item(container)
 
 class InventoryView(LayoutView):
     def __init__(self, cog, owner, category="all", notice=None):
