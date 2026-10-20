@@ -500,9 +500,7 @@ class CurrencyHubLayout(LayoutView):
         container.add_item(first_row)
 
         second_row = ActionRow()
-        self._add_button(second_row, "تحويل", "💸", discord.ButtonStyle.primary, "hubv2_transfer", self.transfer_btn)
-        if requester is None or cog.check_whitelist(requester):
-            self._add_button(second_row, "إدارة البنك", "⚙️", discord.ButtonStyle.danger, "hubv2_admin", self.admin_btn)
+        self._add_button(second_row, "تحويل", "💸", discord.ButtonStyle.secondary, "hubv2_transfer", self.transfer_btn)
         container.add_item(second_row)
         self.add_item(container)
 
