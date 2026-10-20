@@ -144,7 +144,7 @@ class SecretButtonView(discord.ui.View):
         self.selected_id = None
         
         btn_label = "🔪 افتح قايمة الاغتيال" if role_name == "mafia" else "💉 افتح شنطة الإسعافات"
-        btn_style = discord.ButtonStyle.danger if role_name == "mafia" else discord.ButtonStyle.success
+        btn_style = discord.ButtonStyle.secondary if role_name == "mafia" else discord.ButtonStyle.secondary
         
         btn = discord.ui.Button(label=btn_label, style=btn_style)
         btn.callback = self.btn_callback
