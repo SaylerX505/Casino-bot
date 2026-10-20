@@ -5,7 +5,7 @@ import asyncio
 import random
 import config
 
-from cogs.casino.permissions import is_staff_or_owner
+from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import lobby_embed, result_embed
 
 
@@ -330,7 +330,7 @@ class Chairs(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='كراسي', description='بدء لعبة الكراسي الموسيقية')
-    @is_staff_or_owner()
+    @is_staff_or_admin()
     async def start_chairs(self, ctx):
         """يبدأ لعبة الكراسي الموسيقية"""
         if is_active_game(self.bot, ctx.channel.id):
