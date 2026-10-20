@@ -42,7 +42,7 @@ class InventoryViewTests(unittest.TestCase):
     def button(self, custom_id):
         return next(
             child
-            for child in self.view.children
+            for child in self.view.walk_children()
             if getattr(child, "custom_id", None) == custom_id
         )
 
@@ -52,7 +52,7 @@ class InventoryViewTests(unittest.TestCase):
         self.assertIn("طلقة مزدوجة", embed.description)
         self.assertIn("السعر في المتجر", embed.description)
         self.assertIn("صندوق حظ", embed.description)
-        self.assertIn("175", embed.fields[0].value)
+        self.assertIn("175", embed.description)
 
     def test_category_filter_separates_tools_from_consumables(self):
         self.view.category = "consumables"
