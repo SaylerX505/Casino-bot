@@ -313,74 +313,84 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
         self.add_item(self.amount)
 
     async def on_submit(self, interaction: discord.Interaction):
-        try: amt = int(self.amount.value.strip())
-        except:
-            embed = discord.Embed(
-                description="❌ المبلغ لازم يكون رقم صحيح.",
-                color=discord.Color.red()
+        try:
+            amount = int(self.amount.value.strip())
+        except ValueError:
+            return await interaction.response.send_message(
+                view=StatusPanel("مبلغ غير صالح", "اكتب مبلغًا صحيحًا أكبر من صفر.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        if amt <= 0:
-            embed = discord.Embed(
-                description="❌ المبلغ لازم يكون أكبر من صفر.",
-                color=discord.Color.red()
+
+        if amount <= 0:
+            return await interaction.response.send_message(
+                view=StatusPanel("مبلغ غير صالح", "المبلغ لازم يكون أكبر من صفر.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
+
         target_text = self.target.value.strip()
-        match = re.fullmatch(r"<@!?(\d{17,20})>|(\d{17,20})", target_text)
+        match = re.fullmatch(r"<@!?(\\d{17,20})>|(\\d{17,20})", target_text)
         if match is None:
             return await interaction.response.send_message(
-                "❌ منشن عضو من السيرفر أو اكتب الـID الصحيح.",
+                view=StatusPanel("مستلم غير صالح", "منشن عضوًا من السيرفر أو اكتب الـID الصحيح.", "warning"),
                 ephemeral=True,
             )
         target_id = int(match.group(1) or match.group(2))
-
-        if interaction.guild is None:
+        guild = interaction.guild
+        if guild is None:
             return await interaction.response.send_message(
-                "❌ التحويل متاح داخل السيرفر فقط.",
+                view=StatusPanel("التحويل غير متاح", "التحويل متاح داخل السيرفر فقط.", "warning"),
                 ephemeral=True,
             )
         if target_id == interaction.user.id:
             return await interaction.response.send_message(
-                "❌ مينفعش تحول لنفسك.",
+                view=StatusPanel("تحويل غير صالح", "مينفعش تحول لنفسك.", "warning"),
                 ephemeral=True,
             )
 
-        recipient = interaction.guild.get_member(target_id)
+        recipient = guild.get_member(target_id)
         if recipient is None:
             try:
-                recipient = await interaction.guild.fetch_member(target_id)
+                recipient = await guild.fetch_member(target_id)
             except discord.NotFound:
                 return await interaction.response.send_message(
-                    "❌ العضو ده مش موجود في السيرفر.",
+                    view=StatusPanel("المستلم غير موجود", "العضو ده مش موجود في السيرفر.", "warning"),
                     ephemeral=True,
                 )
             except discord.HTTPException:
                 return await interaction.response.send_message(
-                    "❌ مقدرناش نتحقق من العضو دلوقتي. حاول تاني.",
+                    view=StatusPanel("تعذر التحقق", "مقدرناش نتحقق من العضو دلوقتي. حاول تاني.", "warning"),
                     ephemeral=True,
                 )
         if recipient.bot:
             return await interaction.response.send_message(
-                "❌ التحويل لحسابات البوتات غير متاح.",
+                view=StatusPanel("تحويل غير متاح", "التحويل لحسابات البوتات غير متاح.", "warning"),
                 ephemeral=True,
             )
 
-        transferred, balance_after = bank.transfer_balance(interaction.user.id, target_id, amt)
+        transferred, balance_after = bank.transfer_balance(interaction.user.id, recipient.id, amount)
         if not transferred:
-            embed = discord.Embed(
-                description=f"❌ رصيدك مش كفاية. رصيدك الحالي {fmt(balance_after)} {COIN_EMOJI}.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "رصيد غير كافٍ",
+                    f"رصيدك الحالي **{fmt(balance_after)} {COIN_EMOJI}** ولا يكفي لتحويل **{fmt(amount)} {COIN_EMOJI}**.",
+                    "warning",
+                ),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        embed = discord.Embed(
-            description=f"✅ تم تحويل **{fmt(amt)}** {COIN_EMOJI} إلى <@{target_id}> بنجاح.",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        await self.cog.log_action("💸 Transfer", f"From {interaction.user.mention} to <@{target_id}>: {fmt(amt)}", discord.Color.orange())
 
+        await interaction.response.send_message(
+            view=StatusPanel(
+                "تم التحويل بنجاح",
+                f"حوّلت **{fmt(amount)} {COIN_EMOJI}** إلى {recipient.mention}.\\nرصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**.",
+                "success",
+            ),
+            ephemeral=True,
+        )
+        await self.cog.log_action(
+            "💸 Transfer",
+            f"From {interaction.user.mention} to {recipient.mention}: {fmt(amount)}",
+            discord.Color.orange(),
+        )
 class AdminActionModal(discord.ui.Modal):
     def __init__(self, cog, action):
         titles = {"add": "➕ إضافة رصيد", "remove": "➖ خصم رصيد", "reset": "⚠️ تصفير الرصيد"}
