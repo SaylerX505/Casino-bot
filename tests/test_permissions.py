@@ -3,6 +3,7 @@ import unittest
 from types import SimpleNamespace
 
 import config
+from cogs.casino import bank
 from cogs.casino.permissions import has_admin_access, has_staff_access, is_bot_owner
 
 
@@ -18,12 +19,15 @@ class PermissionTierTests(unittest.TestCase):
     def setUp(self):
         self.original_owner_ids = config.OWNER_IDS
         self.original_staff_role_ids = config.STAFF_ROLE_IDS
+        self.original_guild_admin_check = bank.is_guild_admin
+        bank.is_guild_admin = lambda guild_id, user_id: False
         config.OWNER_IDS = {1}
         config.STAFF_ROLE_IDS = [99]
 
     def tearDown(self):
         config.OWNER_IDS = self.original_owner_ids
         config.STAFF_ROLE_IDS = self.original_staff_role_ids
+        bank.is_guild_admin = self.original_guild_admin_check
 
     def test_bot_owner_id_does_not_bypass_server_admin_permissions(self):
         owner = FakeUser(user_id=1)
