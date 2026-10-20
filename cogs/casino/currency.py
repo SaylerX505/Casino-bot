@@ -9,7 +9,7 @@ import time
 import re
 import config
 from cogs.casino import bank as bank
-from cogs.utility.theme import base_embed, THEME
+from cogs.utility.theme import StatusPanel, base_embed, THEME
 
 COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
 LOG_CHANNEL_ID = 1513736075120742610
@@ -75,39 +75,39 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
         try:
             quantity = int(self.children[0].value.strip())
         except ValueError:
-            embed = discord.Embed(
-                description="❌ اكتب رقم صحيح للكمية.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("كمية غير صالحة", "اكتب رقم صحيح للكمية.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
         if quantity <= 0:
-            embed = discord.Embed(
-                description="❌ الكمية لازم تكون 1 على الأقل.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("كمية غير صالحة", "الكمية لازم تكون 1 على الأقل.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
         total_cost = quantity * self.price
         purchased, balance_after = bank.purchase_item(
             interaction.user.id, self.item_id, quantity, self.price
         )
         if not purchased:
-            embed = discord.Embed(
-                description=(
-                    f"❌ رصيدك الحالي {fmt(balance_after)} "
-                    f"{COIN_EMOJI}; محتاج {fmt(total_cost)} علشان تشتري "
-                    f"{quantity} × {self.item_name}."
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "تعذر الشراء",
+                    f"رصيدك الحالي **{fmt(balance_after)} {COIN_EMOJI}**، ومحتاج **{fmt(total_cost)} {COIN_EMOJI}** لشراء {quantity} × {self.item_name}.",
+                    "warning",
                 ),
-                color=discord.Color.red()
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        embed = discord.Embed(
-            description=f"✅ اشتريت **{quantity} × {self.item_name}** بمبلغ {fmt(total_cost)} {COIN_EMOJI}.\n\nرصيدك الجديد **{fmt(self.cog.get_balance(interaction.user.id))} {COIN_EMOJI}**.",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
+        await interaction.response.send_message(
+            view=StatusPanel(
+                "تم الشراء",
+                f"اشتريت **{quantity} × {self.item_name}** بمبلغ **{fmt(total_cost)} {COIN_EMOJI}**.\nرصيدك الجديد: **{fmt(self.cog.get_balance(interaction.user.id))} {COIN_EMOJI}**.",
+                "success",
+            ),
+            ephemeral=True,
+        )
 class ShopDropdown(discord.ui.Select):
     def __init__(self, cog):
         self.cog = cog
