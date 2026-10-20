@@ -45,6 +45,22 @@ SEGMENT_COLORS = [
 ]
 
 
+def format_wheel_breakdown(payout, requested_penalty, charged_penalty):
+    lines = [f"**رسوم الدخول:** −{FEE:,} {COIN}"]
+    if payout:
+        lines.append(f"**المكافأة المصروفة:** +{payout:,} {COIN}")
+    else:
+        lines.append(f"**المكافأة المصروفة:** 0 {COIN}")
+
+    if requested_penalty:
+        penalty_line = f"**الخصم الإضافي:** −{charged_penalty:,} {COIN}"
+        if charged_penalty < requested_penalty:
+            penalty_line += f" (المطلوب حسب الخانة {requested_penalty:,})"
+        lines.append(penalty_line)
+
+    return "\n".join(lines)
+
+
 # --- WHEEL ART ---
 def render_wheel(highlight=None):
     size = 600
@@ -228,11 +244,26 @@ class WheelLobby(discord.ui.View):
                 fee_paid, _ = currency.debit_balance(player.id, FEE)
                 if not fee_paid:
                     results.append((player, None, balance_before, balance_before))
+                    skipped_embed = base_embed(
+                        title=f"🎡 نتيجة اللفة {index}/{len(players)}",
+                        description=(
+                            f"**اللاعب:** {player.mention}\n"
+                            f"**الحالة:** لم تُلعب الجولة؛ رصيدك أقل من رسوم الدخول ({FEE:,} {COIN}).\n"
+                            f"**صافي الرصيد:** 0 {COIN}\n"
+                            f"**الرصيد الحالي:** {balance_before:,} {COIN}"
+                        ),
+                        color=THEME["orange"],
+                    )
+                    if result_message:
+                        await result_message.edit(embed=skipped_embed, attachments=[], view=None)
+                    else:
+                        result_message = await self.ctx.send(embed=skipped_embed)
+                    await asyncio.sleep(0.8)
                     continue
 
                 segment_index = random.randrange(len(SEGMENTS))
                 label, outcome = SEGMENTS[segment_index]
-                extra_text = ""
+                outcome_note = ""
 
                 if outcome == "x2":
                     payout = FEE * 2
@@ -240,8 +271,7 @@ class WheelLobby(discord.ui.View):
                 elif outcome == "box":
                     payout = random.choice([20, 50, 80, 120, 200])
                     penalty = 0
-                    extra_text = f"\n🎁 جائزة الصندوق: **{payout:,}** {COIN}"
-                elif isinstance(outcome, int) and outcome > 0:
+                    outcome_note = "\n🎁 جائزة الصندوق من المكافآت العشوائية."                elif isinstance(outcome, int) and outcome > 0:
                     payout = outcome
                     penalty = 0
                 elif isinstance(outcome, int) and outcome < 0:
@@ -258,11 +288,27 @@ class WheelLobby(discord.ui.View):
                         currency.update_balance(player.id, FEE)
                         balance_after = currency.get_balance(player.id)
                         results.append((player, "balance_limit", balance_before, balance_after))
+                        skipped_embed = base_embed(
+                            title=f"🎡 نتيجة اللفة {index}/{len(players)}",
+                            description=(
+                                f"**اللاعب:** {player.mention}\n"
+                                "⚠️ تعذر صرف الجائزة لأن الرصيد هيعدّي الحد الأقصى المدعوم.\n"
+                                f"**رسوم الدخول:** تم ردّها بالكامل ({FEE:,} {COIN}).\n"
+                                f"**صافي الرصيد:** 0 {COIN}\n"
+                                f"**الرصيد الحالي:** {balance_after:,} {COIN}"
+                            ),
+                            color=THEME["orange"],
+                        )
+                        if result_message:
+                            await result_message.edit(embed=skipped_embed, attachments=[], view=None)
+                        else:
+                            result_message = await self.ctx.send(embed=skipped_embed)
+                        await asyncio.sleep(0.8)
                         continue
-                    extra_text = extra_text or f"\n💰 الجائزة: **{payout:,}** {COIN}"
 
+                charged_penalty = 0
                 if penalty:
-                    currency.charge_up_to(player.id, penalty)
+                    charged_penalty, _ = currency.charge_up_to(player.id, penalty)
 
                 balance_after = currency.get_balance(player.id)
                 net_change = balance_after - balance_before
@@ -272,7 +318,8 @@ class WheelLobby(discord.ui.View):
                     title=f"🎡 نتيجة اللفة {index}/{len(players)}",
                     description=(
                         f"**اللاعب:** {player.mention}\n"
-                        f"**النتيجة:** {label}{extra_text}\n"
+                        f"**النتيجة:** {label}{outcome_note}\n"
+                        f"{format_wheel_breakdown(payout, penalty, charged_penalty)}\n"
                         f"**صافي الرصيد:** {'+' if net_change > 0 else ''}{net_change:,} {COIN}\n"
                         f"**الرصيد الحالي:** {balance_after:,} {COIN}"
                     ),
