@@ -33,6 +33,25 @@ def base_embed(title: str = None, description: str = None, color: int = None) ->
     return e
 
 
+class StatusPanel(LayoutView):
+    def __init__(self, title: str, description: str, outcome: str = "neutral"):
+        super().__init__(timeout=120)
+        colors = {
+            "win": THEME["gold"],
+            "success": THEME["green"],
+            "loss": THEME["red_dark"],
+            "warning": THEME["orange"],
+            "neutral": THEME["grey"],
+        }
+        body = f"# {title}\\n{description}" if description else f"# {title}"
+        self.add_item(
+            Container(
+                TextDisplay(body[:4000]),
+                Separator(),
+                accent_color=colors.get(outcome, THEME["grey"]),
+            )
+        )
+
 def result_embed(
     title: str,
     description: str,
