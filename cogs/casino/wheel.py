@@ -271,7 +271,8 @@ class WheelLobby(discord.ui.View):
                 elif outcome == "box":
                     payout = random.choice([20, 50, 80, 120, 200])
                     penalty = 0
-                    outcome_note = "\n🎁 جائزة الصندوق من المكافآت العشوائية."                elif isinstance(outcome, int) and outcome > 0:
+                    outcome_note = "\n🎁 جائزة الصندوق من المكافآت العشوائية."
+                elif isinstance(outcome, int) and outcome > 0:
                     payout = outcome
                     penalty = 0
                 elif isinstance(outcome, int) and outcome < 0:
