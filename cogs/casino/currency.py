@@ -561,33 +561,46 @@ class Currency(commands.Cog):
 
     @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
     async def use_item(self, ctx, item: str = None):
-        """استخدم صندوق حظ او تذكرة: +استخدم صندوق / +استخدم تذكرة"""
+        private = ctx.interaction is not None
         if not item:
-            return await ctx.send("❌ اكتب اسم الصنف! مثال: `+استخدم صندوق` او `+استخدم تذكرة`")
-        low = item.strip().lower()
-        uid = str(ctx.author.id)
-        if low in ("صندوق", "box", "loot", "loot_box"):
-            key = "loot_box"
-        elif low in ("تذكرة", "ticket", "luck", "luck_ticket"):
-            key = "luck_ticket"
-        else:
-            return await ctx.send("❌ الصنف ده مابيستخدمش كده! الصناديق والتذاكر بس (`+استخدم صندوق`). الكشف بـ `+اكشف` في جيم المافيا، والفيتو والتأمين بيشتغلوا تلقائي.")
-        redeemed, reward, balance_after = self.redeem_consumable(ctx.author.id, key)
-
-        if not redeemed:
-            if self.get_item_count(ctx.author.id, key) > 0:
-                return await ctx.send(
-                    "❌ رصيدك وصل للحد الأقصى المدعوم؛ احتفظنا بالصنف في شنطتك ولم نستهلكه."
-                )
             return await ctx.send(
-                f"❌ معكش **{key}**! اشتريه من الشوب (`+رصيد` > Shop)."
+                view=StatusPanel("حدد الغرض", "اكتب `صندوق` أو `تذكرة` عشان تستخدم الغرض الموجود في شنطتك.", "warning"),
+                ephemeral=private,
             )
 
-        if key == "loot_box":
-            desc = f"🎁 {ctx.author.mention} فتح صندوق الحظ وطلعله **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(balance_after)}**"
+        normalized = item.strip().lower()
+        if normalized in ("صندوق", "box", "loot", "loot_box"):
+            item_id = "loot_box"
+        elif normalized in ("تذكرة", "ticket", "luck", "luck_ticket"):
+            item_id = "luck_ticket"
         else:
-            desc = f"🎟️ {ctx.author.mention} استخدم تذكرة الحظ وكسب **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(balance_after)}**"
-        await ctx.send(view=StatusPanel("🍀 حظك!", desc, "success"), ephemeral=ctx.interaction is not None)
+            return await ctx.send(
+                view=StatusPanel("غرض غير معروف", "المتاح حاليًا هو صندوق الحظ أو تذكرة الحظ. أدوات الألعاب بتتفعّل داخل جولاتها.", "warning"),
+                ephemeral=private,
+            )
+
+        redeemed, reward, balance_after = self.redeem_consumable(ctx.author.id, item_id)
+        if not redeemed:
+            if self.get_item_count(ctx.author.id, item_id) > 0:
+                title = "الرصيد وصل للحد الأقصى"
+                description = "احتفظنا بالغرض في شنطتك، ومش هنستهلكه لحد ما يبقى فيه مساحة في الرصيد."
+            else:
+                title = "الغرض مش موجود في شنطتك"
+                description = "اشترِ صندوق الحظ أو تذكرة الحظ من المتجر الأول."
+            return await ctx.send(
+                view=StatusPanel(title, description, "warning"),
+                ephemeral=private,
+            )
+
+        item_name = "صندوق الحظ" if item_id == "loot_box" else "تذكرة الحظ"
+        description = (
+            f"استخدمت **{item_name}** وكسبت **{fmt(reward)} {COIN_EMOJI}**.\n"
+            f"رصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**."
+        )
+        await ctx.send(
+            view=StatusPanel("🍀 حظك!", description, "success"),
+            ephemeral=private,
+        )
 
 async def setup(bot):
     cog = Currency(bot)
