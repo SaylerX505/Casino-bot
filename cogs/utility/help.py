@@ -1,6 +1,7 @@
 import random
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Select, Separator, TextDisplay
 
@@ -266,6 +267,122 @@ class HelpEntryView(discord.ui.View):
 
 
 class HelpCommand(commands.Cog):
+    games = app_commands.Group(
+        name="games",
+        description="اختار لعبة من ألعاب Çukur.",
+    )
+    economy = app_commands.Group(
+        name="economy",
+        description="إدارة الرصيد والشنطة والمتجر.",
+    )
+
+    async def _invoke_hybrid_command(self, interaction: discord.Interaction, command_name: str):
+        command = self.bot.get_command(command_name)
+        if command is None:
+            return await interaction.response.send_message(
+                "الأمر المطلوب مش متاح حاليًا. افتح قائمة المساعدة أو بلّغ الستاف.",
+                ephemeral=True,
+            )
+
+        try:
+            ctx = await commands.Context.from_interaction(interaction)
+            await command.invoke(ctx)
+        except commands.CommandError as error:
+            if "ctx" in locals():
+                self.bot.dispatch("command_error", ctx, error)
+            elif not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ مقدرناش نشغّل الأمر ده. جرّب من قائمة المساعدة.",
+                    ephemeral=True,
+                )
+        except Exception as error:
+            if "ctx" in locals():
+                self.bot.dispatch("command_error", ctx, commands.CommandInvokeError(error))
+            elif not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ حصلت مشكلة أثناء تشغيل الأمر. اتبلغ الستاف.",
+                    ephemeral=True,
+                )
+
+    @games.command(name="mafia", description="بدء لعبة المافيا بصلاحية الستاف.")
+    async def games_mafia(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "مافيا")
+
+    @games.command(name="roulette", description="بدء الروليت الروسي بصلاحية الستاف.")
+    async def games_roulette(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "روليت")
+
+    @games.command(name="hide-and-seek", description="بدء لعبة الغميضة بصلاحية الستاف.")
+    async def games_hide_and_seek(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "غميضه")
+
+    @games.command(name="geo", description="بدء لعبة تخمين الموقع بصلاحية الستاف.")
+    async def games_geo(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "جيو")
+
+    @games.command(name="chairs", description="بدء لعبة الكراسي بصلاحية الستاف.")
+    async def games_chairs(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "كراسي")
+
+    @games.command(name="wheel", description="بدء عجلة الحظ بصلاحية الستاف.")
+    async def games_wheel(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "عجلة")
+
+    @games.command(name="riddle", description="بدء فزورة متاحة للأعضاء.")
+    async def games_riddle(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "فزورة")
+
+    @economy.command(name="balance", description="فتح مركز الاقتصاد والرصيد الخاص بك.")
+    async def economy_balance(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "bal")
+
+    @economy.command(name="inventory", description="عرض شنطتك وأغراضك القابلة للاستخدام.")
+    async def economy_inventory(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "inv")
+
+    @economy.command(name="profile", description="عرض بطاقة بروفايلك في الحفرة.")
+    async def economy_profile(self, interaction: discord.Interaction):
+        await self._invoke_hybrid_command(interaction, "بروفايل")
+
+    @economy.command(name="daily", description="استلام المكافأة اليومية والستريك.")
+    async def economy_daily(self, interaction: discord.Interaction):
+        from cogs.casino.currency import CurrencyHubLayout
+
+        cog = self.bot.get_cog("Currency")
+        if cog is None:
+            return await interaction.response.send_message(
+                "مركز الاقتصاد مش جاهز حاليًا. جرّب بعد شوية.",
+                ephemeral=True,
+            )
+        await CurrencyHubLayout(cog, interaction.user).daily_btn(interaction)
+
+    @economy.command(name="top", description="عرض ترتيب أغنى الأعضاء بشكل خاص.")
+    async def economy_top(self, interaction: discord.Interaction):
+        from cogs.casino.currency import CurrencyHubLayout
+
+        cog = self.bot.get_cog("Currency")
+        if cog is None:
+            return await interaction.response.send_message(
+                "مركز الاقتصاد مش جاهز حاليًا. جرّب بعد شوية.",
+                ephemeral=True,
+            )
+        await CurrencyHubLayout(cog, interaction.user).top_btn(interaction)
+
+    @economy.command(name="shop", description="فتح المتجر واختيار غرض للشراء.")
+    async def economy_shop(self, interaction: discord.Interaction):
+        from cogs.casino.currency import ShopView
+
+        cog = self.bot.get_cog("Currency")
+        if cog is None:
+            return await interaction.response.send_message(
+                "المتجر مش جاهز حاليًا. جرّب بعد شوية.",
+                ephemeral=True,
+            )
+        await interaction.response.send_message(view=ShopView(cog), ephemeral=True)
+
+    def __init__(self, bot):
+        self.bot = bot
+
     def __init__(self, bot):
         self.bot = bot
 
