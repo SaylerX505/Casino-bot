@@ -87,23 +87,9 @@ def lobby_embed(title: str, rules: str, players, time_left: int, max_players: in
     return e
 
 
-def is_staff_or_owner():
-    from discord.ext import commands
-
-    async def predicate(ctx):
-        if ctx.author.id in config.OWNER_IDS:
-            return True
-        user_role_ids = [r.id for r in getattr(ctx.author, "roles", [])]
-        if any(rid in config.STAFF_ROLE_IDS for rid in user_role_ids):
-            return True
-        if getattr(ctx.author, "guild_permissions", None) and ctx.author.guild_permissions.administrator:
-            return True
-        e = discord.Embed(description="❌ الألعاب دي مخصصة للستاف والأونرز بس!", color=THEME["red_dark"])
-        await ctx.send(embed=e)
-        return False
-
-    from discord.ext import commands as _c
-    return _c.check(predicate)
+def is_staff_or_admin():
+    from cogs.casino.permissions import is_staff_or_admin as check
+    return check()
 
 
 def get_currency(bot):
