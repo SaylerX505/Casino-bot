@@ -165,11 +165,11 @@ class RPSView(discord.ui.View):
     async def rock(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.choose(interaction, "🪨")
 
-    @discord.ui.button(emoji="📄", label="ورقة", style=discord.ButtonStyle.primary)
+    @discord.ui.button(emoji="📄", label="ورقة", style=discord.ButtonStyle.secondary)
     async def paper(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.choose(interaction, "📄")
 
-    @discord.ui.button(emoji="✂️", label="مقص", style=discord.ButtonStyle.danger)
+    @discord.ui.button(emoji="✂️", label="مقص", style=discord.ButtonStyle.secondary)
     async def scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.choose(interaction, "✂️")
 
