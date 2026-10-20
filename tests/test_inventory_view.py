@@ -2,7 +2,9 @@
 import unittest
 from types import SimpleNamespace
 
-from cogs.casino.currency import InventoryView
+import discord
+
+from cogs.casino.currency import CurrencyHubLayout, InventoryView
 
 
 class FakeCurrency:
@@ -22,6 +24,9 @@ class FakeCurrency:
 
     def get_item_count(self, user_id, item_id):
         return self.inventory.get(item_id, 0)
+
+    def check_whitelist(self, user):
+        return False
 
 
 class InventoryViewTests(unittest.TestCase):
@@ -70,6 +75,19 @@ class InventoryViewTests(unittest.TestCase):
 
         self.assertTrue(self.button("inventory_use_box").disabled)
         self.assertFalse(self.button("inventory_use_ticket").disabled)
+
+    def test_v2_economy_hub_uses_persistent_custom_ids(self):
+        view = CurrencyHubLayout(self.cog)
+        buttons = [
+            child
+            for child in view.walk_children()
+            if isinstance(child, discord.ui.Button)
+        ]
+        custom_ids = {button.custom_id for button in buttons}
+
+        self.assertIsNone(view.timeout)
+        self.assertTrue(all(custom_ids))
+        self.assertTrue({"hubv2_daily", "hubv2_top", "hubv2_shop", "hubv2_transfer", "hubv2_admin"}.issubset(custom_ids))
 
 
 if __name__ == "__main__":
