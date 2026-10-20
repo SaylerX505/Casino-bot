@@ -43,7 +43,7 @@ class StatusPanel(LayoutView):
             "warning": THEME["orange"],
             "neutral": THEME["grey"],
         }
-        body = f"# {title}\\n{description}" if description else f"# {title}"
+        body = f"# {title}\n{description}" if description else f"# {title}"
         self.add_item(
             Container(
                 TextDisplay(body[:4000]),
