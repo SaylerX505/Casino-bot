@@ -46,10 +46,7 @@ async def on_command_error(ctx, error):
         return
     if isinstance(error, commands.CheckFailure):
         try:
-            await ctx.send(
-                "❌ الأمر ده مش متاح لصلاحيات حسابك.",
-                ephemeral=ctx.interaction is not None,
-            )
+            await ctx.send("❌ الأمر ده مش متاح لصلاحيات حسابك.", ephemeral=ctx.interaction is not None)
         except discord.HTTPException:
             pass
         return
@@ -59,39 +56,40 @@ async def on_command_error(ctx, error):
                 f"⏳ اهدى يا معلم! جرب تاني بعد **{error.retry_after:.0f}** ثانية.",
                 ephemeral=ctx.interaction is not None,
             )
-        except Exception:
+        except discord.HTTPException:
             pass
         return
+
     err_text = f"{type(error).__name__}: {error}"[:1500]
-    print(f"❌ Command error in {ctx.command}: {err_text}")
+    command_text = ctx.command.qualified_name if ctx.command else "unknown"
+    message_text = ctx.message.content if ctx.message else f"/{command_text}"
+    print(f"❌ Command error in {command_text}: {err_text}")
     try:
-        ch = bot.get_channel(ERROR_LOG_CHANNEL_ID)
-        if ch is not None:
-                command_text = ctx.command.qualified_name if ctx.command else "unknown"
-                message_text = ctx.message.content if ctx.message else f"/{command_text}"
-                e = discord.Embed(
-                    title="🚨 Bot Error",
-                    description=(
-                        f"<@{config.NEGLAWY_ID}> فيه ايرور يا مطور!\\n\\n"
-                        f"**الأمر:** `{command_text}`\\n"
-                        f"**اليوزر:** {ctx.author.mention} (`{ctx.author.id}`)\\n"
-                        f"**الروم:** {ctx.channel.mention}\\n"
-                        f"**الرسالة:** {message_text[:300]}\\n\\n"
-                        f"```{err_text}```"
-                    ),
+        channel = bot.get_channel(ERROR_LOG_CHANNEL_ID)
+        if channel is not None:
+            embed = discord.Embed(
+                title="🚨 Bot Error",
+                description=(
+                    f"<@{config.NEGLAWY_ID}> فيه ايرور يا مطور!\n\n"
+                    f"**الأمر:** `{command_text}`\n"
+                    f"**اليوزر:** {ctx.author.mention} (`{ctx.author.id}`)\n"
+                    f"**الروم:** {ctx.channel.mention}\n"
+                    f"**الرسالة:** {message_text[:300]}\n\n"
+                    f"```{err_text}```"
+                ),
                 color=0x8B1E1E,
             )
-            await ch.send(content=f"<@{config.NEGLAWY_ID}>", embed=e)
-    except Exception as log_e:
-        print(f"⚠️ Failed to log error: {log_e}")
+            await channel.send(content=f"<@{config.NEGLAWY_ID}>", embed=embed)
+    except Exception as log_error:
+        print(f"⚠️ Failed to log error: {log_error}")
+
     try:
         await ctx.send(
             "❌ حصلت مشكلة! نجلاوي اتبلغ وهيظبطها. جرب تاني كمان شوية.",
             ephemeral=ctx.interaction is not None,
         )
-    except Exception:
+    except discord.HTTPException:
         pass
-
 # --- EXTENSION LOADER ---
 async def load_cogs():
     """Automatically loads all python files inside the cogs subfolders"""
@@ -126,7 +124,11 @@ async def load_cogs():
                     await bot.load_extension(cog_path)
                     print(f"📦 Loaded Cog: {cog_path}")
                 except Exception as e:
-                    print(f"⚠️ Failed to load {cog_path}: {e}")
+                    failures.append(f"{cog_path}: {type(e).__name__}: {e}")
+                    print(f"❌ Failed to load {cog_path}: {e}")
+
+    if failures:
+        raise RuntimeError("Required extensions failed to load:\n" + "\n".join(failures))
 
 # --- APPLICATION STARTUP ---
 async def main():
