@@ -9,7 +9,7 @@ import aiohttp
 import config
 
 from cogs.casino.permissions import is_staff_or_owner
-from cogs.utility.theme import lobby_embed
+from cogs.utility.theme import lobby_embed, result_embed
 
 
 class WatermarkView(discord.ui.View):
@@ -709,20 +709,20 @@ async def run_mafia_game(ctx, players):
 
 async def town_wins(ctx, mafias):
     reveal_bytes = await generate_mafia_reveal(mafias)
-    embed = discord.Embed(
+    embed = result_embed(
         title="🎉 المواطنين انتصروا!",
         description="المواطنين قدروا ينضفوا الحفرة من المافيا! النور رجع للمدينة.",
-        color=discord.Color.green()
+        outcome="win",
     )
     embed.set_image(url="attachment://reveal.jpg")
     await ctx.send(embed=embed, file=discord.File(fp=reveal_bytes, filename="reveal.jpg"), view=WatermarkView())
 
 async def mafia_wins(ctx, mafias):
     reveal_bytes = await generate_mafia_reveal(mafias)
-    embed = discord.Embed(
+    embed = result_embed(
         title="💀 المافيا سيطرت!",
         description="المافيا مسكت الحفرة بالكامل... المواطنين ماتوا والظلام كسب.",
-        color=discord.Color.dark_red()
+        outcome="loss",
     )
     embed.set_image(url="attachment://reveal.jpg")
     await ctx.send(embed=embed, file=discord.File(fp=reveal_bytes, filename="reveal.jpg"), view=WatermarkView())
