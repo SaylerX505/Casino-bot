@@ -19,9 +19,17 @@ def has_admin_access(user) -> bool:
 
 
 def has_staff_access(user) -> bool:
-    """Bot owners, Discord administrators, and configured staff roles may host staff games."""
     if has_admin_access(user):
         return True
+
+    guild = getattr(user, "guild", None)
+    if guild is not None:
+        try:
+            from cogs.casino import bank
+            if bank.is_guild_admin(guild.id, user.id):
+                return True
+        except Exception:
+            pass
 
     role_ids = {
         getattr(role, "id", None)
@@ -38,10 +46,10 @@ def is_admin_or_owner():
             return True
 
         embed = discord.Embed(
-            description="❌ الأمر ده مخصص لأدمن السيرفر أو مالك البوت فقط.",
+            description="❌ الأمر ده مخصص للي معاهم صلاحية Administrator في السيرفر.",
             color=discord.Color.red(),
         )
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=ctx.interaction is not None)
         return False
 
     return commands.check(predicate)
@@ -54,10 +62,10 @@ def is_staff_or_owner():
             return True
 
         embed = discord.Embed(
-            description="❌ الأمر ده مخصص للستاف والأدمنز وأونرز البوت.",
+            description="❌ الأمر ده مخصص للستاف أو أدمن السيرفر أو أدمنز البوت المصرح لهم.",
             color=discord.Color.red(),
         )
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=ctx.interaction is not None)
         return False
 
     return commands.check(predicate)
