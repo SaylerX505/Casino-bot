@@ -536,14 +536,14 @@ class CurrencyHubLayout(LayoutView):
         await interaction.response.send_message(
             view=StatusPanel(
                 "استلمت اليومية",
-                f"المكافأة: **{fmt(amount)} {COIN_EMOJI}**\\nالستريك الحالي: **{streak}** يوم.",
+                f"المكافأة: **{fmt(amount)} {COIN_EMOJI}**\nالستريك الحالي: **{streak}** يوم.",
                 "success",
             ),
             ephemeral=True,
         )
     async def top_btn(self, interaction: discord.Interaction):
         ranking = bank.top_balances(10)
-        description = "\\n".join(
+        description = "\n".join(
             f"**#{index + 1}** <@{user_id}> — **{fmt(balance)}** {COIN_EMOJI}"
             for index, (user_id, balance) in enumerate(ranking)
         )
