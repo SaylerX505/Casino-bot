@@ -27,7 +27,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Build Docker image
-        run: docker build --pull -t casino-bot:test .
+        run: |
+          for attempt in 1 2 3; do
+            if docker build --pull -t casino-bot:test .; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Docker build failed; retrying ($attempt/3)..."
+              sleep 5
+            fi
+          done
+          exit 1
       - name: Smoke-test startup without a token
         run: |
           output="$(docker run --rm -e DISCORD_TOKEN= casino-bot:test)"
