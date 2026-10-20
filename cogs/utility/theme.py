@@ -33,6 +33,24 @@ def base_embed(title: str = None, description: str = None, color: int = None) ->
     return e
 
 
+def result_embed(
+    title: str,
+    description: str,
+    outcome: str = "neutral",
+    thumbnail_url: str = None,
+) -> discord.Embed:
+    colors = {
+        "win": THEME["gold"],
+        "success": THEME["green"],
+        "loss": THEME["red_dark"],
+        "warning": THEME["orange"],
+        "neutral": THEME["grey"],
+    }
+    embed = base_embed(title=title, description=description, color=colors.get(outcome, THEME["grey"]))
+    if thumbnail_url:
+        embed.set_thumbnail(url=thumbnail_url)
+    return embed
+
 def lobby_embed(title: str, rules: str, players, time_left: int, max_players: int = 25) -> discord.Embed:
     if players:
         plist = "\n".join([f"**{i+1}** : {p.mention}" for i, p in enumerate(players)])
