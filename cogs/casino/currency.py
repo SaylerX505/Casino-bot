@@ -258,7 +258,7 @@ class InventoryView(discord.ui.View):
     @discord.ui.button(
         label="استخدم صندوق",
         emoji="🎁",
-        style=discord.ButtonStyle.success,
+        style=discord.ButtonStyle.secondary,
         custom_id="inventory_use_box",
         row=1,
     )
@@ -268,7 +268,7 @@ class InventoryView(discord.ui.View):
     @discord.ui.button(
         label="استخدم تذكرة",
         emoji="🎟️",
-        style=discord.ButtonStyle.primary,
+        style=discord.ButtonStyle.secondary,
         custom_id="inventory_use_ticket",
         row=1,
     )
@@ -466,7 +466,7 @@ class CurrencyHubLayout(LayoutView):
         )
 
         first_row = ActionRow()
-        self._add_button(first_row, "اليومية", "🎁", discord.ButtonStyle.success, "hubv2_daily", self.daily_btn)
+        self._add_button(first_row, "اليومية", "🎁", discord.ButtonStyle.secondary, "hubv2_daily", self.daily_btn)
         self._add_button(first_row, "الأغنى", "🏆", discord.ButtonStyle.secondary, "hubv2_top", self.top_btn)
         self._add_button(first_row, "المتجر", "🛒", discord.ButtonStyle.primary, "hubv2_shop", self.shop_btn)
         container.add_item(first_row)
@@ -564,7 +564,7 @@ class CurrencyHubView(discord.ui.View):
             if admin_button is not None:
                 self.remove_item(admin_button)
         
-    @discord.ui.button(label="اليومية", style=discord.ButtonStyle.success, emoji="🎁", custom_id="hub_daily")
+    @discord.ui.button(label="اليومية", style=discord.ButtonStyle.secondary, emoji="🎁", custom_id="hub_daily")
     async def daily_btn(self, interaction, button):
         now = bank.now()
         claim = bank.claim_daily(interaction.user.id, now, random.randint(20, 45))
@@ -600,11 +600,11 @@ class CurrencyHubView(discord.ui.View):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
-    @discord.ui.button(label="المتجر", style=discord.ButtonStyle.primary, emoji="🛒", custom_id="hub_shop")
+    @discord.ui.button(label="المتجر", style=discord.ButtonStyle.secondary, emoji="🛒", custom_id="hub_shop")
     async def shop_btn(self, interaction, button):
         await interaction.response.send_message(view=ShopView(self.cog), ephemeral=True)
 
-    @discord.ui.button(label="تحويل", style=discord.ButtonStyle.primary, emoji="💸", custom_id="hub_transfer")
+    @discord.ui.button(label="تحويل", style=discord.ButtonStyle.secondary, emoji="💸", custom_id="hub_transfer")
     async def transfer_btn(self, interaction, button):
         await interaction.response.send_modal(TransferModal(self.cog))
         
