@@ -1,6 +1,7 @@
 # --- EMBED THEME ---
 """موحد شكل البوت - الوان الحفرة + helpers"""
 import discord
+from discord.ui import Container, LayoutView, Separator, TextDisplay
 import config
 
 THEME = {
