@@ -196,7 +196,7 @@ class WheelLobby(discord.ui.View):
         self.players.append(interaction.user)
         await interaction.response.edit_message(embed=self.make_embed(), view=self)
 
-    @discord.ui.button(label="مغادرة", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="مغادرة", style=discord.ButtonStyle.secondary)
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in self.players:
             return await interaction.response.send_message("أنت مش مسجل في الجولة.", ephemeral=True)
