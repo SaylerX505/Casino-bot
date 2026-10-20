@@ -17,7 +17,7 @@ class WatermarkView(discord.ui.View):
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
 from cogs.casino.permissions import is_staff_or_owner
-from cogs.utility.theme import lobby_embed
+from cogs.utility.theme import lobby_embed, result_embed
 
 
 async def fetch_avatar(session, user, size=(80, 80)):
@@ -394,12 +394,12 @@ class RouletteLobby(discord.ui.View):
             # --- WINNER RESOLUTION ---
             if len(active_players) == 1:
                 winner = active_players[0]
-                final_embed = discord.Embed(
+                final_embed = result_embed(
                     title="🏆 بطل الروليت!",
                     description=f"الناجي الوحيد والأقوى في الحفرة!\n\n🎉 الفائز النهائي هو **{winner.mention}**!",
-                    color=discord.Color.gold()
+                    outcome="win",
+                    thumbnail_url=winner.display_avatar.url,
                 )
-                final_embed.set_thumbnail(url=winner.display_avatar.url)
                 
                 if currency_cog:
                     currency_cog.update_balance(winner.id, 20)
@@ -407,9 +407,10 @@ class RouletteLobby(discord.ui.View):
                     
                 await self.ctx.send(embed=final_embed, view=WatermarkView())
             else:
-                embed = discord.Embed(
+                embed = result_embed(
+                    title="انتهت الروليت",
                     description="💀 الكل طار! مفيش فايز الجيم ده.",
-                    color=discord.Color.dark_grey()
+                    outcome="loss",
                 )
                 await self.ctx.send(embed=embed, view=WatermarkView())
 
