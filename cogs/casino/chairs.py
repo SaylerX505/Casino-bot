@@ -27,7 +27,7 @@ class ChairActionView(discord.ui.View):
         self.eliminated_fools = set()
         
         for i in range(num_chairs):
-            style = discord.ButtonStyle.primary if round_type == 'normal' else discord.ButtonStyle.danger
+            style = discord.ButtonStyle.secondary if round_type == 'normal' else discord.ButtonStyle.secondary
             btn = discord.ui.Button(style=style, label="🪑", custom_id=f"chair_{i}")
             btn.callback = self.make_callback(btn)
             self.add_item(btn)
