@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
+import logging
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import time
@@ -16,6 +17,8 @@ import config
 
 from cogs.casino.permissions import is_staff_or_owner
 from cogs.utility.theme import lobby_embed, result_embed
+
+logger = logging.getLogger(__name__)
 
 
 class WatermarkView(discord.ui.View):
@@ -310,26 +313,36 @@ async def run_game_loop(ctx, players):
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), active_view)
 
             guesses = {}
-            guess_data_cache = {} 
-            guess_order = [] 
+            guess_data_cache = {}
+            guess_order = []
             processing_users = set()
-            
+            reaction_tasks = set()
+
             def check(m):
                 return m.channel == ctx.channel and m.author in players and m.author not in guesses and m.author not in processing_users
 
-            async def process_reaction(guess_msg, text):
-                processing_users.add(guess_msg.author) 
-                coords, code = await asyncio.to_thread(get_guess_data, text)
-                if code is not None:
+            async def process_reaction(guess_msg, text, received_at):
+                try:
+                    coords, code = await asyncio.to_thread(get_guess_data, text)
+                    if received_at > timer_state["end_time"] or time.time() > timer_state["end_time"] + 5:
+                        return
+                    if code is None:
+                        return
                     if guess_msg.author not in guesses:
                         guess_order.append(guess_msg.author)
                     guesses[guess_msg.author] = text
-                    guess_data_cache[guess_msg.author] = {'coords': coords, 'code': code, 'text': text}
+                    guess_data_cache[guess_msg.author] = {"coords": coords, "code": code, "text": text}
                     flag = get_flag_emoji(code)
-                    try: await guess_msg.add_reaction(flag)
-                    except: await guess_msg.add_reaction("✅")
-                processing_users.discard(guess_msg.author) 
-
+                    try:
+                        await guess_msg.add_reaction(flag)
+                    except discord.HTTPException:
+                        await guess_msg.add_reaction("✅")
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("GeoGuessr guess processing failed")
+                finally:
+                    processing_users.discard(guess_msg.author)
             last_update = 30
             while True:
                 remaining = int(timer_state["end_time"] - time.time())
@@ -344,16 +357,33 @@ async def run_game_loop(ctx, players):
 
                 try:
                     guess_msg = await ctx.bot.wait_for('message', check=check, timeout=1.0)
+                    received_at = time.time()
+                    if received_at > timer_state["end_time"]:
+                        break
                     guess_text = guess_msg.content.strip().lower()
-                    ctx.bot.loop.create_task(process_reaction(guess_msg, guess_text))
+                    processing_users.add(guess_msg.author)
+                    task = asyncio.create_task(process_reaction(guess_msg, guess_text, received_at))
+                    reaction_tasks.add(task)
+                    task.add_done_callback(reaction_tasks.discard)
                 except asyncio.TimeoutError:
                     continue
 
-            for child in active_view.children: child.disabled = True
-            try: await msg.edit(view=active_view)
-            except: pass
+            if reaction_tasks:
+                pending = set(reaction_tasks)
+                _done, waiting = await asyncio.wait(pending, timeout=5)
+                for task in waiting:
+                    task.cancel()
+                if waiting:
+                    await asyncio.gather(*waiting, return_exceptions=True)
 
-            await asyncio.sleep(1.5)
+            for child in active_view.children:
+                child.disabled = True
+            try:
+                await msg.edit(view=active_view)
+            except discord.HTTPException:
+                logger.warning("GeoGuessr controls could not be disabled", exc_info=True)
+
+            await asyncio.sleep(0.5)
 
             closest_distance = float('inf')
             best_guess_code = None
