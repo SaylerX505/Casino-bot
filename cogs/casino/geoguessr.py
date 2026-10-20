@@ -430,9 +430,10 @@ async def run_game_loop(ctx, players):
 
             board_bytes = await generate_dashboard_image(player_results, round_num, total_rounds)
             board_file = discord.File(fp=board_bytes, filename="dashboard.png")
-            board_embed = discord.Embed(
+            board_embed = result_embed(
                 title="🏆 لوحة النتائج",
-                color=discord.Color.dark_theme()
+                description="ملخص ترتيب اللاعبين بعد الجولة.",
+                outcome="neutral",
             )
             board_embed.set_image(url="attachment://dashboard.png")
             await ctx.send(embed=board_embed, file=board_file)
