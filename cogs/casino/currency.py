@@ -817,7 +817,7 @@ class Currency(commands.Cog):
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         await ctx.send(view=view, **send_kwargs)
 
-        @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
+    @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
         view = InventoryView(self, ctx.author)
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
