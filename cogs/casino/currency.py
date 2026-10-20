@@ -309,22 +309,46 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         
-        nums = re.findall(r'\d+', self.target.value)
-        if not nums:
-            embed = discord.Embed(
-                description="❌ منشن العضو أو الـID غير صحيح.",
-                color=discord.Color.red()
+        target_text = self.target.value.strip()
+        match = re.fullmatch(r"<@!?(\d{17,20})>|(\d{17,20})", target_text)
+        if match is None:
+            return await interaction.response.send_message(
+                "❌ منشن عضو من السيرفر أو اكتب الـID الصحيح.",
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        target_id = int(nums[0])
-        
+        target_id = int(match.group(1) or match.group(2))
+
+        if interaction.guild is None:
+            return await interaction.response.send_message(
+                "❌ التحويل متاح داخل السيرفر فقط.",
+                ephemeral=True,
+            )
         if target_id == interaction.user.id:
-            embed = discord.Embed(
-                description="❌ مينفعش تحول لنفسك.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                "❌ مينفعش تحول لنفسك.",
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
+        recipient = interaction.guild.get_member(target_id)
+        if recipient is None:
+            try:
+                recipient = await interaction.guild.fetch_member(target_id)
+            except discord.NotFound:
+                return await interaction.response.send_message(
+                    "❌ العضو ده مش موجود في السيرفر.",
+                    ephemeral=True,
+                )
+            except discord.HTTPException:
+                return await interaction.response.send_message(
+                    "❌ مقدرناش نتحقق من العضو دلوقتي. حاول تاني.",
+                    ephemeral=True,
+                )
+        if recipient.bot:
+            return await interaction.response.send_message(
+                "❌ التحويل لحسابات البوتات غير متاح.",
+                ephemeral=True,
+            )
+
         transferred, balance_after = bank.transfer_balance(interaction.user.id, target_id, amt)
         if not transferred:
             embed = discord.Embed(
@@ -685,16 +709,18 @@ class Currency(commands.Cog):
 
     def check_whitelist(self, user: discord.Member) -> bool:
         permissions = getattr(user, "guild_permissions", None)
-        if getattr(permissions, "administrator", False) or user.id in OWNER_IDS:
+        if getattr(permissions, "administrator", False):
             return True
+
+        guild = getattr(user, "guild", None)
+        if guild is not None and bank.is_guild_admin(guild.id, user.id):
+            return True
+
         wl = bank.get_whitelist()
         if user.id in wl["users"]:
             return True
-        user_role_ids = [role.id for role in getattr(user, "roles", ())]
-        if any(role_id in wl["roles"] for role_id in user_role_ids):
-            return True
-        return False
-
+        role_ids = {role.id for role in getattr(user, "roles", ())}
+        return bool(role_ids.intersection(wl["roles"]))
     def update_balance(self, user_id: int, amount: int):
         return bank.update_balance(user_id, amount)
 
@@ -704,6 +730,8 @@ class Currency(commands.Cog):
     def charge_up_to(self, user_id: int, amount: int):
         return bank.charge_up_to(user_id, amount)
 
+    def settle_wheel(self, user_id: int, payout: int = 0, target_loss: int = None):
+        return bank.settle_wheel(user_id, 50, payout=payout, target_loss=target_loss)
     def place_bet(self, player_a: int, player_b: int, amount: int) -> bool:
         return bank.place_bet(player_a, player_b, amount)
 
