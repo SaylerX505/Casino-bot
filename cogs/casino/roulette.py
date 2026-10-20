@@ -126,7 +126,7 @@ class KickView(discord.ui.View):
         self.currency_cog = currency_cog
         
         if has_weapon:
-            self.weapon_btn = discord.ui.Button(label="سلاح الحفرة", style=discord.ButtonStyle.danger, emoji="🔫", custom_id="use_weapon")
+            self.weapon_btn = discord.ui.Button(label="سلاح الحفرة", style=discord.ButtonStyle.secondary, emoji="🔫", custom_id="use_weapon")
             self.weapon_btn.callback = self.weapon_callback
             self.add_item(self.weapon_btn)
         
