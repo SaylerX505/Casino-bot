@@ -9,6 +9,7 @@ import time
 import re
 import config
 from cogs.casino import bank as bank
+from cogs.utility.theme import base_embed, THEME
 
 COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
 LOG_CHANNEL_ID = 1513736075120742610
@@ -764,10 +765,12 @@ class Currency(commands.Cog):
             try: await channel.send(embed=embed)
             except: pass
 
-    @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
+        @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
     async def balance(self, ctx):
         view = CurrencyHubLayout(self, ctx.author)
-        await ctx.send(view=view)
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        await ctx.send(view=view, **send_kwargs)
+
     @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
         view = InventoryView(self, ctx.author)
@@ -780,14 +783,37 @@ class Currency(commands.Cog):
         bal = self.get_balance(user.id)
         _last, streak = bank.get_daily(str(user.id))
         inv = self.get_inventory(user.id)
-        items_txt = " / ".join([f"{k}: {fmt(v)}" for k, v in inv.items() if v > 0]) or "فاضية يا معلم 🕸️"
-        embed = discord.Embed(
+        item_labels = {
+            item_id: f"{emoji} {name}"
+            for item_id, name, _category, _price, _description, emoji in INVENTORY_ITEMS
+        }
+        items_txt = " • ".join(
+            f"{item_labels.get(item_id, item_id)} ×{fmt(quantity)}"
+            for item_id, quantity in inv.items()
+            if quantity > 0
+        ) or "الشنطة فاضية حاليًا"
+
+        embed = base_embed(
             title=f"🪪 بروفايل {user.display_name}",
-            description=f"💰 الرصيد: **{fmt(bal)}** {COIN_EMOJI}\n🔥 الستريك: **{streak}** يوم\n🎒 الشنطة: {items_txt}",
-            color=discord.Color.gold(),
+            description="ملخص حسابك في الحفرة.",
+            color=THEME["gold"],
         )
         embed.set_thumbnail(url=user.display_avatar.url)
-        embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}")
+        embed.add_field(
+            name="💰 الرصيد",
+            value=f"**{fmt(bal)}** {COIN_EMOJI}",
+            inline=True,
+        )
+        embed.add_field(
+            name="🔥 الستريك اليومي",
+            value=f"**{streak}** يوم",
+            inline=True,
+        )
+        embed.add_field(
+            name="🎒 الأغراض المملوكة",
+            value=items_txt[:1024],
+            inline=False,
+        )
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
