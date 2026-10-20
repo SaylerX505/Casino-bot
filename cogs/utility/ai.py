@@ -60,55 +60,10 @@ def save_ai_data(data):
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 
-class AIToggleView(discord.ui.View):
-    def __init__(self, cog):
-        super().__init__(timeout=None)
-        self.cog = cog
-
-    @discord.ui.button(label="Mohsen (ON)", style=discord.ButtonStyle.success, emoji="🟢", custom_id="ai_enable")
-    async def turn_on(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not has_admin_access(interaction.user):
-            return await interaction.response.send_message("للأدمنز والأونرز بس!", ephemeral=True)
-            
-        self.cog.data["ai_enabled"] = True
-        save_ai_data(self.cog.data)
-        embed = discord.Embed(
-            description="✅ Mohsen is on",
-            color=discord.Color.green()
-        )
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Mohsen (Off)", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="ai_disable")
-    async def turn_off(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not has_admin_access(interaction.user):
-            return await interaction.response.send_message("للأدمنز والأونرز بس!", ephemeral=True)
-            
-        self.cog.data["ai_enabled"] = False
-        save_ai_data(self.cog.data)
-        embed = discord.Embed(
-            description="Mohsen is off ❌",
-            color=discord.Color.red()
-        )
-        await interaction.response.edit_message(embed=embed, view=self)
-
-
 class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data = load_ai_data()
-
-    @commands.hybrid_command(name="ai", aliases=["محسن", "ذكاء"], description="إدارة إعدادات محسن")
-    @is_admin_or_owner()
-    async def toggle_ai(self, ctx):
-        """تحكم في تشغيل أو إيقاف الذكاء الاصطناعي (محسن)"""
-        status = "شغال 🟢" if self.data["ai_enabled"] else "متوقف 🔴"
-        embed = discord.Embed(
-            title="🤖 إعدادات الذكاء الاصطناعي (محسن)",
-            description=f"الحالة الحالية: **{status}**\n\nإضغط على الأزرار بالأسفل للتفعيل أو الإيقاف:",
-            color=discord.Color.blue()
-        )
-        embed.set_footer(text=f"Developed by @neglawy • {config.BRAND}")
-        await ctx.send(embed=embed, view=AIToggleView(self))
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -220,11 +175,4 @@ class AI(commands.Cog):
                 print(f"AI Error: {e}")
 
 async def setup(bot):
-    cog = AI(bot)
-    await bot.add_cog(cog)
-    old_view = getattr(bot, "_ai_toggle_view", None)
-    if old_view is not None:
-        bot.remove_view(old_view)
-    view = AIToggleView(cog)
-    bot.add_view(view)
-    bot._ai_toggle_view = view
+    await bot.add_cog(AI(bot))
