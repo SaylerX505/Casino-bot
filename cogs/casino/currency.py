@@ -328,7 +328,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
             )
 
         target_text = self.target.value.strip()
-        match = re.fullmatch(r"<@!?(\\d{17,20})>|(\\d{17,20})", target_text)
+        match = re.fullmatch(r"<@!?(\d{17,20})>|(\d{17,20})", target_text)
         if match is None:
             return await interaction.response.send_message(
                 view=StatusPanel("مستلم غير صالح", "منشن عضوًا من السيرفر أو اكتب الـID الصحيح.", "warning"),
@@ -381,7 +381,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
         await interaction.response.send_message(
             view=StatusPanel(
                 "تم التحويل بنجاح",
-                f"حوّلت **{fmt(amount)} {COIN_EMOJI}** إلى {recipient.mention}.\\nرصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**.",
+                f"حوّلت **{fmt(amount)} {COIN_EMOJI}** إلى {recipient.mention}.\nرصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**.",
                 "success",
             ),
             ephemeral=True,
