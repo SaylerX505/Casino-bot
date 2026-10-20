@@ -40,32 +40,14 @@ def has_staff_access(user) -> bool:
 
 
 def is_admin_or_owner():
-    """Prefix-command check for owner/admin-only configuration commands."""
     async def predicate(ctx):
-        if has_admin_access(ctx.author):
-            return True
-
-        embed = discord.Embed(
-            description="❌ الأمر ده مخصص للي معاهم صلاحية Administrator في السيرفر.",
-            color=discord.Color.red(),
-        )
-        await ctx.send(embed=embed, ephemeral=ctx.interaction is not None)
-        return False
+        return has_admin_access(ctx.author)
 
     return commands.check(predicate)
 
 
 def is_staff_or_owner():
-    """Prefix-command check for staff-hosted games."""
     async def predicate(ctx):
-        if has_staff_access(ctx.author):
-            return True
-
-        embed = discord.Embed(
-            description="❌ الأمر ده مخصص للستاف أو أدمن السيرفر أو أدمنز البوت المصرح لهم.",
-            color=discord.Color.red(),
-        )
-        await ctx.send(embed=embed, ephemeral=ctx.interaction is not None)
-        return False
+        return has_staff_access(ctx.author)
 
     return commands.check(predicate)
