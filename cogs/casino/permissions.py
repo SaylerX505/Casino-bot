@@ -11,9 +11,6 @@ def is_bot_owner(user) -> bool:
 
 
 def has_admin_access(user) -> bool:
-    """Bot owners and Discord server administrators can manage server-level bot settings."""
-    if is_bot_owner(user):
-        return True
     permissions = getattr(user, "guild_permissions", None)
     return bool(getattr(permissions, "administrator", False))
 
