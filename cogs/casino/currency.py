@@ -142,40 +142,57 @@ class ShopView(discord.ui.View):
         self.add_item(ShopDropdown(cog))
 
 
-class InventoryCategorySelect(discord.ui.Select):
-    def __init__(self):
-        options = [
-            discord.SelectOption(label="كل الأغراض", value="all", emoji="🎒"),
-            discord.SelectOption(label="أدوات الألعاب", value="tools", emoji="🎮"),
-            discord.SelectOption(label="المستهلكات", value="consumables", emoji="🎁"),
-        ]
-        super().__init__(
-            placeholder="اختار قسم الشنطة...",
-            min_values=1,
-            max_values=1,
-            options=options,
-            row=0,
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        self.view.category = self.values[0]
-        self.view.refresh_buttons()
-        await interaction.response.edit_message(
-            embed=self.view.make_embed(),
-            view=self.view,
-        )
-
-
-class InventoryView(discord.ui.View):
-    def __init__(self, cog, owner):
+class InventoryView(LayoutView):
+    def __init__(self, cog, owner, category="all", notice=None):
         super().__init__(timeout=180)
         self.cog = cog
         self.owner = owner
         self.owner_id = owner.id
-        self.category = "all"
+        self.category = category
+        self.notice = notice
         self.message = None
-        self.add_item(InventoryCategorySelect())
-        self.refresh_buttons()
+
+        container = Container(
+            TextDisplay(self.make_description()),
+            Separator(),
+            accent_color=config.EMBED_COLOR,
+        )
+        category_row = ActionRow()
+        self.category_select = discord.ui.Select(
+            placeholder="اختار قسم الشنطة...",
+            min_values=1,
+            max_values=1,
+            options=[
+                discord.SelectOption(label="كل الأغراض", value="all", emoji="🎒"),
+                discord.SelectOption(label="أدوات الألعاب", value="tools", emoji="🎮"),
+                discord.SelectOption(label="المستهلكات", value="consumables", emoji="🎁"),
+            ],
+        )
+        self.category_select.callback = self.select_category
+        category_row.add_item(self.category_select)
+        container.add_item(category_row)
+
+        use_row = ActionRow()
+        self.box_button = discord.ui.Button(
+            label="استخدم صندوق",
+            emoji="🎁",
+            style=discord.ButtonStyle.secondary,
+            custom_id="inventory_use_box",
+            disabled=self.cog.get_item_count(self.owner_id, "loot_box") < 1,
+        )
+        self.box_button.callback = self.use_box_button
+        use_row.add_item(self.box_button)
+        self.ticket_button = discord.ui.Button(
+            label="استخدم تذكرة",
+            emoji="🎟️",
+            style=discord.ButtonStyle.secondary,
+            custom_id="inventory_use_ticket",
+            disabled=self.cog.get_item_count(self.owner_id, "luck_ticket") < 1,
+        )
+        self.ticket_button.callback = self.use_ticket_button
+        use_row.add_item(self.ticket_button)
+        container.add_item(use_row)
+        self.add_item(container)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
@@ -188,13 +205,10 @@ class InventoryView(discord.ui.View):
 
     def refresh_buttons(self):
         inventory = self.cog.get_inventory(self.owner_id)
-        for child in self.children:
-            if child.custom_id == "inventory_use_box":
-                child.disabled = inventory.get("loot_box", 0) < 1
-            elif child.custom_id == "inventory_use_ticket":
-                child.disabled = inventory.get("luck_ticket", 0) < 1
+        self.box_button.disabled = inventory.get("loot_box", 0) < 1
+        self.ticket_button.disabled = inventory.get("luck_ticket", 0) < 1
 
-    def make_embed(self, notice=None):
+    def make_description(self, notice=None):
         inventory = self.cog.get_inventory(self.owner_id)
         lines = []
         for item_id, name, category, price, description, emoji in INVENTORY_ITEMS:
@@ -217,22 +231,28 @@ class InventoryView(discord.ui.View):
         else:
             description = "شنطتك فاضية حاليًا. افتح مركز الاقتصاد واختار المتجر عشان تشتري أول غرض."
 
-        if notice:
-            description = f"{notice}\n\n{description}"
+        current_notice = self.notice if notice is None else notice
+        if current_notice:
+            description = f"{current_notice}\n\n{description}"
+        balance_line = f"\n\n**الرصيد الحالي:** {fmt(self.cog.get_balance(self.owner_id))} {COIN_EMOJI}"
+        return f"# 🎒 شنطة {self.owner.display_name}\n{description}{balance_line}"
 
-        embed = discord.Embed(
+    def make_embed(self, notice=None):
+        return discord.Embed(
             title=f"🎒 شنطة {self.owner.display_name}",
-            description=description,
+            description=self.make_description(notice),
             color=discord.Color.dark_purple(),
         )
-        embed.set_thumbnail(url=self.owner.display_avatar.url)
-        embed.add_field(
-            name="💰 الرصيد الحالي",
-            value=f"**{fmt(self.cog.get_balance(self.owner_id))}** {COIN_EMOJI}",
-            inline=False,
+
+    async def select_category(self, interaction: discord.Interaction):
+        view = InventoryView(
+            self.cog,
+            self.owner,
+            category=self.category_select.values[0],
+            notice=self.notice,
         )
-        embed.set_footer(text="اختار قسم من القائمة، أو استخدم الصندوق والتذكرة مباشرة من هنا.")
-        return embed
+        await interaction.response.edit_message(view=view)
+        view.message = await interaction.original_response()
 
     async def redeem_consumable(self, interaction: discord.Interaction, item_id: str):
         redeemed, reward, balance_after = self.cog.redeem_consumable(self.owner_id, item_id)
@@ -247,38 +267,25 @@ class InventoryView(discord.ui.View):
                 ephemeral=True,
             )
 
-        self.refresh_buttons()
         if item_id == "loot_box":
-            result = f"🎁 فتحت صندوق الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
+            notice = f"🎁 فتحت صندوق الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
         else:
-            result = f"🎟️ استخدمت تذكرة الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
-        result += f"\nرصيدك الجديد: **{fmt(balance_after)}** {COIN_EMOJI}"
-        await interaction.response.edit_message(embed=self.make_embed(notice=result), view=self)
+            notice = f"🎟️ استخدمت تذكرة الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
+        notice += f"\nرصيدك الجديد: **{fmt(balance_after)}** {COIN_EMOJI}"
+        view = InventoryView(self.cog, self.owner, category=self.category, notice=notice)
+        await interaction.response.edit_message(view=view)
+        view.message = await interaction.original_response()
 
-    @discord.ui.button(
-        label="استخدم صندوق",
-        emoji="🎁",
-        style=discord.ButtonStyle.secondary,
-        custom_id="inventory_use_box",
-        row=1,
-    )
-    async def use_box_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def use_box_button(self, interaction: discord.Interaction):
         await self.redeem_consumable(interaction, "loot_box")
 
-    @discord.ui.button(
-        label="استخدم تذكرة",
-        emoji="🎟️",
-        style=discord.ButtonStyle.secondary,
-        custom_id="inventory_use_ticket",
-        row=1,
-    )
-    async def use_ticket_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def use_ticket_button(self, interaction: discord.Interaction):
         await self.redeem_consumable(interaction, "luck_ticket")
 
     async def on_timeout(self):
-        for child in self.children:
-            if hasattr(child, "disabled"):
-                child.disabled = True
+        for item in self.walk_children():
+            if hasattr(item, "disabled"):
+                item.disabled = True
         if self.message is not None:
             try:
                 await self.message.edit(view=self)
@@ -799,11 +806,12 @@ class Currency(commands.Cog):
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         await ctx.send(view=view, **send_kwargs)
 
-    @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
+        @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
         view = InventoryView(self, ctx.author)
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
-        view.message = await ctx.send(embed=view.make_embed(), view=view, **send_kwargs)
+        view.message = await ctx.send(view=view, **send_kwargs)
+
     @commands.hybrid_command(name='بروفايل', aliases=['profile', 'me', 'انا'], description='عرض بروفايلك أو بروفايل عضو')
     async def profile(self, ctx, target: discord.Member = None):
         """كارت البروفايل بتاعك: رصيد + ستريك + اغراض"""
