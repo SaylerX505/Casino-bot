@@ -20,6 +20,7 @@ def _connect():
         _conn.execute("CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0, last_daily REAL NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0)")
         _conn.execute("CREATE TABLE IF NOT EXISTS inventory (user_id TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, item))")
         _conn.execute("CREATE TABLE IF NOT EXISTS whitelist (kind TEXT NOT NULL, target_id INTEGER NOT NULL, PRIMARY KEY (kind, target_id))")
+        _conn.execute("CREATE TABLE IF NOT EXISTS guild_admins (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (guild_id, user_id))")
         _conn.commit()
     return _conn
 
@@ -157,6 +158,97 @@ def transfer_balance(sender_id, recipient_id, amount):
             c.rollback()
             raise
 
+
+def settle_wheel(user_id, entry_fee, payout=0, target_loss=None):
+    uid, entry_fee, payout = str(user_id), int(entry_fee), int(payout)
+    sqlite_max_int = (1 << 63) - 1
+    if entry_fee <= 0 or payout < 0 or payout > sqlite_max_int:
+        raise ValueError("invalid wheel settlement values")
+    if target_loss is not None:
+        target_loss = int(target_loss)
+        if target_loss < 0 or target_loss > sqlite_max_int or payout:
+            raise ValueError("invalid wheel loss")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            before = int(row["balance"]) if row else 0
+            if before < entry_fee:
+                c.rollback()
+                return {"played": False, "reason": "insufficient", "before": before, "after": before, "net": 0, "refund": 0}
+
+            after_fee = before - entry_fee
+            if target_loss is not None:
+                after = before - min(before, target_loss)
+            else:
+                if after_fee > sqlite_max_int - payout:
+                    c.rollback()
+                    return {"played": False, "reason": "balance_limit", "before": before, "after": before, "net": 0, "refund": 0}
+                after = after_fee + payout
+
+            if after < 0 or after > sqlite_max_int:
+                c.rollback()
+                return {"played": False, "reason": "balance_limit", "before": before, "after": before, "net": 0, "refund": 0}
+
+            c.execute("UPDATE users SET balance=? WHERE user_id=?", (after, uid))
+            c.commit()
+            return {
+                "played": True,
+                "reason": None,
+                "before": before,
+                "after": after,
+                "net": after - before,
+                "refund": max(0, after - after_fee),
+                "payout": payout,
+                "entry_fee": entry_fee,
+                "target_loss": target_loss,
+            }
+        except Exception:
+            c.rollback()
+            raise
+
+
+def add_guild_admin(guild_id, user_id):
+    with _lock:
+        c = _connect()
+        changed = c.execute(
+            "INSERT OR IGNORE INTO guild_admins (guild_id, user_id) VALUES (?, ?)",
+            (str(guild_id), str(user_id)),
+        ).rowcount
+        c.commit()
+        return changed == 1
+
+
+def remove_guild_admin(guild_id, user_id):
+    with _lock:
+        c = _connect()
+        changed = c.execute(
+            "DELETE FROM guild_admins WHERE guild_id=? AND user_id=?",
+            (str(guild_id), str(user_id)),
+        ).rowcount
+        c.commit()
+        return changed == 1
+
+
+def list_guild_admins(guild_id):
+    with _lock:
+        rows = _connect().execute(
+            "SELECT user_id FROM guild_admins WHERE guild_id=? ORDER BY user_id",
+            (str(guild_id),),
+        ).fetchall()
+        return [int(row["user_id"]) for row in rows]
+
+
+def is_guild_admin(guild_id, user_id):
+    with _lock:
+        row = _connect().execute(
+            "SELECT 1 FROM guild_admins WHERE guild_id=? AND user_id=?",
+            (str(guild_id), str(user_id)),
+        ).fetchone()
+        return row is not None
 
 def purchase_item(user_id, item, quantity, unit_price):
     """Charge coins and add inventory in one transaction."""
