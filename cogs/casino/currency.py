@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 import json
 import os
-from typing import Union
 import random
 import time
 import re
@@ -25,19 +24,6 @@ INVENTORY_ITEMS = (
     ("luck_ticket", "تذكرة حظ", "consumables", 120, "استخدمها لتحصل على مكافأة عشوائية حتى 150.", "🎟️"),
     ("loot_box", "صندوق حظ", "consumables", 250, "افتحه لتحصل على مكافأة عشوائية حتى 400.", "🎁"),
 )
-
-OWNER_IDS = [1446557924834017441, 1135291623840948375, 853670651428077609, 798280308071596063, 1159601661392715906, 1028268695887282187]
-ALLOWED_CHANNEL_ID = 1521263741520314481
-
-def is_allowed_channel_or_owner():
-    async def predicate(ctx):
-        if ctx.author.id in OWNER_IDS:
-            return True
-        if ctx.channel.id == ALLOWED_CHANNEL_ID:
-            return True
-        # --- DEFAULT DENIAL ---
-        return False
-    return commands.check(predicate)
 
 def load_data():
     # --- LEGACY JSON DATA ---
@@ -391,90 +377,6 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
             f"From {interaction.user.mention} to {recipient.mention}: {fmt(amount)}",
             discord.Color.orange(),
         )
-class AdminActionModal(discord.ui.Modal):
-    def __init__(self, cog, action):
-        titles = {"add": "➕ إضافة رصيد", "remove": "➖ خصم رصيد", "reset": "⚠️ تصفير الرصيد"}
-        super().__init__(title=titles[action])
-        self.cog = cog
-        self.action = action
-        self.target = discord.ui.TextInput(label="ID العضو", required=True)
-        self.add_item(self.target)
-        if action != "reset":
-            self.amount = discord.ui.TextInput(label="المبلغ", required=True)
-            self.add_item(self.amount)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        nums = re.findall(r'\d+', self.target.value)
-        if not nums:
-            embed = discord.Embed(
-                description="❌ الـID غير صحيح.",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        target_id = int(nums[0])
-        
-        if self.action == "reset":
-            bank.set_balance(target_id, 0)
-            embed = discord.Embed(
-                description=f"✅ تم تصفير رصيد <@{target_id}>!",
-                color=discord.Color.green()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-        try: amt = int(self.amount.value)
-        except:
-            embed = discord.Embed(
-                description="❌ المبلغ لازم يكون رقم صحيح.",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-        if amt <= 0:
-            embed = discord.Embed(
-                description="❌ المبلغ لازم يكون أكبر من صفر.",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        if self.action == "add":
-            credited, balance_after = bank.credit_balance(target_id, amt)
-            if not credited:
-                embed = discord.Embed(
-                    description="❌ المبلغ أكبر من الحد المدعوم للرصيد.",
-                    color=discord.Color.red()
-                )
-                return await interaction.response.send_message(embed=embed, ephemeral=True)
-            embed = discord.Embed(
-                description=f"✅ أضفنا {fmt(amt)} إلى <@{target_id}>. الرصيد الجديد: {fmt(balance_after)} {COIN_EMOJI}.",
-                color=discord.Color.green()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        elif self.action == "remove":
-            removed, balance_after = bank.remove_balance(target_id, amt)
-            if not removed:
-                embed = discord.Embed(
-                    description=f"❌ مينفعش تخصم {fmt(amt)}؛ الرصيد الحالي {fmt(balance_after)} {COIN_EMOJI}.",
-                    color=discord.Color.red()
-                )
-                return await interaction.response.send_message(embed=embed, ephemeral=True)
-            embed = discord.Embed(
-                description=f"✅ تم خصم {fmt(amt)} من <@{target_id}>",
-                color=discord.Color.green()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-
-class AdminActionView(discord.ui.View):
-    def __init__(self, cog):
-        super().__init__(timeout=180)
-        self.cog = cog
-        
-    @discord.ui.button(label="إضافة عملات", style=discord.ButtonStyle.success)
-    async def add_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "add"))
-    @discord.ui.button(label="خصم عملات", style=discord.ButtonStyle.danger)
-    async def rem_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "remove"))
-    @discord.ui.button(label="تصفير", style=discord.ButtonStyle.secondary)
-    async def res_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "reset"))
-
 class CurrencyHubLayout(LayoutView):
     def __init__(self, cog, requester=None):
         super().__init__(timeout=None)
@@ -555,162 +457,6 @@ class CurrencyHubLayout(LayoutView):
     async def transfer_btn(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TransferModal(self.cog))
 
-class CurrencyHubView(discord.ui.View):
-    def __init__(self, cog, requester=None):
-        super().__init__(timeout=None)
-        self.cog = cog
-
-        # --- ADMIN PANEL VISIBILITY ---
-        if requester is not None and not cog.check_whitelist(requester):
-            admin_button = next(
-                (
-                    child
-                    for child in self.children
-                    if getattr(child, "custom_id", None) == "hub_admin"
-                ),
-                None,
-            )
-            if admin_button is not None:
-                self.remove_item(admin_button)
-        
-    @discord.ui.button(label="اليومية", style=discord.ButtonStyle.secondary, emoji="🎁", custom_id="hub_daily")
-    async def daily_btn(self, interaction, button):
-        now = bank.now()
-        claim = bank.claim_daily(interaction.user.id, now, random.randint(20, 45))
-        if not claim["claimed"]:
-            if claim.get("reason") == "balance_limit":
-                return await interaction.response.send_message(
-                    "❌ رصيدك وصل للحد الأقصى المدعوم؛ المكافأة لم تُصرف ولم تُستهلك مطالبتك اليومية.",
-                    ephemeral=True,
-                )
-            next_available_time = int(claim["last_daily"] + 86400)
-            embed = discord.Embed(
-                description=f"❌ أخدت اليومية بالفعل! ارجع <t:{next_available_time}:R>",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        amt = claim["amount"]
-        streak = claim["streak"]
-        embed = discord.Embed(
-            description=f"✅ استلمت اليومية: {fmt(amt)} {COIN_EMOJI}\n🔥 ستريك **{streak}** يوم (بونص +{fmt(min(streak, 7) * 10)} بكرة)",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="الأغنى", style=discord.ButtonStyle.secondary, emoji="🏆", custom_id="hub_top")
-    async def top_btn(self, interaction, button):
-        srt = bank.top_balances(10)
-        desc = "\n".join([f"**#{i+1}** <@{u}> ➔ **{fmt(b)}** {COIN_EMOJI}" for i, (u, b) in enumerate(srt)])
-        embed = discord.Embed(
-            title="🏆 أغنى الأعضاء",
-            description=desc or "الخزنة فاضية لسه!",
-            color=discord.Color.gold()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-    @discord.ui.button(label="المتجر", style=discord.ButtonStyle.secondary, emoji="🛒", custom_id="hub_shop")
-    async def shop_btn(self, interaction, button):
-        await interaction.response.send_message(view=ShopView(self.cog), ephemeral=True)
-
-    @discord.ui.button(label="تحويل", style=discord.ButtonStyle.secondary, emoji="💸", custom_id="hub_transfer")
-    async def transfer_btn(self, interaction, button):
-        await interaction.response.send_modal(TransferModal(self.cog))
-        
-    @discord.ui.button(label="إدارة البنك", style=discord.ButtonStyle.danger, emoji="⚙️", custom_id="hub_admin")
-    async def admin_btn(self, interaction, button):
-        if not self.cog.check_whitelist(interaction.user):
-            embed = discord.Embed(
-                description="❌ معندكش صلاحية للوصول للوحة دي.",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        await interaction.response.send_message("لوحة إدارة البنك:", view=AdminActionView(self.cog), ephemeral=True)
-
-# --- BANK RESET CONFIRMATION ---
-class BankResetConfirmView(discord.ui.View):
-    def __init__(self, owner_id):
-        super().__init__(timeout=30)
-        self.owner_id = owner_id
-        self.message = None
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("❌ التأكيد متاح لمالك البوت اللي بدأ العملية بس.", ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(label="تأكيد التصفير", style=discord.ButtonStyle.danger, emoji="⚠️")
-    async def confirm_reset(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        backup_path = os.path.join("data", "backups", f"bank-reset-{time.time_ns()}.db")
-        try:
-            bank.backup_database(backup_path)
-            bank.reset_all()
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            for item in self.children:
-                item.disabled = True
-            try:
-                await interaction.message.edit(
-                    embed=discord.Embed(
-                        title="❌ التصفير لم يكتمل",
-                        description="حصل خطأ. راجع سجل البوت؛ متعتبرش العملية ناجحة.",
-                        color=discord.Color.red(),
-                    ),
-                    view=self,
-                )
-            except discord.HTTPException:
-                pass
-            return await interaction.followup.send("فشل التصفير أو النسخ الاحتياطي؛ راجع سجل البوت قبل أي محاولة تانية.", ephemeral=True)
-
-        for item in self.children:
-            item.disabled = True
-        try:
-            await interaction.message.edit(
-                embed=discord.Embed(
-                    title="✅ تم تصفير البنك",
-                    description="اتمسحت الأرصدة والشنط بعد حفظ نسخة احتياطية.",
-                    color=discord.Color.green(),
-                ),
-                view=self,
-            )
-        except discord.HTTPException:
-            pass
-        await interaction.followup.send("تم حفظ النسخة الاحتياطية قبل التصفير.", ephemeral=True)
-
-    @discord.ui.button(label="إلغاء", style=discord.ButtonStyle.secondary, emoji="✖️")
-    async def cancel_reset(self, interaction: discord.Interaction, button: discord.ui.Button):
-        for item in self.children:
-            item.disabled = True
-        await interaction.response.edit_message(
-            embed=discord.Embed(
-                title="تم الإلغاء",
-                description="البنك زي ما هو؛ مفيش أرصدة اتصفرت.",
-                color=discord.Color.greyple(),
-            ),
-            view=self,
-        )
-
-    async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
-        if self.message is not None:
-            try:
-                await self.message.edit(
-                    embed=discord.Embed(
-                        title="انتهى وقت التأكيد",
-                        description="البنك لم يتغير.",
-                        color=discord.Color.greyple(),
-                    ),
-                    view=self,
-                )
-            except discord.HTTPException:
-                pass
-
-
-# --- CURRENCY COG ---
 class Currency(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -769,30 +515,6 @@ class Currency(commands.Cog):
         redeemed, balance_after = bank.redeem_item(user_id, item_id, reward)
         return redeemed, reward, balance_after
 
-    @commands.hybrid_command(name='bankreset', aliases=['تصفير'], description='تصفير الاقتصاد بعد إنشاء نسخة احتياطية')
-    @commands.is_owner()
-    async def bank_reset(self, ctx):
-        view = BankResetConfirmView(ctx.author.id)
-        embed = discord.Embed(
-            title="⚠️ تأكيد تصفير البنك",
-            description="العملية هتمسح أرصدة الأعضاء والشنط. مش هننفذها غير بعد إنشاء نسخة احتياطية وتأكيدك.",
-            color=discord.Color.red(),
-        )
-        if ctx.interaction is not None:
-            view.message = await ctx.send(embed=embed, view=view, ephemeral=True)
-        else:
-            view.message = await ctx.send(embed=embed, view=view)
-
-    @commands.command(name='bankmigrate', aliases=['ترحيل'])
-    @commands.is_owner()
-    async def bank_migrate(self, ctx):
-        """One-time import from old currency.json into SQLite."""
-        data = load_data()
-        if not data:
-            return await ctx.send("❌ مفيش currency.json عشان ارحله!")
-        counts = bank.migrate_from_json(data)
-        await ctx.send(f"✅ اترحل! يوزر: **{counts['users']}** / اصناف: **{counts['items']}** / وايت ليست: **{counts['wl']}**")
-
     async def log_action(self, title: str, description: str, color: discord.Color):
         channel = self.bot.get_channel(LOG_CHANNEL_ID)
         if channel:
@@ -837,7 +559,7 @@ class Currency(commands.Cog):
             ephemeral=ctx.interaction is not None,
         )
 
-        @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
+    @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
     async def use_item(self, ctx, item: str = None):
         """استخدم صندوق حظ او تذكرة: +استخدم صندوق / +استخدم تذكرة"""
         if not item:
@@ -867,34 +589,9 @@ class Currency(commands.Cog):
             desc = f"🎟️ {ctx.author.mention} استخدم تذكرة الحظ وكسب **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(balance_after)}**"
         await ctx.send(view=StatusPanel("🍀 حظك!", desc, "success"), ephemeral=ctx.interaction is not None)
 
-    @commands.command(name='whitelist')
-    @commands.is_owner()
-    async def whitelist_bank(self, ctx, action: str, target: Union[discord.Member, discord.Role]):
-        target_type = "users" if isinstance(target, discord.Member) else "roles"
-        if action == "add":
-            bank.whitelist_add(target_type, target.id)
-            embed = discord.Embed(
-                description=f"✅ Permission added to {target.mention}",
-                color=discord.Color.green()
-            )
-            await ctx.send(embed=embed)
-        elif action == "remove":
-            bank.whitelist_remove(target_type, target.id)
-            embed = discord.Embed(
-                description=f"✅ Permission removed from {target.mention}",
-                color=discord.Color.green()
-            )
-            await ctx.send(embed=embed)
-
 async def setup(bot):
     cog = Currency(bot)
     await bot.add_cog(cog)
-    old_view = getattr(bot, "_currency_hub_view", None)
-    if old_view is not None:
-        bot.remove_view(old_view)
-    view = CurrencyHubView(cog)
-    bot.add_view(view)
-    bot._currency_hub_view = view
     old_layout = getattr(bot, "_currency_hub_layout", None)
     if old_layout is not None:
         bot.remove_view(old_layout)
