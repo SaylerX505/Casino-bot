@@ -8,7 +8,7 @@ import random
 import config
 
 from cogs.casino.permissions import is_staff_or_owner
-from cogs.utility.theme import lobby_embed
+from cogs.utility.theme import lobby_embed, result_embed
 
 
 class WatermarkView(discord.ui.View):
@@ -402,17 +402,18 @@ async def run_game_loop(ctx, players):
         # --- WINNER ANNOUNCEMENT ---
         if len(alive) == 1:
             winner = alive[0]
-            win_embed = discord.Embed(
+            win_embed = result_embed(
                 title="🏆 بطل الغميضة!",
                 description=f"الكل اتكشف ومتبقاش غير شبح الحفرة!\n\n🎉 ألف مبروك لـ **{winner.mention}** فاز بالجيم!",
-                color=discord.Color.gold()
+                outcome="win",
+                thumbnail_url=winner.display_avatar.url,
             )
-            win_embed.set_thumbnail(url=winner.display_avatar.url)
             await ctx.send(embed=win_embed, view=WatermarkView())
         else:
-            embed = discord.Embed(
+            embed = result_embed(
+                title="انتهت الغميضة",
                 description="💀 الكل اتكشف! مفيش فايز النهاردة.",
-                color=discord.Color.dark_grey()
+                outcome="loss",
             )
             await ctx.send(embed=embed, view=WatermarkView())
 
