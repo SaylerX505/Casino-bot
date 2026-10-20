@@ -3,7 +3,6 @@ import discord
 from discord.ext import commands
 import aiohttp
 import config
-from cogs.casino.permissions import has_admin_access, is_admin_or_owner
 import json
 import os
 
