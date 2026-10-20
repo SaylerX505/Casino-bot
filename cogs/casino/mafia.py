@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
+import logging
 from PIL import Image, ImageDraw
 import io
 import random
@@ -9,7 +10,9 @@ import aiohttp
 import config
 
 from cogs.casino.permissions import is_staff_or_owner
-from cogs.utility.theme import lobby_embed, result_embed
+from cogs.utility.theme import StatusPanel, lobby_embed, result_embed
+
+logger = logging.getLogger(__name__)
 
 
 class WatermarkView(discord.ui.View):
@@ -362,6 +365,7 @@ class MafiaGameState:
 
 
 async def run_mafia_game(ctx, players):
+    reminder_tasks = set()
     try:
         num = len(players)
         if num <= 10: mafia_count = 1
@@ -396,8 +400,8 @@ async def run_mafia_game(ctx, players):
             if hasattr(ctx.bot, 'active_games') and ctx.channel.id in ctx.bot.active_games:
                 ctx.bot.active_games[ctx.channel.id]['game_ref'] = _state
         except Exception:
-            pass
-        
+            logger.exception("Mafia game state registration failed")
+
         class RoleRevealView(discord.ui.View):
             def __init__(self): super().__init__(timeout=60)
             @discord.ui.button(label="👀 اعرف دورك السري", style=discord.ButtonStyle.secondary)
@@ -459,7 +463,9 @@ async def run_mafia_game(ctx, players):
                     m_msg = await ctx.send(embed=m_embed, file=mafia_file, view=m_view)
                     m_view.message = m_msg
                     set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), m_view)
-                    ctx.bot.loop.create_task(poke_reminder(hitman, "mafia", m_view))
+                    reminder = asyncio.create_task(poke_reminder(hitman, "mafia", m_view))
+                    reminder_tasks.add(reminder)
+                    reminder.add_done_callback(reminder_tasks.discard)
 
                     await m_view.wait()
                     mafia_target_id = m_view.selected_id
@@ -482,7 +488,17 @@ async def run_mafia_game(ctx, players):
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    pass
+                    logger.exception("Mafia night action failed")
+                    try:
+                        await ctx.send(
+                            view=StatusPanel(
+                                "تعذر إكمال حركة المافيا",
+                                "حصل خطأ تقني أثناء اختيار الضحية. هنكمل الجولة من غير اعتماد اختيار غير مؤكد.",
+                                "warning",
+                            )
+                        )
+                    except discord.HTTPException:
+                        logger.exception("Failed to report mafia action error")
             else:
                 await asyncio.sleep(5)
                 
@@ -504,7 +520,9 @@ async def run_mafia_game(ctx, players):
                     d_msg = await ctx.send(embed=d_embed, file=doc_file, view=d_view)
                     d_view.message = d_msg
                     set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), d_view)
-                    ctx.bot.loop.create_task(poke_reminder(doctor, "doctor", d_view))
+                    reminder = asyncio.create_task(poke_reminder(doctor, "doctor", d_view))
+                    reminder_tasks.add(reminder)
+                    reminder.add_done_callback(reminder_tasks.discard)
 
                     await d_view.wait()
                     doctor_target_id = d_view.selected_id
@@ -527,7 +545,17 @@ async def run_mafia_game(ctx, players):
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    pass
+                    logger.exception("Doctor night action failed")
+                    try:
+                        await ctx.send(
+                            view=StatusPanel(
+                                "تعذر إكمال علاج الدكتور",
+                                "حصل خطأ تقني أثناء اختيار العلاج. هنكمل الجولة من غير اعتماد اختيار غير مؤكد.",
+                                "warning",
+                            )
+                        )
+                    except discord.HTTPException:
+                        logger.exception("Failed to report doctor action error")
             else:
                 await asyncio.sleep(2) 
             
@@ -705,6 +733,10 @@ async def run_mafia_game(ctx, players):
     except asyncio.CancelledError:
         raise
     finally:
+        for reminder in reminder_tasks:
+            reminder.cancel()
+        if reminder_tasks:
+            await asyncio.gather(*reminder_tasks, return_exceptions=True)
         release_game_task(ctx.bot, ctx.channel.id, asyncio.current_task())
 
 async def town_wins(ctx, mafias):
