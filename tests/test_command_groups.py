@@ -13,6 +13,7 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
         self.bot = commands.Bot(
             command_prefix="+",
             intents=discord.Intents.none(),
+            help_command=None,
         )
         await self.bot.add_cog(HelpCommand(self.bot))
 
