@@ -6,7 +6,7 @@ import random
 import config
 
 from cogs.casino.permissions import is_staff_or_owner
-from cogs.utility.theme import lobby_embed
+from cogs.utility.theme import lobby_embed, result_embed
 
 
 # --- UI VIEWS ---
@@ -310,13 +310,12 @@ class ChairsLobby(discord.ui.View):
             # --- WINNER ANNOUNCEMENT ---
             if len(active_players) == 1:
                 winner = active_players[0]
-                embed = discord.Embed(
+                embed = result_embed(
                     title="🏆 بطل الكراسي الموسيقية!",
                     description=f"🎉 الفائز النهائي والناجي الوحيد هو **{winner.mention}**!",
-                    color=discord.Color.gold()
+                    outcome="win",
+                    thumbnail_url=winner.display_avatar.url,
                 )
-                embed.set_thumbnail(url=winner.display_avatar.url)
-                embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=self.logo_url)
                 await self.ctx.send(content=f"مبروك يا نجم {winner.mention} 👑", embed=embed, view=WatermarkView())
 
         except asyncio.CancelledError:
