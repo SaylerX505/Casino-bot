@@ -48,7 +48,10 @@ async def on_command_error(ctx, error):
         return
     if isinstance(error, commands.CommandOnCooldown):
         try:
-            await ctx.send(f"⏳ اهدى يا معلم! جرب تاني بعد **{error.retry_after:.0f}** ثانية.")
+            await ctx.send(
+                f"⏳ اهدى يا معلم! جرب تاني بعد **{error.retry_after:.0f}** ثانية.",
+                ephemeral=ctx.interaction is not None,
+            )
         except Exception:
             pass
         return
@@ -59,14 +62,24 @@ async def on_command_error(ctx, error):
         if ch is not None:
             e = discord.Embed(
                 title="🚨 Bot Error",
-                description=f"<@{config.NEGLAWY_ID}> فيه ايرور يا مطور!\n\n**الأمر:** `{ctx.command}`\n**اليوزر:** {ctx.author.mention} (`{ctx.author.id}`)\n**الروم:** {ctx.channel.mention}\n**الرسالة:** {ctx.message.content[:300]}\n\n```{err_text}```",
+                description=(
+                    f"<@{config.NEGLAWY_ID}> فيه ايرور يا مطور!\n\n"
+                    f"**الأمر:** `{ctx.command}`\n"
+                    f"**اليوزر:** {ctx.author.mention} (`{ctx.author.id}`)\n"
+                    f"**الروم:** {ctx.channel.mention}\n"
+                    f"**الرسالة:** {(ctx.message.content if ctx.message else f'/{ctx.command.qualified_name if ctx.command else "unknown"}')[:300]}\n\n"
+                    f"```{err_text}```"
+                ),
                 color=0x8B1E1E,
             )
             await ch.send(content=f"<@{config.NEGLAWY_ID}>", embed=e)
     except Exception as log_e:
         print(f"⚠️ Failed to log error: {log_e}")
     try:
-        await ctx.send("❌ حصلت مشكلة! نجلاوي اتبلغ وهيظبطها. جرب تاني كمان شوية.")
+        await ctx.send(
+            "❌ حصلت مشكلة! نجلاوي اتبلغ وهيظبطها. جرب تاني كمان شوية.",
+            ephemeral=ctx.interaction is not None,
+        )
     except Exception:
         pass
 
@@ -77,7 +90,7 @@ async def load_cogs():
     base_dir = pathlib.Path(__file__).parent
     cog_directories = ['cogs.casino', 'cogs.utility']
     # --- HELPER MODULE FILTER ---
-    utility_allow = {'admin_tools.py', 'help.py', 'ai.py'}
+    utility_allow = {'admin_tools.py', 'help.py', 'ai.py', 'admin.py'}
 
     for directory in cog_directories:
         folder_path = base_dir / directory.replace('.', '/')
