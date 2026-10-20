@@ -212,7 +212,7 @@ class HelpEntryView(discord.ui.View):
         super().__init__(timeout=180)
         self.bot = bot
 
-    @discord.ui.button(label="افتح المساعدة الخاصة", emoji="📚", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="افتح المساعدة الخاصة", emoji="📚", style=discord.ButtonStyle.secondary)
     async def open_help(self, interaction: discord.Interaction, button: discord.ui.Button):
         latency = round(self.bot.latency * 1000)
         view = HelpLayout(interaction.user, latency, private_root=True)
