@@ -7,7 +7,7 @@ import io
 import random
 import config
 
-from cogs.casino.permissions import is_staff_or_owner
+from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import lobby_embed, result_embed
 
 
@@ -427,7 +427,7 @@ class HideAndSeek(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='غميضه', description='بدء لعبة الغميضة')
-    @is_staff_or_owner()
+    @is_staff_or_admin()
     async def start_hide_seek(self, ctx):
         """يبدأ لعبة الغميضة في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
