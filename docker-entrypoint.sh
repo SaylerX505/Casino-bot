@@ -1,3 +1,4 @@
+#!/bin/sh
 set -eu
 
 data_dir="/app/data"
