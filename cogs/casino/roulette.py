@@ -16,7 +16,7 @@ class WatermarkView(discord.ui.View):
         self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
-from cogs.casino.permissions import is_staff_or_owner
+from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import lobby_embed, result_embed
 
 
@@ -426,7 +426,7 @@ class Roulette(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='روليت', description='بدء لعبة الروليت الروسي')
-    @is_staff_or_owner()
+    @is_staff_or_admin()
     async def start_roulette(self, ctx):
         """يبدأ لعبة الروليت"""
         if is_active_game(self.bot, ctx.channel.id):
