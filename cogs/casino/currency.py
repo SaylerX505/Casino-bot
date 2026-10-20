@@ -496,7 +496,7 @@ class CurrencyHubLayout(LayoutView):
         first_row = ActionRow()
         self._add_button(first_row, "اليومية", "🎁", discord.ButtonStyle.secondary, "hubv2_daily", self.daily_btn)
         self._add_button(first_row, "الأغنى", "🏆", discord.ButtonStyle.secondary, "hubv2_top", self.top_btn)
-        self._add_button(first_row, "المتجر", "🛒", discord.ButtonStyle.primary, "hubv2_shop", self.shop_btn)
+        self._add_button(first_row, "المتجر", "🛒", discord.ButtonStyle.secondary, "hubv2_shop", self.shop_btn)
         container.add_item(first_row)
 
         second_row = ActionRow()
@@ -522,57 +522,40 @@ class CurrencyHubLayout(LayoutView):
         if not claim["claimed"]:
             if claim.get("reason") == "balance_limit":
                 return await interaction.response.send_message(
-                    "❌ رصيدك وصل للحد الأقصى المدعوم؛ المكافأة لم تُصرف ولم تُستهلك مطالبتك اليومية.",
+                    view=StatusPanel("المكافأة غير متاحة", "رصيدك وصل للحد الأقصى المدعوم؛ المكافأة لم تُصرف ولم تُستهلك مطالبتك اليومية.", "warning"),
                     ephemeral=True,
                 )
             next_available_time = int(claim["last_daily"] + 86400)
-            embed = discord.Embed(
-                description=f"❌ أخدت اليومية بالفعل! ارجع <t:{next_available_time}:R>",
-                color=discord.Color.red(),
+            return await interaction.response.send_message(
+                view=StatusPanel("اليومية مستلمة بالفعل", f"تقدر ترجع تطالب بيها <t:{next_available_time}:R>.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         amount = claim["amount"]
         streak = claim["streak"]
-        embed = discord.Embed(
-            description=(
-                f"✅ استلمت اليومية: {fmt(amount)} {COIN_EMOJI}\n"
-                f"🔥 ستريك **{streak}** يوم (بونص +{fmt(min(streak, 7) * 10)} بكرة)"
+        await interaction.response.send_message(
+            view=StatusPanel(
+                "استلمت اليومية",
+                f"المكافأة: **{fmt(amount)} {COIN_EMOJI}**\\nالستريك الحالي: **{streak}** يوم.",
+                "success",
             ),
-            color=discord.Color.green(),
+            ephemeral=True,
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
     async def top_btn(self, interaction: discord.Interaction):
         ranking = bank.top_balances(10)
-        description = "\n".join(
-            f"**#{index + 1}** <@{user_id}> ➔ **{fmt(balance)}** {COIN_EMOJI}"
+        description = "\\n".join(
+            f"**#{index + 1}** <@{user_id}> — **{fmt(balance)}** {COIN_EMOJI}"
             for index, (user_id, balance) in enumerate(ranking)
         )
-        embed = discord.Embed(
-            title="🏆 أغنى الأعضاء",
-            description=description or "الخزنة فاضية لسه!",
-            color=discord.Color.gold(),
+        await interaction.response.send_message(
+            view=StatusPanel("🏆 أغنى الأعضاء", description or "الخزنة فاضية لسه!"),
+            ephemeral=True,
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
     async def shop_btn(self, interaction: discord.Interaction):
         await interaction.response.send_message(view=ShopView(self.cog), ephemeral=True)
 
     async def transfer_btn(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TransferModal(self.cog))
-
-    async def admin_btn(self, interaction: discord.Interaction):
-        if not self.cog.check_whitelist(interaction.user):
-            return await interaction.response.send_message(
-                "❌ معندكش صلاحية للوصول للوحة دي.",
-                ephemeral=True,
-            )
-        await interaction.response.send_message(
-            "لوحة إدارة البنك:",
-            view=AdminActionView(self.cog),
-            ephemeral=True,
-        )
 
 class CurrencyHubView(discord.ui.View):
     def __init__(self, cog, requester=None):
