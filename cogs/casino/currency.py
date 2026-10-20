@@ -14,6 +14,16 @@ LOG_CHANNEL_ID = 1513736075120742610
 SERVER_LOGO = "https://media.discordapp.net/attachments/1509650275164749994/1513741255786627162/c51bafdd9c1feb13e22458c35067c718.webp"
 DATA_FILE = "data/currency.json"
 
+INVENTORY_ITEMS = (
+    ("double_shot", "طلقة مزدوجة", "tools", 100, "تسمح باستهداف لاعب إضافي في الروليت.", "🔫"),
+    ("shield", "درع الحفرة", "tools", 275, "يصد الاستهداف في الروليت ويردّه على المهاجم.", "🛡️"),
+    ("mafia_scan", "كشف مافيا", "tools", 150, "يوفر تلميحًا عن أحد أفراد المافيا أثناء اللعبة.", "🔍"),
+    ("veto", "فيتو", "tools", 200, "يلغي صوتًا ضدك أثناء تصويت المافيا.", "⛔"),
+    ("roulette_ins", "تأمين روليت", "tools", 300, "يمنح فرصة نجاة إضافية في الروليت.", "💉"),
+    ("luck_ticket", "تذكرة حظ", "consumables", 120, "استخدمها لتحصل على مكافأة عشوائية حتى 150.", "🎟️"),
+    ("loot_box", "صندوق حظ", "consumables", 250, "افتحه لتحصل على مكافأة عشوائية حتى 400.", "🎁"),
+)
+
 OWNER_IDS = [1446557924834017441, 1135291623840948375, 853670651428077609, 798280308071596063, 1159601661392715906, 1028268695887282187]
 ALLOWED_CHANNEL_ID = 1521263741520314481
 
@@ -99,27 +109,179 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
 class ShopDropdown(discord.ui.Select):
     def __init__(self, cog):
         self.cog = cog
-        self.prices = {"double_shot": 100, "shield": 275, "mafia_scan": 150, "veto": 200, "roulette_ins": 300, "luck_ticket": 120, "loot_box": 250}
-        self.names = {"double_shot": "طلقة مزدوجة 🔫", "shield": "درع الحفره 🛡️", "mafia_scan": "كشف مافيا 🔍", "veto": "فيتو ⛔", "roulette_ins": "تأمين روليت 💉", "luck_ticket": "تذكرة حظ 🎟️", "loot_box": "صندوق حظ 🎁"}
+        self.prices = {item[0]: item[3] for item in INVENTORY_ITEMS}
+        self.names = {item[0]: f"{item[5]} {item[1]}" for item in INVENTORY_ITEMS}
         options = [
-            discord.SelectOption(label="طلقة مزدوجة 🔫", description="100 | اضرب اتنين في الروليت", value="double_shot", emoji="🔫"),
-            discord.SelectOption(label="درع الحفره 🛡️", description="275 | صد الضربة ورجعها", value="shield", emoji="🛡️"),
-            discord.SelectOption(label="كشف مافيا 🔍", description="150 | تلميح عن مافيا واحد", value="mafia_scan", emoji="🔍"),
-            discord.SelectOption(label="فيتو ⛔", description="200 | الغي صوت ضدك في مافيا", value="veto", emoji="⛔"),
-            discord.SelectOption(label="تأمين روليت 💉", description="300 | فرصة تانية لو اتضربت", value="roulette_ins", emoji="💉"),
-            discord.SelectOption(label="تذكرة حظ 🎟️", description="120 | اكسب لحد 150 (+استخدم تذكرة)", value="luck_ticket", emoji="🎟️"),
-            discord.SelectOption(label="صندوق حظ 🎁", description="250 | اكسب لحد 400 (+استخدم صندوق)", value="loot_box", emoji="🎁"),
+            discord.SelectOption(
+                label=name,
+                description=f"{price} | {description}",
+                value=item_id,
+                emoji=emoji,
+            )
+            for item_id, name, category, price, description, emoji in INVENTORY_ITEMS
         ]
-        super().__init__(placeholder="اختار غرض من دكان الحفرة... 🛒", min_values=1, max_values=1, options=options)
+        super().__init__(
+            placeholder="اختار غرض من دكان الحفرة... 🛒",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction):
-        v = self.values[0]
-        await interaction.response.send_modal(BuyForm(self.cog, v, self.prices[v], self.names[v]))
+        item_id = self.values[0]
+        await interaction.response.send_modal(
+            BuyForm(self.cog, item_id, self.prices[item_id], self.names[item_id])
+        )
+
 
 class ShopView(discord.ui.View):
     def __init__(self, cog):
         super().__init__(timeout=180)
         self.add_item(ShopDropdown(cog))
+
+
+class InventoryCategorySelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="كل الأغراض", value="all", emoji="🎒"),
+            discord.SelectOption(label="أدوات الألعاب", value="tools", emoji="🎮"),
+            discord.SelectOption(label="المستهلكات", value="consumables", emoji="🎁"),
+        ]
+        super().__init__(
+            placeholder="اختار قسم الشنطة...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=0,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.category = self.values[0]
+        self.view.refresh_buttons()
+        await interaction.response.edit_message(
+            embed=self.view.make_embed(),
+            view=self.view,
+        )
+
+
+class InventoryView(discord.ui.View):
+    def __init__(self, cog, owner):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.owner = owner
+        self.owner_id = owner.id
+        self.category = "all"
+        self.message = None
+        self.add_item(InventoryCategorySelect())
+        self.refresh_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "الشنطة دي شخصية لصاحبها؛ افتح +شنطتي عشان تستخدم أغراضك.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    def refresh_buttons(self):
+        inventory = self.cog.get_inventory(self.owner_id)
+        for child in self.children:
+            if child.custom_id == "inventory_use_box":
+                child.disabled = inventory.get("loot_box", 0) < 1
+            elif child.custom_id == "inventory_use_ticket":
+                child.disabled = inventory.get("luck_ticket", 0) < 1
+
+    def make_embed(self, notice=None):
+        inventory = self.cog.get_inventory(self.owner_id)
+        lines = []
+        for item_id, name, category, price, description, emoji in INVENTORY_ITEMS:
+            if self.category != "all" and category != self.category:
+                continue
+            quantity = inventory.get(item_id, 0)
+            if quantity < 1:
+                continue
+            lines.append(
+                f"{emoji} **{name} ×{quantity}** — {description}\\n"
+                f"السعر في المتجر: **{fmt(price)}** {COIN_EMOJI}"
+            )
+
+        if lines:
+            description = "\\n\\n".join(lines)
+        elif self.category == "tools":
+            description = "مفيش أدوات ألعاب في القسم ده حاليًا. تقدر تشتري من مركز الاقتصاد."
+        elif self.category == "consumables":
+            description = "مفيش مستهلكات في القسم ده حاليًا. تقدر تشتري صندوق أو تذكرة من المتجر."
+        else:
+            description = "شنطتك فاضية حاليًا. افتح مركز الاقتصاد واختار المتجر عشان تشتري أول غرض."
+
+        if notice:
+            description = f"{notice}\\n\\n{description}"
+
+        embed = discord.Embed(
+            title=f"🎒 شنطة {self.owner.display_name}",
+            description=description,
+            color=discord.Color.dark_purple(),
+        )
+        embed.set_thumbnail(url=self.owner.display_avatar.url)
+        embed.add_field(
+            name="💰 الرصيد الحالي",
+            value=f"**{fmt(self.cog.get_balance(self.owner_id))}** {COIN_EMOJI}",
+            inline=False,
+        )
+        embed.set_footer(text="اختار قسم من القائمة، أو استخدم الصندوق والتذكرة مباشرة من هنا.")
+        return embed
+
+    async def redeem_consumable(self, interaction: discord.Interaction, item_id: str):
+        redeemed, reward, balance_after = self.cog.redeem_consumable(self.owner_id, item_id)
+        if not redeemed:
+            if self.cog.get_item_count(self.owner_id, item_id) > 0:
+                return await interaction.response.send_message(
+                    "رصيدك وصل للحد الأقصى؛ احتفظنا بالغرض في شنطتك ولم نستهلكه.",
+                    ephemeral=True,
+                )
+            return await interaction.response.send_message(
+                "الغرض ده مش موجود في شنطتك. افتح المتجر من مركز الاقتصاد لشرائه.",
+                ephemeral=True,
+            )
+
+        self.refresh_buttons()
+        if item_id == "loot_box":
+            result = f"🎁 فتحت صندوق الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
+        else:
+            result = f"🎟️ استخدمت تذكرة الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
+        result += f"\\nرصيدك الجديد: **{fmt(balance_after)}** {COIN_EMOJI}"
+        await interaction.response.edit_message(embed=self.make_embed(notice=result), view=self)
+
+    @discord.ui.button(
+        label="استخدم صندوق",
+        emoji="🎁",
+        style=discord.ButtonStyle.success,
+        custom_id="inventory_use_box",
+        row=1,
+    )
+    async def use_box_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.redeem_consumable(interaction, "loot_box")
+
+    @discord.ui.button(
+        label="استخدم تذكرة",
+        emoji="🎟️",
+        style=discord.ButtonStyle.primary,
+        custom_id="inventory_use_ticket",
+        row=1,
+    )
+    async def use_ticket_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.redeem_consumable(interaction, "luck_ticket")
+
+    async def on_timeout(self):
+        for child in self.children:
+            if hasattr(child, "disabled"):
+                child.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
 
 class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
     def __init__(self, cog):
@@ -458,6 +620,17 @@ class Currency(commands.Cog):
     def get_inventory(self, user_id: int) -> dict:
         return bank.get_inventory(user_id)
 
+    def redeem_consumable(self, user_id: int, item_id: str):
+        rewards = {
+            "loot_box": [30, 50, 80, 100, 150, 250, 400],
+            "luck_ticket": [20, 40, 60, 100, 150],
+        }
+        if item_id not in rewards:
+            raise ValueError(f"Unsupported consumable: {item_id}")
+        reward = random.choice(rewards[item_id])
+        redeemed, balance_after = bank.redeem_item(user_id, item_id, reward)
+        return redeemed, reward, balance_after
+
     @commands.hybrid_command(name='bankreset', aliases=['تصفير'], description='تصفير الاقتصاد بعد إنشاء نسخة احتياطية')
     @commands.is_owner()
     async def bank_reset(self, ctx):
@@ -504,27 +677,9 @@ class Currency(commands.Cog):
 
     @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
-        inv = self.get_inventory(ctx.author.id)
-        embed = discord.Embed(
-            title=f"🎒 شنطة {ctx.author.display_name}",
-            color=discord.Color.dark_purple()
-        )
-        embed.set_thumbnail(url=ctx.author.display_avatar.url)
-        
-        desc = ""
-        ds = inv.get("double_shot", 0)
-        sh = inv.get("shield", 0)
-        
-        if ds > 0: desc += f"🔫 **Double Shot:** {ds}\n"
-        if sh > 0: desc += f"🛡️ **درع الحفره (Shield):** {sh}\n"
-        _extra = {"mafia_scan": "🔍 **كشف مافيا:**", "veto": "⛔ **فيتو:**", "roulette_ins": "💉 **تأمين روليت:**", "luck_ticket": "🎟️ **تذكرة حظ:**", "loot_box": "🎁 **صندوق حظ:**"}
-        for _k, _label in _extra.items():
-            _c = inv.get(_k, 0)
-            if _c > 0: desc += f"{_label} {_c}\n"
-        
-        embed.description = desc if desc else "شنطتك فاضية!"
-        await ctx.send(embed=embed)
-
+        view = InventoryView(self, ctx.author)
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        view.message = await ctx.send(embed=view.make_embed(), view=view, **send_kwargs)
     @commands.hybrid_command(name='بروفايل', aliases=['profile', 'me', 'انا'], description='عرض بروفايلك أو بروفايل عضو')
     async def profile(self, ctx, target: discord.Member = None):
         """كارت البروفايل بتاعك: رصيد + ستريك + اغراض"""
@@ -555,12 +710,8 @@ class Currency(commands.Cog):
             key = "luck_ticket"
         else:
             return await ctx.send("❌ الصنف ده مابيستخدمش كده! الصناديق والتذاكر بس (`+استخدم صندوق`). الكشف بـ `+اكشف` في جيم المافيا، والفيتو والتأمين بيشتغلوا تلقائي.")
-        if key == "loot_box":
-            reward = random.choice([30, 50, 80, 100, 150, 250, 400])
-        else:
-            reward = random.choice([20, 40, 60, 100, 150])
+        redeemed, reward, balance_after = self.redeem_consumable(ctx.author.id, key)
 
-        redeemed, balance_after = bank.redeem_item(ctx.author.id, key, reward)
         if not redeemed:
             if self.get_item_count(ctx.author.id, key) > 0:
                 return await ctx.send(
