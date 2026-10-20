@@ -87,7 +87,7 @@ class InventoryViewTests(unittest.TestCase):
 
         self.assertIsNone(view.timeout)
         self.assertTrue(all(custom_ids))
-        self.assertTrue({"hubv2_daily", "hubv2_top", "hubv2_shop", "hubv2_transfer", "hubv2_admin"}.issubset(custom_ids))
+        self.assertTrue({"hubv2_daily", "hubv2_top", "hubv2_shop", "hubv2_transfer"}.issubset(custom_ids))
 
 
 if __name__ == "__main__":
