@@ -5,11 +5,6 @@ from discord.ext import commands
 import config
 
 
-def is_bot_owner(user) -> bool:
-    """Whether this user is configured as a bot owner."""
-    return getattr(user, "id", None) in getattr(config, "OWNER_IDS", set())
-
-
 def has_admin_access(user) -> bool:
     permissions = getattr(user, "guild_permissions", None)
     return bool(getattr(permissions, "administrator", False))
@@ -36,14 +31,7 @@ def has_staff_access(user) -> bool:
     return bool(role_ids.intersection(staff_role_ids))
 
 
-def is_admin_or_owner():
-    async def predicate(ctx):
-        return has_admin_access(ctx.author)
-
-    return commands.check(predicate)
-
-
-def is_staff_or_owner():
+def is_staff_or_admin():
     async def predicate(ctx):
         return has_staff_access(ctx.author)
 
