@@ -202,12 +202,12 @@ class InventoryView(discord.ui.View):
             if quantity < 1:
                 continue
             lines.append(
-                f"{emoji} **{name} ×{quantity}** — {description}\\n"
+                f"{emoji} **{name} ×{quantity}** — {description}\n"
                 f"السعر في المتجر: **{fmt(price)}** {COIN_EMOJI}"
             )
 
         if lines:
-            description = "\\n\\n".join(lines)
+            description = "\n\n".join(lines)
         elif self.category == "tools":
             description = "مفيش أدوات ألعاب في القسم ده حاليًا. تقدر تشتري من مركز الاقتصاد."
         elif self.category == "consumables":
@@ -216,7 +216,7 @@ class InventoryView(discord.ui.View):
             description = "شنطتك فاضية حاليًا. افتح مركز الاقتصاد واختار المتجر عشان تشتري أول غرض."
 
         if notice:
-            description = f"{notice}\\n\\n{description}"
+            description = f"{notice}\n\n{description}"
 
         embed = discord.Embed(
             title=f"🎒 شنطة {self.owner.display_name}",
@@ -250,7 +250,7 @@ class InventoryView(discord.ui.View):
             result = f"🎁 فتحت صندوق الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
         else:
             result = f"🎟️ استخدمت تذكرة الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
-        result += f"\\nرصيدك الجديد: **{fmt(balance_after)}** {COIN_EMOJI}"
+        result += f"\nرصيدك الجديد: **{fmt(balance_after)}** {COIN_EMOJI}"
         await interaction.response.edit_message(embed=self.make_embed(notice=result), view=self)
 
     @discord.ui.button(
