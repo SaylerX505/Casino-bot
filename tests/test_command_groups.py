@@ -47,7 +47,7 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(group, app_commands.Group)
         names = {command.name for command in group.commands}
         self.assertTrue(
-            {"access-add", "access-remove", "access-list", "economy-credit", "economy-debit", "ai-toggle", "status"}.issubset(names)
+            {"access-add", "access-remove", "access-list", "economy-credit", "economy-debit", "ai-toggle", "bank-reset", "status"}.issubset(names)
         )
         self.assertIsNone(self.bot.tree.get_command("owner"))
 
