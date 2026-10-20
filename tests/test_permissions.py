@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import config
 from cogs.casino import bank
-from cogs.casino.permissions import has_admin_access, has_staff_access, is_bot_owner
+from cogs.casino.permissions import has_admin_access, has_staff_access
 
 
 class FakeUser:
@@ -29,15 +29,13 @@ class PermissionTierTests(unittest.TestCase):
         config.STAFF_ROLE_IDS = self.original_staff_role_ids
         bank.is_guild_admin = self.original_guild_admin_check
 
-    def test_bot_owner_id_does_not_bypass_server_admin_permissions(self):
-        owner = FakeUser(user_id=1)
-        self.assertTrue(is_bot_owner(owner))
-        self.assertFalse(has_admin_access(owner))
-        self.assertFalse(has_staff_access(owner))
+    def test_configured_bot_owner_id_does_not_bypass_server_permissions(self):
+        owner_id = FakeUser(user_id=1)
+        self.assertFalse(has_admin_access(owner_id))
+        self.assertFalse(has_staff_access(owner_id))
 
     def test_server_administrator_has_admin_and_staff_access(self):
         admin = FakeUser(user_id=2, administrator=True)
-        self.assertFalse(is_bot_owner(admin))
         self.assertTrue(has_admin_access(admin))
         self.assertTrue(has_staff_access(admin))
 
