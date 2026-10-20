@@ -28,7 +28,7 @@ class BankResetConfirmPanel(LayoutView):
         self.guild_id = guild_id
         container = Container(
             TextDisplay(
-                "# ⚠️ تصفير الاقتصاد\\n"
+                "# ⚠️ تصفير الاقتصاد\n"
                 "العملية هتمسح أرصدة الأعضاء وأغراضهم. هنحفظ نسخة احتياطية قبل التصفير."
             ),
             Separator(),
