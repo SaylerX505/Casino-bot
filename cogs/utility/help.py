@@ -1,3 +1,4 @@
+import asyncio
 import random
 
 import discord
@@ -6,6 +7,8 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Select, Separator, TextDisplay
 
 import config
+from cogs.casino.game_registry import release_game_task
+from cogs.utility.theme import StatusPanel
 from cogs.casino.permissions import (
     has_admin_access,
     has_staff_access,
@@ -359,56 +362,63 @@ class HelpCommand(commands.Cog):
 
     @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
     async def stop_game(self, ctx):
-        """Stop the active game when authorized."""
         active_games = getattr(self.bot, "active_games", {})
-        if ctx.channel.id not in active_games:
-            return await ctx.send("❌ مفيش لعبة شغالة هنا عشان أوقفها!")
+        game_info = active_games.get(ctx.channel.id)
+        if game_info is None:
+            return await ctx.send(
+                view=StatusPanel("مفيش لعبة شغالة", "مفيش لعبة نشطة في القناة دي.", "warning"),
+                ephemeral=ctx.interaction is not None,
+            )
 
-        game_info = active_games[ctx.channel.id]
-        game_task = game_info.get("task")
         is_host = ctx.author.id == game_info.get("host_id")
-
         if not (is_host or has_staff_access(ctx.author)):
             return await ctx.send(
-                "❌ إيقاف اللعبة متاح لصاحب اللعبة أو الستاف/الأدمن فقط."
+                view=StatusPanel("صلاحية غير كافية", "إيقاف اللعبة متاح لصاحبها أو للستاف المصرح له.", "warning"),
+                ephemeral=ctx.interaction is not None,
             )
-        if game_task is None:
-            return await ctx.send("❌ مش قادر أحدد مهمة اللعبة الحالية؛ كلم الستاف.")
 
-        game_task.cancel()
+        game_task = game_info.get("task")
+        if game_task is None:
+            return await ctx.send(
+                view=StatusPanel("تعذر إيقاف اللعبة", "مهمة اللعبة مش متاحة؛ بلّغ الستاف.", "warning"),
+                ephemeral=ctx.interaction is not None,
+            )
+
         view = game_info.get("view")
         message = getattr(view, "message", None) if view is not None else None
         message = message or game_info.get("message")
+        if ctx.interaction is not None:
+            await ctx.defer(ephemeral=True)
+
+        game_task.cancel()
         if view is not None:
-            for child in view.children:
-                if hasattr(child, "disabled"):
-                    child.disabled = True
-            if message is not None:
-                try:
-                    await message.edit(view=view)
-                except discord.HTTPException:
-                    pass
             view.stop()
-        elif message is not None:
+        try:
+            await asyncio.wait_for(asyncio.shield(game_task), timeout=5)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        except Exception:
+            self.bot.dispatch("game_shutdown_error", ctx.channel.id, game_task)
+        finally:
+            release_game_task(self.bot, ctx.channel.id, game_task)
+
+        stopped_view = StatusPanel(
+            "🛑 تم إيقاف اللعبة",
+            f"تم إنهاء **{game_info.get('name', 'اللعبة')}** بواسطة {ctx.author.mention}. تقدروا تبدأوا لعبة جديدة.",
+            "warning",
+        )
+        if message is not None:
             try:
-                await message.edit(
-                    embed=discord.Embed(
-                        title="🛑 تم إيقاف اللعبة",
-                        description=f"تم إيقاف **{game_info.get('name', 'اللعبة')}** بواسطة {ctx.author.mention}.",
-                        color=discord.Color.red(),
-                    ),
-                    view=None,
-                )
+                await message.edit(content=None, embeds=[], attachments=[], view=stopped_view)
             except discord.HTTPException:
                 pass
 
-        embed = discord.Embed(
-            title="🛑 إيقاف اللعبة",
-            description=f"تم إنهاء لعبة **{game_info.get('name', 'غير معروفة')}** بواسطة {ctx.author.mention}.",
-            color=discord.Color.red(),
-        )
-        await ctx.send(embed=embed)
-
+        if ctx.interaction is not None:
+            await ctx.interaction.edit_original_response(
+                view=StatusPanel("تم الإيقاف", "اتقفلت اللعبة واتنضفت حالتها.", "success"),
+            )
+        elif message is None:
+            await ctx.send(view=stopped_view)
 
 async def setup(bot):
     await bot.add_cog(HelpCommand(bot))
