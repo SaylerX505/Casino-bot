@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 import json
 import os
 from typing import Union
@@ -421,6 +422,105 @@ class AdminActionView(discord.ui.View):
     @discord.ui.button(label="تصفير", style=discord.ButtonStyle.secondary)
     async def res_btn(self, interaction, button): await interaction.response.send_modal(AdminActionModal(self.cog, "reset"))
 
+class CurrencyHubLayout(LayoutView):
+    def __init__(self, cog, requester=None):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+        balance_line = "افتح خزنتك وتابع رصيدك وأدِر أغراضك من مكان واحد."
+        if requester is not None:
+            balance_line = f"**الرصيد الحالي:** {fmt(cog.get_balance(requester.id))} {COIN_EMOJI}"
+
+        container = Container(
+            TextDisplay(
+                f"# 🏦 خزنة الحفرة\n{balance_line}\n\n"
+                "اختار العملية اللي محتاجها. نتائج العمليات الحساسة بتظهر لك بشكل خاص."
+            ),
+            Separator(),
+            accent_color=config.EMBED_COLOR,
+        )
+
+        first_row = ActionRow()
+        self._add_button(first_row, "اليومية", "🎁", discord.ButtonStyle.success, "hubv2_daily", self.daily_btn)
+        self._add_button(first_row, "الأغنى", "🏆", discord.ButtonStyle.secondary, "hubv2_top", self.top_btn)
+        self._add_button(first_row, "المتجر", "🛒", discord.ButtonStyle.primary, "hubv2_shop", self.shop_btn)
+        container.add_item(first_row)
+
+        second_row = ActionRow()
+        self._add_button(second_row, "تحويل", "💸", discord.ButtonStyle.primary, "hubv2_transfer", self.transfer_btn)
+        if requester is None or cog.check_whitelist(requester):
+            self._add_button(second_row, "إدارة البنك", "⚙️", discord.ButtonStyle.danger, "hubv2_admin", self.admin_btn)
+        container.add_item(second_row)
+        self.add_item(container)
+
+    @staticmethod
+    def _add_button(row, label, emoji, style, custom_id, callback):
+        button = discord.ui.Button(
+            label=label,
+            emoji=emoji,
+            style=style,
+            custom_id=custom_id,
+        )
+        button.callback = callback
+        row.add_item(button)
+
+    async def daily_btn(self, interaction: discord.Interaction):
+        claim = bank.claim_daily(interaction.user.id, bank.now(), random.randint(20, 45))
+        if not claim["claimed"]:
+            if claim.get("reason") == "balance_limit":
+                return await interaction.response.send_message(
+                    "❌ رصيدك وصل للحد الأقصى المدعوم؛ المكافأة لم تُصرف ولم تُستهلك مطالبتك اليومية.",
+                    ephemeral=True,
+                )
+            next_available_time = int(claim["last_daily"] + 86400)
+            embed = discord.Embed(
+                description=f"❌ أخدت اليومية بالفعل! ارجع <t:{next_available_time}:R>",
+                color=discord.Color.red(),
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        amount = claim["amount"]
+        streak = claim["streak"]
+        embed = discord.Embed(
+            description=(
+                f"✅ استلمت اليومية: {fmt(amount)} {COIN_EMOJI}\n"
+                f"🔥 ستريك **{streak}** يوم (بونص +{fmt(min(streak, 7) * 10)} بكرة)"
+            ),
+            color=discord.Color.green(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def top_btn(self, interaction: discord.Interaction):
+        ranking = bank.top_balances(10)
+        description = "\n".join(
+            f"**#{index + 1}** <@{user_id}> ➔ **{fmt(balance)}** {COIN_EMOJI}"
+            for index, (user_id, balance) in enumerate(ranking)
+        )
+        embed = discord.Embed(
+            title="🏆 أغنى الأعضاء",
+            description=description or "الخزنة فاضية لسه!",
+            color=discord.Color.gold(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def shop_btn(self, interaction: discord.Interaction):
+        await interaction.response.send_message(view=ShopView(self.cog), ephemeral=True)
+
+    async def transfer_btn(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TransferModal(self.cog))
+
+    async def admin_btn(self, interaction: discord.Interaction):
+        if not self.cog.check_whitelist(interaction.user):
+            return await interaction.response.send_message(
+                "❌ معندكش صلاحية للوصول للوحة دي.",
+                ephemeral=True,
+            )
+        await interaction.response.send_message(
+            "لوحة إدارة البنك:",
+            view=AdminActionView(self.cog),
+            ephemeral=True,
+        )
+
 class CurrencyHubView(discord.ui.View):
     def __init__(self, cog, requester=None):
         super().__init__(timeout=None)
@@ -666,15 +766,8 @@ class Currency(commands.Cog):
 
     @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
     async def balance(self, ctx):
-        bal = self.get_balance(ctx.author.id)
-        embed = discord.Embed(
-            title="🏦 خزنة الحفرة",
-            description=f"رصيدك الحالي:\n**{fmt(bal)}** {COIN_EMOJI}\n\nاستخدم الأزرار لإدارة عملاتك.",
-            color=discord.Color.blue()
-        )
-        embed.set_thumbnail(url=ctx.author.display_avatar.url)
-        await ctx.send(embed=embed, view=CurrencyHubView(self, ctx.author))
-
+        view = CurrencyHubLayout(self, ctx.author)
+        await ctx.send(view=view)
     @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
         view = InventoryView(self, ctx.author)
@@ -755,3 +848,9 @@ async def setup(bot):
     view = CurrencyHubView(cog)
     bot.add_view(view)
     bot._currency_hub_view = view
+    old_layout = getattr(bot, "_currency_hub_layout", None)
+    if old_layout is not None:
+        bot.remove_view(old_layout)
+    layout = CurrencyHubLayout(cog)
+    bot.add_view(layout)
+    bot._currency_hub_layout = layout
