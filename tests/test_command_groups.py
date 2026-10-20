@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from cogs.utility.admin import AdminCommands
 from cogs.utility.help import HelpCommand
 
 
@@ -17,6 +18,7 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
             help_command=None,
         )
         await self.bot.add_cog(HelpCommand(self.bot))
+        await self.bot.add_cog(AdminCommands(self.bot))
 
     async def asyncTearDown(self):
         await self.bot.close()
@@ -39,6 +41,22 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
             {"balance", "inventory", "profile", "daily", "top", "shop"}.issubset(names)
         )
 
+    async def test_admin_group_contains_management_commands(self):
+        group = self.bot.tree.get_command("admin")
+
+        self.assertIsInstance(group, app_commands.Group)
+        names = {command.name for command in group.commands}
+        self.assertTrue(
+            {"access-add", "access-remove", "access-list", "economy-credit", "economy-debit", "ai-toggle", "status"}.issubset(names)
+        )
+        self.assertIsNone(self.bot.tree.get_command("owner"))
+
+    async def test_public_help_does_not_include_owner_commands(self):
+        from cogs.utility.help import HELP_PAGES, SLASH_COMMANDS
+
+        self.assertNotIn("owner", HELP_PAGES)
+        self.assertNotIn("bankreset", SLASH_COMMANDS)
+        self.assertNotIn("ai", SLASH_COMMANDS)
     async def test_prefix_compatibility_is_preserved(self):
         self.assertIsNotNone(self.bot.get_command("help"))
         self.assertIsNotNone(self.bot.get_command("stop"))
