@@ -15,7 +15,7 @@ from geopy.distance import geodesic
 import config
 
 from cogs.casino.permissions import is_staff_or_owner
-from cogs.utility.theme import lobby_embed
+from cogs.utility.theme import lobby_embed, result_embed
 
 
 class WatermarkView(discord.ui.View):
@@ -453,13 +453,12 @@ async def run_game_loop(ctx, players):
             desc = f"🏆 **{winner.mention}** هو الفائز برصيد `{top_score} نقطة`!"
             thumb = winner.display_avatar.url
             
-        final_embed = discord.Embed(
+        final_embed = result_embed(
             title="🏁 انتهت اللعبة! 🏁",
             description=desc,
-            color=discord.Color.magenta()
+            outcome="win" if winners else "neutral",
+            thumbnail_url=thumb,
         )
-        final_embed.set_thumbnail(url=thumb)
-        final_embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=SERVER_LOGO_URL)
         await ctx.send(embed=final_embed, view=WatermarkView())
 
     except asyncio.CancelledError:
