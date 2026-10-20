@@ -52,7 +52,7 @@ def format_wheel_breakdown(payout, target_loss=None, refund=0):
         lines.append(f"**الخسارة الإجمالية:** −{target_loss:,} {COIN}")
     if refund:
         lines.append(f"**المردود من رسوم الدخول:** +{refund:,} {COIN}")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 # --- WHEEL ART ---
 def render_wheel(highlight=None):
@@ -244,7 +244,7 @@ class WheelLobby(discord.ui.View):
                     payout = FEE * 2
                 elif outcome == "box":
                     payout = random.choice([20, 50, 80, 120, 200])
-                    outcome_note = "\\n🎁 جائزة الصندوق من المكافآت العشوائية."
+                    outcome_note = "\n🎁 جائزة الصندوق من المكافآت العشوائية."
                 elif isinstance(outcome, int) and outcome > 0:
                     payout = outcome
                 elif isinstance(outcome, int) and outcome < 0:
@@ -263,15 +263,15 @@ class WheelLobby(discord.ui.View):
                         results.append((player, None, balance_before, balance_before))
                         title = "رصيد غير كافٍ"
                         description = (
-                            f"**اللاعب:** {player.mention}\\n"
-                            f"رصيدك أقل من رسوم الدخول ({FEE:,} {COIN}).\\n"
+                            f"**اللاعب:** {player.mention}\n"
+                            f"رصيدك أقل من رسوم الدخول ({FEE:,} {COIN}).\n"
                             "لم يتم خصم أي عملات."
                         )
                     else:
                         results.append((player, "balance_limit", balance_before, balance_before))
                         title = "تعذر صرف النتيجة"
                         description = (
-                            f"**اللاعب:** {player.mention}\\n"
+                            f"**اللاعب:** {player.mention}\n"
                             "رصيدك قريب من الحد الأقصى المدعوم؛ لم يتم خصم رسوم الدخول."
                         )
                     skipped_embed = base_embed(
@@ -294,10 +294,10 @@ class WheelLobby(discord.ui.View):
                 result_embed = base_embed(
                     title=f"🎡 نتيجة اللفة {index}/{len(players)}",
                     description=(
-                        f"**اللاعب:** {player.mention}\\n"
-                        f"**النتيجة:** {label}{outcome_note}\\n"
-                        f"{format_wheel_breakdown(payout, target_loss, refund)}\\n"
-                        f"**صافي الرصيد:** {net_change:+,} {COIN}\\n"
+                        f"**اللاعب:** {player.mention}\n"
+                        f"**النتيجة:** {label}{outcome_note}\n"
+                        f"{format_wheel_breakdown(payout, target_loss, refund)}\n"
+                        f"**صافي الرصيد:** {net_change:+,} {COIN}\n"
                         f"**الرصيد الحالي:** {balance_after:,} {COIN}"
                     ),
                     color=THEME["gold"] if net_change > 0 else THEME["red_dark"] if net_change < 0 else THEME["grey"],
