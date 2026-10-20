@@ -9,7 +9,6 @@ import config
 from cogs.casino.permissions import (
     has_admin_access,
     has_staff_access,
-    is_bot_owner,
 )
 
 
@@ -33,8 +32,6 @@ SLASH_COMMANDS = {
     "كراسي": "كراسي",
     "عجلة": "عجلة",
     "ايقاف": "stop",
-    "ai": "ai",
-    "bankreset": "bankreset",
 }
 
 
@@ -55,7 +52,7 @@ HELP_PAGES = {
     },
     "staff": {
         "title": "🛡️ أوامر الستاف",
-        "intro": "استضافة الألعاب دي تتطلب رتبة ستاف معتمدة أو صلاحية أدمن/مالك البوت.",
+        "intro": "استضافة الألعاب دي تتطلب رتبة ستاف معتمدة أو صلاحية Administrator.",
         "fields": [
             ("مافيا", "بدء لعبة مافيا."),
             ("روليت", "بدء لعبة الروليت الروسي."),
@@ -66,26 +63,7 @@ HELP_PAGES = {
             ("ايقاف / انهاء", "إيقاف اللعبة النشطة: لصاحب اللعبة أو الستاف/الأدمن/مالك البوت."),
         ],
     },
-    "server_admin": {
-        "title": "⚙️ إدارة السيرفر",
-        "intro": "الأوامر دي تتطلب صلاحية Administrator في السيرفر أو ملكية البوت.",
-        "fields": [
-            ("ai / محسن", "عرض لوحة تشغيل وإيقاف محسن؛ الأزرار نفسها محمية بنفس الصلاحية."),
-        ],
-    },
-    "owner": {
-        "title": "🔒 أوامر مالك البوت",
-        "intro": "الأوامر الإدارية الحساسة دي متاحة لمعرفات مالكي البوت المحددة في config فقط.",
-        "fields": [
-            ("rc <cog>", "إعادة تحميل إضافة واحدة. مثال: +rc geoguessr"),
-            ("restart", "إعادة تشغيل البوت بعد التأكيد."),
-            ("sync / rs", "مزامنة أوامر Slash."),
-            ("bankreset / تصفير", "تصفير كل أرصدة وأغراض الاقتصاد؛ أمر تدميري استخدمه بحذر شديد."),
-            ("bankmigrate / ترحيل", "ترحيل البيانات القديمة إلى قاعدة البنك."),
-            ("whitelist add/remove @عضو أو رتبة", "إدارة قائمة السماح الخاصة بلوحة الاقتصاد."),
-            ("testing", "أمر اختبار للمطور."),
-        ],
-    },
+
 }
 
 
@@ -108,20 +86,6 @@ class HelpSelect(Select):
                 emoji="🛡️",
                 description="استضافة الألعاب وإيقافها",
             ))
-        if has_admin_access(requester):
-            options.append(discord.SelectOption(
-                label="إدارة السيرفر",
-                value="server_admin",
-                emoji="⚙️",
-                description="إعدادات الإدارة",
-            ))
-        if is_bot_owner(requester):
-            options.append(discord.SelectOption(
-                label="مالك البوت",
-                value="owner",
-                emoji="🔒",
-                description="أوامر البوت الحساسة",
-            ))
         super().__init__(
             placeholder="اختار قسم الأوامر...",
             options=options,
@@ -140,16 +104,6 @@ class HelpSelect(Select):
         if category == "staff" and not has_staff_access(interaction.user):
             return await interaction.response.send_message(
                 "❌ صلاحية الستاف مش متاحة لحسابك حاليًا.",
-                ephemeral=True,
-            )
-        if category == "server_admin" and not has_admin_access(interaction.user):
-            return await interaction.response.send_message(
-                "❌ القسم ده مخصص لأدمن السيرفر أو مالك البوت.",
-                ephemeral=True,
-            )
-        if category == "owner" and not is_bot_owner(interaction.user):
-            return await interaction.response.send_message(
-                "❌ أوامر مالك البوت مش متاحة لحسابك.",
                 ephemeral=True,
             )
 
@@ -380,9 +334,6 @@ class HelpCommand(commands.Cog):
                 ephemeral=True,
             )
         await interaction.response.send_message(view=ShopView(cog), ephemeral=True)
-
-    def __init__(self, bot):
-        self.bot = bot
 
     def __init__(self, bot):
         self.bot = bot
