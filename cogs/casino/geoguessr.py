@@ -530,7 +530,7 @@ class GuessGameMenu(discord.ui.View):
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "GeoGuessr", replace_task=self.timer_task):
             task.cancel()
 
-    @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.secondary)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
@@ -554,7 +554,7 @@ class GuessGameMenu(discord.ui.View):
             self.players.add(interaction.user)
             await interaction.response.edit_message(embed=self.get_embed())
 
-    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.secondary)
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
@@ -572,7 +572,7 @@ class GuessGameMenu(discord.ui.View):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
@@ -601,7 +601,7 @@ class ActiveGameView(discord.ui.View):
         self.executor = executor
         self.timer_state = timer_state
 
-    @discord.ui.button(label="+10 ثواني للحل", style=discord.ButtonStyle.primary, emoji="⏱️")
+    @discord.ui.button(label="+10 ثواني للحل", style=discord.ButtonStyle.secondary, emoji="⏱️")
     async def add_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.executor:
             embed = discord.Embed(
