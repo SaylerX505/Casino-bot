@@ -820,41 +820,24 @@ class Currency(commands.Cog):
         user = target or ctx.author
         bal = self.get_balance(user.id)
         _last, streak = bank.get_daily(str(user.id))
-        inv = self.get_inventory(user.id)
-        item_labels = {
-            item_id: f"{emoji} {name}"
-            for item_id, name, _category, _price, _description, emoji in INVENTORY_ITEMS
-        }
-        items_txt = " • ".join(
-            f"{item_labels.get(item_id, item_id)} ×{fmt(quantity)}"
-            for item_id, quantity in inv.items()
+        inventory = self.get_inventory(user.id)
+        labels = {item[0]: f"{item[5]} {item[1]}" for item in INVENTORY_ITEMS}
+        items = " • ".join(
+            f"{labels.get(item_id, item_id)} ×{fmt(quantity)}"
+            for item_id, quantity in inventory.items()
             if quantity > 0
         ) or "الشنطة فاضية حاليًا"
+        description = (
+            f"**الرصيد:** {fmt(bal)} {COIN_EMOJI}\n"
+            f"**الستريك اليومي:** {streak} يوم\n\n"
+            f"**الأغراض:**\n{items[:2200]}"
+        )
+        await ctx.send(
+            view=StatusPanel(f"🪪 بروفايل {user.display_name}", description, "success"),
+            ephemeral=ctx.interaction is not None,
+        )
 
-        embed = base_embed(
-            title=f"🪪 بروفايل {user.display_name}",
-            description="ملخص حسابك في الحفرة.",
-            color=THEME["gold"],
-        )
-        embed.set_thumbnail(url=user.display_avatar.url)
-        embed.add_field(
-            name="💰 الرصيد",
-            value=f"**{fmt(bal)}** {COIN_EMOJI}",
-            inline=True,
-        )
-        embed.add_field(
-            name="🔥 الستريك اليومي",
-            value=f"**{streak}** يوم",
-            inline=True,
-        )
-        embed.add_field(
-            name="🎒 الأغراض المملوكة",
-            value=items_txt[:1024],
-            inline=False,
-        )
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
+        @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
     async def use_item(self, ctx, item: str = None):
         """استخدم صندوق حظ او تذكرة: +استخدم صندوق / +استخدم تذكرة"""
         if not item:
@@ -882,7 +865,7 @@ class Currency(commands.Cog):
             desc = f"🎁 {ctx.author.mention} فتح صندوق الحظ وطلعله **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(balance_after)}**"
         else:
             desc = f"🎟️ {ctx.author.mention} استخدم تذكرة الحظ وكسب **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(balance_after)}**"
-        await ctx.send(embed=discord.Embed(title="🍀 حظك!", description=desc, color=discord.Color.gold()))
+        await ctx.send(view=StatusPanel("🍀 حظك!", desc, "success"), ephemeral=ctx.interaction is not None)
 
     @commands.command(name='whitelist')
     @commands.is_owner()
