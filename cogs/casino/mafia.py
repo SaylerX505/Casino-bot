@@ -284,7 +284,7 @@ class MafiaLobbyView(discord.ui.View):
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Mafia", replace_task=self.timer_task):
             task.cancel()
 
-    @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.secondary)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
@@ -308,7 +308,7 @@ class MafiaLobbyView(discord.ui.View):
             self.players.append(interaction.user)
             await interaction.response.edit_message(embed=self.get_embed())
 
-    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.secondary)
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
@@ -326,7 +326,7 @@ class MafiaLobbyView(discord.ui.View):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
@@ -400,7 +400,7 @@ async def run_mafia_game(ctx, players):
         
         class RoleRevealView(discord.ui.View):
             def __init__(self): super().__init__(timeout=60)
-            @discord.ui.button(label="👀 اعرف دورك السري", style=discord.ButtonStyle.primary)
+            @discord.ui.button(label="👀 اعرف دورك السري", style=discord.ButtonStyle.secondary)
             async def reveal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
                 if interaction.user not in alive:
                     embed = discord.Embed(
