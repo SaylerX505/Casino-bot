@@ -284,20 +284,21 @@ class HelpCommand(commands.Cog):
                 ephemeral=True,
             )
 
+        ctx = None
         try:
             ctx = await commands.Context.from_interaction(interaction)
             await command.invoke(ctx)
         except commands.CommandError as error:
-            if "ctx" in locals():
-                self.bot.dispatch("command_error", ctx, error)
+            if ctx is not None:
+                await command.dispatch_error(ctx, error)
             elif not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ مقدرناش نشغّل الأمر ده. جرّب من قائمة المساعدة.",
                     ephemeral=True,
                 )
         except Exception as error:
-            if "ctx" in locals():
-                self.bot.dispatch("command_error", ctx, commands.CommandInvokeError(error))
+            if ctx is not None:
+                await command.dispatch_error(ctx, commands.CommandInvokeError(error))
             elif not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ حصلت مشكلة أثناء تشغيل الأمر. اتبلغ الستاف.",
