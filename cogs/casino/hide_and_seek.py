@@ -194,7 +194,7 @@ class LobbyView(discord.ui.View):
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "HideAndSeek", replace_task=self.timer_task):
             task.cancel()
 
-    @discord.ui.button(label="استخبى (Join)", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="استخبى (Join)", style=discord.ButtonStyle.secondary)
     async def join_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
@@ -218,7 +218,7 @@ class LobbyView(discord.ui.View):
             self.players.append(interaction.user)
             await interaction.response.edit_message(embed=self.get_embed())
 
-    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.secondary)
     async def leave_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
@@ -236,7 +236,7 @@ class LobbyView(discord.ui.View):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
