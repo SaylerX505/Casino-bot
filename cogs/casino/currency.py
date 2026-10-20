@@ -765,7 +765,7 @@ class Currency(commands.Cog):
             try: await channel.send(embed=embed)
             except: pass
 
-        @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
+    @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
     async def balance(self, ctx):
         view = CurrencyHubLayout(self, ctx.author)
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
