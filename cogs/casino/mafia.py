@@ -9,7 +9,7 @@ import random
 import aiohttp
 import config
 
-from cogs.casino.permissions import is_staff_or_owner
+from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import StatusPanel, lobby_embed, result_embed
 
 logger = logging.getLogger(__name__)
@@ -765,7 +765,7 @@ class Mafia(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='مافيا', description='بدء لعبة المافيا')
-    @is_staff_or_owner()
+    @is_staff_or_admin()
     async def start_mafia(self, ctx):
         """يبدأ لعبة المافيا في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
