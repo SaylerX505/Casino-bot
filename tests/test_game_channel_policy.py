@@ -22,6 +22,11 @@ class GameChannelPolicyTests(unittest.TestCase):
             self.assertTrue(permissions.is_game_channel_allowed(100, 201, "mafia"))
             self.assertFalse(permissions.is_game_channel_allowed(100, 202, "mafia"))
 
+    def test_empty_channel_allowlist_disables_a_game(self):
+        with patch("cogs.casino.permissions.bank.get_setting", return_value="[]"):
+            self.assertFalse(permissions.is_game_channel_allowed(100, 200, "mafia"))
+            self.assertFalse(permissions.is_game_channel_allowed(100, 999, "mafia"))
+
     def test_malformed_policy_fails_closed(self):
         with patch("cogs.casino.permissions.bank.get_setting", return_value="not-json"):
             self.assertFalse(permissions.is_game_channel_allowed(100, 200, "mafia"))
