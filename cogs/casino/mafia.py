@@ -50,7 +50,7 @@ async def fetch_avatar(session, user, size):
 async def generate_billboard(alive_players):
     try:
         base = Image.open("mafiagame/billboard.jpg").convert("RGBA")
-    except:
+    except Exception:
         base = Image.new('RGBA', (1200, 600), (30, 30, 30, 255))
     width, height = base.size
     cols, avatar_size, padding_x, padding_y, start_y = 9, 70, 25, 30, 100
@@ -73,7 +73,7 @@ async def generate_billboard(alive_players):
 async def generate_action_image(base_img, target, key):
     try:
         base = Image.open(f"mafiagame/{base_img}").convert("RGBA")
-    except:
+    except Exception:
         base = Image.new('RGBA', (1200, 600), (0, 0, 0, 255))
     s = AVATAR_SETTINGS[key]
     async with aiohttp.ClientSession() as session:
@@ -88,7 +88,7 @@ async def generate_mafia_reveal(mafias):
     count = len(mafias)
     try:
         base = Image.open(f"mafiagame/mafia_{count}.jpg").convert("RGBA")
-    except:
+    except Exception:
         base = Image.new('RGBA', (1200, 600), (20, 0, 0, 255))
     configs = AVATAR_SETTINGS[f"mafia_{count}"]
     async with aiohttp.ClientSession() as session:
