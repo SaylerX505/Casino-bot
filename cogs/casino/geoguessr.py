@@ -26,6 +26,7 @@ from cogs.casino.game_registry import (
 )
 from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
+    embed_to_v2,
     THEME,
     StatusPanel,
     lobby_embed,
