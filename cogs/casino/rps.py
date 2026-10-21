@@ -7,8 +7,12 @@ import discord
 from discord.ext import commands
 
 from cogs.casino import bank
-from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task
-from cogs.utility.theme import base_embed, get_currency, THEME, WatermarkView
+from cogs.casino.game_registry import (
+    is_active_game,
+    register_game_task,
+    release_game_task,
+)
+from cogs.utility.theme import THEME, WatermarkView, base_embed, get_currency
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
