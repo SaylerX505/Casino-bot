@@ -1,8 +1,35 @@
 """Tests for retrying RPS escrow settlement after transient SQLite failures."""
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from cogs.casino.rps import _settle_wager
+import discord
+from discord.ui import LayoutView
+
+from cogs.casino.rps import RPSView, _settle_wager
+
+
+class RPSComponentsV2Tests(unittest.TestCase):
+    def test_match_panel_uses_three_secondary_v2_buttons(self):
+        player = SimpleNamespace(id=101, mention="<@101>")
+        opponent = SimpleNamespace(id=202, mention="<@202>")
+        view = RPSView(SimpleNamespace(), player, opponent, 100, "game-ui-test")
+
+        self.assertIsInstance(view, LayoutView)
+        buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
+        self.assertEqual(len(buttons), 3)
+        self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+        self.assertIn("100", view._panel_text.content)
+        self.assertIn("<@101>", view._panel_text.content)
+        self.assertIn("<@202>", view._panel_text.content)
+
+        view.choices[player.id] = "🪨"
+        view._refresh_panel()
+        self.assertIn("✅", view._panel_text.content)
+        self.assertEqual(sum(button.disabled for button in buttons), 0)
+
+        view._disable_buttons()
+        self.assertTrue(all(button.disabled for button in buttons))
 
 
 class RPSettlementRetryTests(unittest.IsolatedAsyncioTestCase):
