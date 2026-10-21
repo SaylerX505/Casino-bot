@@ -1,5 +1,4 @@
 import asyncio
-import random
 
 import discord
 from discord import app_commands
@@ -8,11 +7,8 @@ from discord.ui import ActionRow, Container, LayoutView, Select, Separator, Text
 
 import config
 from cogs.casino.game_registry import release_game_task
+from cogs.casino.permissions import has_staff_access
 from cogs.utility.theme import StatusPanel
-from cogs.casino.permissions import (
-    has_admin_access,
-    has_staff_access,
-)
 
 
 def t(text: str) -> str:
@@ -271,7 +267,7 @@ class HelpCommand(commands.Cog):
                     "❌ مقدرناش نشغّل الأمر ده. جرّب من قائمة المساعدة.",
                     ephemeral=True,
                 )
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - keep invocation failures on the normal command error path.
             if ctx is not None:
                 await command.dispatch_error(ctx, commands.CommandInvokeError(error))
             elif not interaction.response.is_done():
@@ -413,9 +409,9 @@ class HelpCommand(commands.Cog):
             view.stop()
         try:
             await asyncio.wait_for(asyncio.shield(game_task), timeout=5)
-        except (asyncio.CancelledError, asyncio.TimeoutError):
+        except (asyncio.CancelledError, TimeoutError):
             pass
-        except Exception:
+        except Exception:  # noqa: BLE001 - cancellation cleanup must not skip registry release.
             self.bot.dispatch("game_shutdown_error", ctx.channel.id, game_task)
         finally:
             release_game_task(self.bot, ctx.channel.id, game_task)
