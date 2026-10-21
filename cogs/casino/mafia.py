@@ -174,8 +174,10 @@ class SecretButtonView(discord.ui.View):
         self.selected_id = ephemeral_view.selected_id
         if self.selected_id:
             for child in self.children: child.disabled = True
-            try: await interaction.message.edit(view=self)
-            except: pass
+            try:
+                await interaction.message.edit(view=self)
+            except discord.HTTPException:
+                logger.debug("Could not disable Mafia dropdown controls", exc_info=True)
             self.stop()
 
 class VoteDropdown(discord.ui.Select):
@@ -226,8 +228,10 @@ class DayVoteView(discord.ui.View):
                     
         embed = interaction.message.embeds[0]
         embed.description = desc
-        try: await interaction.response.edit_message(embed=embed)
-        except: pass
+        try:
+            await interaction.response.edit_message(embed=embed)
+        except discord.HTTPException:
+            logger.debug("Could not update Mafia vote panel", exc_info=True)
         
         if len(self.votes) >= len(self.alive_players):
             self.stop()
@@ -262,8 +266,10 @@ class MafiaLobbyView(discord.ui.View):
             self.time_left -= 5
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
-                try: await self.message.edit(embed=self.get_embed())
-                except: pass
+                try:
+                    await self.message.edit(embed=self.get_embed())
+                except discord.HTTPException:
+                    logger.debug("Could not refresh Mafia lobby", exc_info=True)
 
     async def auto_start(self):
         if self.game_started: return
