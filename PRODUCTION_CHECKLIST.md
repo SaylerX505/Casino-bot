@@ -18,7 +18,9 @@ This checklist is a release gate, not a claim that every item is already complet
 - [ ] Keep one active bot process per shared SQLite database. Multiple replicas sharing the same database are not a supported topology.
 - [x] Runtime AI history, activity snapshots, used-image trackers, legacy currency JSON, SQLite database/journal files, and bot logs are removed from current snapshots of the active branches and excluded from Docker build contexts. Static game content remains tracked.
 - [ ] Older Git-history copies may still be retrievable by commit SHA. Coordinate a history rewrite and verify the result before claiming historical copies are purged.
-- [ ] The bot is designed for one Discord server. `HOME_GUILD_ID` is required; startup refuses to proceed without it. Configure and verify the intended server ID on the production host.
+- [x] The bot is designed for one Discord server. `HOME_GUILD_ID` is required; startup refuses to proceed without it, and slash/prefix commands are scoped to that guild.
+- [x] `/wizard` configures trusted manager roles, game-staff roles, and an independent channel allowlist (or all channels) for each game. Every change persists to SQLite without restart; manager roles cannot change their own manager-role allowlist.
+- [x] `/commands` opens the private command menu; `/wizard` replaces the need to remember separate setup commands for routine role/channel configuration.
 - [ ] Wallet rows use Discord user IDs within the one-server deployment; economy reset remains disabled through Discord and requires a manual, backed-up maintenance procedure.
 
 ## Staging Discord validation
@@ -36,7 +38,7 @@ Run these against a staging server/channel before production:
 
 ## UI and operational gates
 
-- [ ] The main game modules still use legacy embeds/views; the requested consistent Components V2 migration is not complete. Finish and review this migration before declaring the UI work complete.
+- [ ] Core lobbies and major action panels now use Components V2, including musical chairs, RPS, GeoGuessr, hide-and-seek, roulette, wheel, and Mafia vote/secret actions. Some Mafia day/night announcements and hide-and-seek result announcements still use legacy embeds; migrate these where it improves readability without collapsing distinct game events into one panel.
 - [ ] Review channel noise, repeated messages, and failure recovery in every game—not only unit-tested paths.
 - [ ] Confirm the host's disk/volume persistence, restart policy, log retention, and independent backup process.
 - [ ] Keep the PR as draft until the staging checks and remaining UI/architecture work are reviewed. Do not merge or deploy based solely on CI success.
