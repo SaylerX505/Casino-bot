@@ -10,6 +10,7 @@ from cogs.casino.permissions import GAME_LABELS
 from cogs.utility.wizard import (
     AdminRoleWizardView,
     GameChannelWizardView,
+    LogChannelWizardView,
     SetupWizard,
     StaffRoleWizardView,
     WizardHomeView,
@@ -116,6 +117,47 @@ class WizardViewTests(unittest.TestCase):
         for game_name in GAME_LABELS.values():
             self.assertIn(game_name, content)
         self.assertIn("<@&300>", content)
+
+    def test_log_wizard_has_per_type_channel_select_and_disable_action(self):
+        with patch("cogs.utility.wizard._configured_log_channel", return_value=0):
+            view = LogChannelWizardView(self.guild, self.owner, selected_type="economy")
+
+        self.assertIsInstance(view, LayoutView)
+        selects = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Select)
+        ]
+        self.assertEqual(len(selects), 1)
+        self.assertEqual({option.value for option in selects[0].options}, {"economy", "command_errors"})
+        self.assertTrue(
+            any(isinstance(item, discord.ui.ChannelSelect) for item in view.walk_children())
+        )
+        buttons = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        ]
+        ids = {button.custom_id for button in buttons}
+        self.assertIn("wizard_logs_disable", ids)
+        self.assertIn("wizard_logs_back", ids)
+
+    def test_review_includes_configured_log_destinations(self):
+        with (
+            patch("cogs.utility.wizard.bank.get_setting", side_effect=self._get_setting),
+            patch(
+                "cogs.utility.wizard._configured_log_channel",
+                side_effect=lambda _guild_id, log_type: 900 if log_type == "economy" else 901,
+            ),
+        ):
+            view = WizardReviewView(self.guild, self.owner)
+
+        content = "\\n".join(
+            item.content
+            for item in view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("<#900>", content)
+        self.assertIn("<#901>", content)
+        self.assertIn("قنوات السجلات", content)
 
     def test_wizard_is_a_guild_slash_command(self):
         self.assertEqual(SetupWizard.wizard.name, "wizard")
