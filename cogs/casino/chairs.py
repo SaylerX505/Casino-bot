@@ -134,8 +134,10 @@ class ChairsLobby(discord.ui.View):
             self.time_left -= 5
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
-                try: await self.message.edit(embed=self.get_embed())
-                except: pass
+                try:
+                    await self.message.edit(embed=self.get_embed())
+                except discord.HTTPException:
+                    logger.debug("Could not refresh musical chairs lobby", exc_info=True)
 
     async def auto_start(self):
         if self.game_started: return
@@ -264,8 +266,10 @@ class ChairsLobby(discord.ui.View):
                     await action_view.wait()
                     
                     for child in action_view.children: child.disabled = True
-                    try: await msg.edit(view=action_view)
-                    except: pass
+                    try:
+                        await msg.edit(view=action_view)
+                    except discord.HTTPException:
+                        logger.debug("Could not disable musical chairs action buttons", exc_info=True)
                     
                     losers = [p for p in active_players if p not in action_view.seated_players]
                     if losers:
@@ -287,8 +291,10 @@ class ChairsLobby(discord.ui.View):
                     await action_view.wait()
                     
                     for child in action_view.children: child.disabled = True
-                    try: await msg.edit(view=action_view)
-                    except: pass
+                    try:
+                        await msg.edit(view=action_view)
+                    except discord.HTTPException:
+                        logger.debug("Could not disable musical chairs action buttons", exc_info=True)
                     
                     if action_view.eliminated_fools:
                         active_players = [p for p in active_players if p not in action_view.eliminated_fools]
