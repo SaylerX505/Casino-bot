@@ -8,7 +8,8 @@ from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 import config
 from cogs.casino import bank
-from cogs.utility.theme import StatusPanel
+from cogs.casino.permissions import configured_log_channel_id
+from cogs.utility.theme import StatusPanel, embed_to_v2
 
 COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
 LOG_CHANNEL_ID = config.CURRENCY_LOG_CHANNEL_ID
@@ -521,10 +522,19 @@ class Currency(commands.Cog):
             logger.warning("Skipped economy audit log without a source guild")
             return
 
-        channel = self.bot.get_channel(LOG_CHANNEL_ID)
+        channel_id = configured_log_channel_id(
+            source_guild.id,
+            "economy",
+            LOG_CHANNEL_ID,
+        )
+        if not channel_id:
+            logger.debug("Economy audit logging is disabled for guild=%s", source_guild.id)
+            return
+
+        channel = self.bot.get_channel(channel_id)
         if channel is None:
             try:
-                channel = await self.bot.fetch_channel(LOG_CHANNEL_ID)
+                channel = await self.bot.fetch_channel(channel_id)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
                 logger.warning("Could not resolve economy log channel (%s)", type(exc).__name__)
                 return
@@ -542,7 +552,7 @@ class Currency(commands.Cog):
         embed.set_footer(text=f"Bank Log • {config.BRAND}")
         embed.set_thumbnail(url=SERVER_LOGO)
         try:
-            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            await channel.send(view=embed_to_v2(embed), allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException as exc:
             logger.warning("Could not send economy audit log (%s)", type(exc).__name__)
 
