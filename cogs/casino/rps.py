@@ -2,9 +2,11 @@ import asyncio
 import logging
 import re
 import uuid
+from functools import partial
 
 import discord
 from discord.ext import commands
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
 from cogs.casino.game_registry import (
@@ -12,7 +14,7 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
-from cogs.utility.theme import THEME, WatermarkView, base_embed, get_currency
+from cogs.utility.theme import THEME, base_embed, get_currency
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
@@ -40,7 +42,7 @@ async def _settle_wager(game_id, winner_id=None):
 
 
 # --- CHALLENGE VIEW ---
-class RPSView(discord.ui.View):
+class RPSView(LayoutView):
     def __init__(self, ctx, player, opponent, bet, game_id):
         super().__init__(timeout=60)
         self.ctx = ctx
@@ -51,6 +53,29 @@ class RPSView(discord.ui.View):
         self.choices = {}
         self.done = False
         self.message = None
+        self._panel_text = TextDisplay(self._embed_content(self.make_embed()))
+        self._buttons = []
+        for emoji, label, callback_name in (
+            ("🪨", "حجر", "rock"),
+            ("📄", "ورقة", "paper"),
+            ("✂️", "مقص", "scissors"),
+        ):
+            button = discord.ui.Button(
+                emoji=emoji,
+                label=label,
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"rps_{callback_name}",
+            )
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(*self._buttons),
+                accent_color=THEME["teal"],
+            )
+        )
 
     def make_embed(self):
         player_status = "✅" if self.player.id in self.choices else "⏳"
@@ -69,31 +94,52 @@ class RPSView(discord.ui.View):
             color=THEME["teal"],
         )
 
+
+    @staticmethod
+    def _embed_content(embed):
+        parts = []
+        if embed.title:
+            parts.append(f"# {embed.title}")
+        if embed.description:
+            parts.append(embed.description)
+        for field in embed.fields:
+            parts.append(f"**{field.name}**\n{field.value}")
+        if embed.footer and embed.footer.text:
+            parts.append(f"-# {embed.footer.text}")
+        return "\n\n".join(parts)[:4000]
+
+    def _refresh_panel(self, embed=None):
+        self._panel_text.content = self._embed_content(embed or self.make_embed())
+
+    def _disable_buttons(self):
+        for button in self._buttons:
+            button.disabled = True
+
     async def publish_result(self, embed, interaction=None):
-        for item in self.children:
-            item.disabled = True
+        self._disable_buttons()
+        self._refresh_panel(embed)
 
         try:
             if interaction is not None and not interaction.response.is_done():
                 try:
-                    await interaction.response.edit_message(embed=embed, view=self)
+                    await interaction.response.edit_message(view=self)
                 except discord.NotFound:
-                    await self.ctx.send(embed=embed, view=WatermarkView())
+                    await self.ctx.send(view=self)
                 except discord.HTTPException:
                     logging.getLogger(__name__).exception(
                         "Could not update the RPS result through its interaction"
                     )
             elif self.message is not None:
                 try:
-                    await self.message.edit(embed=embed, view=self)
+                    await self.message.edit(view=self)
                 except discord.NotFound:
-                    await self.ctx.send(embed=embed, view=WatermarkView())
+                    await self.ctx.send(view=self)
                 except discord.HTTPException:
                     logging.getLogger(__name__).exception(
                         "Could not edit the existing RPS result message; not sending a duplicate"
                     )
             else:
-                await self.ctx.send(embed=embed, view=self)
+                await self.ctx.send(view=self)
         except discord.HTTPException:
             logging.getLogger(__name__).exception("Could not publish the RPS result")
         finally:
@@ -108,7 +154,7 @@ class RPSView(discord.ui.View):
         opponent_choice = self.choices.get(self.opponent.id)
 
         if player_choice is None or opponent_choice is None:
-            result = _settle_wager(self.game_id)
+            result = await _settle_wager(self.game_id)
             if not result.get("settled"):
                 description = "الرهان لسه محجوز بأمان، ومفيش خصم إضافي. هيتم إعادة محاولة التسوية لاحقًا."
             else:
@@ -121,7 +167,7 @@ class RPSView(discord.ui.View):
             return await self.publish_result(embed, interaction)
 
         if player_choice == opponent_choice:
-            result = _settle_wager(self.game_id)
+            result = await _settle_wager(self.game_id)
             if not result.get("settled"):
                 description = "الرهان لسه محجوز بأمان، ومفيش خصم إضافي. هيتم إعادة محاولة التسوية لاحقًا."
             else:
@@ -187,7 +233,7 @@ class RPSView(discord.ui.View):
         if self.done:
             return
         self.done = True
-        settlement = _settle_wager(self.game_id)
+        settlement = await _settle_wager(self.game_id)
 
         description = (
             "تم إيقاف التحدي وإرجاع الرهان للطرفين."
@@ -214,18 +260,16 @@ class RPSView(discord.ui.View):
             return await self.finish(interaction)
 
         await interaction.response.send_message("✅ سجلنا اختيارك بسرية.", ephemeral=True)
+        self._refresh_panel()
         if self.message is not None:
-            await self.message.edit(embed=self.make_embed(), view=self)
+            await self.message.edit(view=self)
 
-    @discord.ui.button(emoji="🪨", label="حجر", style=discord.ButtonStyle.secondary)
     async def rock(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.choose(interaction, "🪨")
 
-    @discord.ui.button(emoji="📄", label="ورقة", style=discord.ButtonStyle.secondary)
     async def paper(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.choose(interaction, "📄")
 
-    @discord.ui.button(emoji="✂️", label="مقص", style=discord.ButtonStyle.secondary)
     async def scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.choose(interaction, "✂️")
 
@@ -333,11 +377,7 @@ class RPS(commands.Cog):
             )
 
         try:
-            view.message = await ctx.send(
-                content=f"{opponent.mention} ⚔️ {ctx.author.mention} بيتحداك على **{amount:,}** {COIN}!",
-                embed=view.make_embed(),
-                view=view,
-            )
+            view.message = await ctx.send(view=view)
             await view.wait()
         except asyncio.CancelledError:
             await view.abort()
