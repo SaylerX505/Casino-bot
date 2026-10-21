@@ -8,7 +8,11 @@ import discord
 from discord.ui import LayoutView
 
 from cogs.casino.chairs import ChairActionView, ChairPrepView, ChairsLobby
-from cogs.casino.geoguessr import GuessGameMenu
+from cogs.casino.geoguessr import (
+    ActiveGameView,
+    GeoGuessrResultPanel,
+    GuessGameMenu,
+)
 from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
 from cogs.casino.mafia import (
     DayVoteView,
@@ -60,6 +64,46 @@ class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+
+class GeoGuessrRoundV2Tests(unittest.TestCase):
+    def test_active_round_panel_keeps_image_timer_and_secondary_action(self):
+        executor = _FakeMember(6101)
+        timer_state = {"end_time": 9999999999.0}
+        view = ActiveGameView(executor, timer_state, round_num=2, total_rounds=6)
+        self.assertIsInstance(view, LayoutView)
+        buttons = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        ]
+        galleries = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.MediaGallery)
+        ]
+        self.assertEqual(len(buttons), 1)
+        self.assertIs(buttons[0].style, discord.ButtonStyle.secondary)
+        self.assertEqual(len(galleries), 1)
+        self.assertIn("الجولة 2 من 6", view._panel_text.content)
+        self.assertIn("attachment://streetview.png", str(galleries[0].items[0].media.url))
+        view.update_timer(17)
+        self.assertIn("17", view._panel_text.content)
+        view.disable_controls()
+        self.assertTrue(buttons[0].disabled)
+        view.stop()
+
+    def test_geoguessr_result_panel_uses_v2_image_gallery(self):
+        panel = GeoGuessrResultPanel(
+            "خريطة النتائج",
+            "أماكن تخمينات اللاعبين.",
+            outcome="neutral",
+            image_name="result_map.png",
+        )
+        self.assertIsInstance(panel, LayoutView)
+        gallery = next(
+            item for item in panel.walk_children()
+            if isinstance(item, discord.ui.MediaGallery)
+        )
+        self.assertIn("attachment://result_map.png", str(gallery.items[0].media.url))
 
 
 class MafiaSecretActionV2Tests(unittest.TestCase):
