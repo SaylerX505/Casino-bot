@@ -9,7 +9,7 @@ class WheelAccountingTests(unittest.TestCase):
         breakdown = format_wheel_breakdown(0, 50, 0)
 
         self.assertIn(f"**الخسارة النهائية شاملة رسوم الدخول:** −50 {COIN}", breakdown)
-        self.assertNotIn("رسوم الدخول:** −50", breakdown)
+        self.assertNotIn(f"**رسوم الدخول:** −{FEE:,} {COIN}", breakdown)
         self.assertNotIn("الخصم الإضافي", breakdown)
 
     def test_partial_loss_explains_refund_without_counting_it_twice(self):
