@@ -174,8 +174,10 @@ class LobbyView(discord.ui.View):
             self.time_left -= 5
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
-                try: await self.message.edit(embed=self.get_embed())
-                except: pass
+                try:
+                    await self.message.edit(embed=self.get_embed())
+                except discord.HTTPException:
+                    logger.debug("Could not refresh hide-and-seek lobby", exc_info=True)
 
     async def auto_start(self):
         if self.game_started: return
@@ -282,8 +284,10 @@ async def run_game_loop(ctx, players):
         await hide_view.wait()
         
         for c in hide_view.children: c.disabled = True
-        try: await hide_msg.edit(view=hide_view)
-        except: pass
+        try:
+            await hide_msg.edit(view=hide_view)
+        except discord.HTTPException:
+            logger.debug("Could not disable hide-and-seek hiding controls", exc_info=True)
 
         hiding_spots = hide_view.hiding_spots
         alive = []
@@ -344,8 +348,10 @@ async def run_game_loop(ctx, players):
             await seek_view.wait()
             
             for c in seek_view.children: c.disabled = True
-            try: await seek_msg.edit(view=seek_view)
-            except: pass
+            try:
+                await seek_msg.edit(view=seek_view)
+            except discord.HTTPException:
+                logger.debug("Could not disable hide-and-seek seeking controls", exc_info=True)
 
             chosen_spot = seek_view.choice
             
