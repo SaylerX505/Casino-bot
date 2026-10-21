@@ -33,6 +33,7 @@ Run these against a staging server/channel before production:
 - [ ] Verify a regular member cannot host staff-restricted games, manage the bot-admin allowlist, or invoke global economy/AI controls.
 - [ ] Verify a Discord Administrator without bot-admin allowlist access cannot run protected bot management actions until explicitly added.
 - [ ] Exercise each game from lobby to completion, including lobby timeout, host cancellation, player departure, duplicate button clicks, and two simultaneous start attempts in one channel.
+- [ ] Test Mafia scan with open and closed DMs; confirm the target is never revealed in public chat, the item is refunded after delivery failure, and refund failures are reported without leaking the hint.
 - [ ] For Rock-Paper-Scissors, test winner, draw, timeout, insufficient funds, database/host restart mid-match, and repeated settlement. Confirm no stake is charged or paid twice.
 - [ ] Simulate several transient database failures during RPS settlement; verify one background recovery worker retries safely, updates the original message after recovery, and never double-pays. Confirm remaining escrow is refunded on restart.
 - [ ] Check every game result for correct balance receipts and verify that a failed game does not silently leave players charged.
