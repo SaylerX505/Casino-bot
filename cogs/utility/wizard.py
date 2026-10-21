@@ -3,8 +3,6 @@ import json
 import logging
 
 import discord
-
-import config
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import (
@@ -18,12 +16,15 @@ from discord.ui import (
     TextDisplay,
 )
 
+import config
 from cogs.casino import bank
 from cogs.casino.permissions import (
     GAME_LABELS,
     _parse_id_list,
+    configured_manager_role_ids,
     game_channel_setting_key,
     has_admin_access,
+    manager_role_setting_key,
     staff_role_setting_key,
 )
 from cogs.utility.theme import StatusPanel
@@ -50,6 +51,39 @@ def _configured_roles(guild_id: int) -> list[int]:
     except Exception:
         logger.exception("Wizard failed to read staff-role settings for guild=%s", guild_id)
         return []
+
+
+def _configured_manager_roles(guild_id: int) -> list[int]:
+    try:
+        raw = bank.get_setting(manager_role_setting_key(guild_id))
+        values = _parse_id_list(raw, fallback=[])
+        return values or []
+    except Exception:
+        logger.exception("Wizard failed to read manager roles for guild=%s", guild_id)
+        return []
+
+
+def _is_discord_admin(interaction: discord.Interaction) -> bool:
+    return bool(
+        interaction.guild is not None
+        and (
+            interaction.user.id == interaction.guild.owner_id
+            or has_admin_access(interaction.user)
+        )
+    )
+
+
+def _can_manage_wizard(interaction: discord.Interaction) -> bool:
+    if _is_discord_admin(interaction):
+        return True
+    guild_id = getattr(interaction, "guild_id", None)
+    if guild_id is None:
+        return False
+    role_ids = {
+        getattr(role, "id", None)
+        for role in getattr(interaction.user, "roles", ())
+    }
+    return bool(role_ids.intersection(configured_manager_role_ids(guild_id)))
 
 
 def _channel_policy(guild_id: int, game_key: str) -> tuple[bool, list[int]]:
