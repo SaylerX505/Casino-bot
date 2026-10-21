@@ -12,7 +12,7 @@ from cogs.casino.geoguessr import GuessGameMenu
 from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
 from cogs.casino.mafia import DayVoteView, EphemeralActionView, MafiaLobbyView, SecretButtonView
 from cogs.casino.roulette import KickView, RouletteLobby
-from cogs.casino.wheel import WheelLobby
+from cogs.casino.wheel import WheelLobby, WheelResultPanel
 
 
 class _FakeMember:
@@ -300,6 +300,29 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
         await self._assert_v2_lobby(
             WheelLobby,
             {"wheel_join", "wheel_leave", "wheel_start"},
+        )
+
+    def test_wheel_result_panel_uses_v2_gallery_when_result_has_art(self):
+        panel = WheelResultPanel(
+            "نتيجة اللفة",
+            "النتيجة: x2\nصافي الرصيد: +50",
+            outcome="win",
+            image_name="wheel.png",
+        )
+        self.assertIsInstance(panel, LayoutView)
+        galleries = [
+            item for item in panel.walk_children()
+            if isinstance(item, discord.ui.MediaGallery)
+        ]
+        self.assertEqual(len(galleries), 1)
+        self.assertIn("attachment://wheel.png", str(galleries[0].items[0].media.url))
+        self.assertIn("صافي الرصيد", panel._panel_text.content)
+
+    def test_wheel_final_result_uses_v2_without_gallery(self):
+        panel = WheelResultPanel("انتهت العجلة", "مفيش نتائج.", outcome="success")
+        self.assertIsInstance(panel, LayoutView)
+        self.assertFalse(
+            any(isinstance(item, discord.ui.MediaGallery) for item in panel.walk_children())
         )
 
     async def test_mafia_lobby_uses_v2_components_and_keeps_cover_gallery(self):
