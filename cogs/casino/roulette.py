@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
+import logging
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import random
@@ -17,7 +18,9 @@ class WatermarkView(discord.ui.View):
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import lobby_embed, result_embed
+
+logger = logging.getLogger(__name__)
+from cogs.utility.theme import lobby_embed, report_game_failure, result_embed
 
 
 async def fetch_avatar(session, user, size=(80, 80)):
@@ -416,6 +419,14 @@ class RouletteLobby(discord.ui.View):
 
         except asyncio.CancelledError:
             raise
+        except Exception:
+            logger.exception("Roulette game loop failed")
+            await report_game_failure(
+                self.ctx,
+                "توقفت الروليت بسبب خطأ",
+                "حصل خطأ تقني أثناء الجولة. سجّلنا التفاصيل، واتقفلت اللوحة الحالية بدل تكرار رسائل جديدة.",
+                fallback_view=self,
+            )
         finally:
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
