@@ -29,11 +29,15 @@ def _connect():
             player_a TEXT NOT NULL,
             player_b TEXT NOT NULL,
             amount INTEGER NOT NULL CHECK(amount > 0),
-            status TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('active', 'settled', 'refunded')),
             outcome TEXT,
             created_at REAL NOT NULL,
             settled_at REAL
         )""")
+        _conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rps_wagers_active "
+            "ON rps_wagers(created_at) WHERE status='active'"
+        )
         _conn.commit()
     return _conn
 
