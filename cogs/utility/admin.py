@@ -87,8 +87,6 @@ class AdminCommands(commands.Cog):
                 return False
         return True
 
-    @access.command(name="add", description="السماح لأدمن Discord باستخدام أدوات إدارة البوت")
-    @app_commands.describe(member="عضو يمتلك بالفعل صلاحية Administrator في Discord")
     async def _require_global_owner(
         self,
         interaction: discord.Interaction,
@@ -113,6 +111,8 @@ class AdminCommands(commands.Cog):
             return False
         return True
 
+    @access.command(name="add", description="السماح لأدمن Discord باستخدام أدوات إدارة البوت")
+    @app_commands.describe(member="عضو يمتلك بالفعل صلاحية Administrator في Discord")
     async def access_add(self, interaction: discord.Interaction, member: discord.Member):
         if not await self._require_admin(interaction):
             return
