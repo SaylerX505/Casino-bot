@@ -1,7 +1,7 @@
 """Regression tests for slash-command error acknowledgement."""
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from discord import app_commands
 from discord.ext import commands
@@ -57,7 +57,7 @@ class AppCommandErrorTests(unittest.IsolatedAsyncioTestCase):
             send=AsyncMock(),
         )
 
-        with unittest.mock.patch.object(bot, "get_channel", return_value=None):
+        with patch.object(bot, "get_channel", return_value=None):
             await on_command_error(ctx, RuntimeError("sensitive exception detail"))
 
         ctx.send.assert_awaited_once()
