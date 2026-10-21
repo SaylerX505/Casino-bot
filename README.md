@@ -34,7 +34,7 @@ The economy's SQLite database is configured at the relative path `data/bank.db`.
 
 Do not delete, replace, or recreate the live database as part of an ordinary code update. Before a deployment that could affect persistence, take a backup of the active database while the bot is stopped or through a consistent SQLite backup method. The files under `data/` and `archive-wrapper-files/` may represent different snapshots; do not assume an archived database is the currently active one.
 
-AI conversation/state data is stored in `data/ai_data.json`. Treat stored user data and backups as sensitive and restrict access to them.
+AI conversation/state data is stored at runtime in `data/ai_data.json`. This generated file is intentionally not tracked in Git; the bot initializes an empty history file when it is absent. Use the persistent `/app/data` volume in Docker if histories need to survive redeployments. Treat stored user data and backups as sensitive and restrict access to them.
 
 ## Docker deployment
 
