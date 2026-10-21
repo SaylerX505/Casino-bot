@@ -150,7 +150,7 @@ class WizardViewTests(unittest.TestCase):
         ):
             view = WizardReviewView(self.guild, self.owner)
 
-        content = "\\n".join(
+        content = "\n".join(
             item.content
             for item in view.walk_children()
             if isinstance(item, discord.ui.TextDisplay)
