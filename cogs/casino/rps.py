@@ -138,7 +138,7 @@ class RPSView(LayoutView):
                 self._panel_text,
                 Separator(),
                 ActionRow(*self._buttons),
-                accent_color=THEME["teal"],
+                accent_color=discord.Color.green(),
             )
         )
 
