@@ -1,10 +1,10 @@
 # --- AI CHAT SERVICE ---
 """Privacy-conscious AI replies. Conversation history is memory-only and scoped per channel."""
 import asyncio
-from collections import OrderedDict
 import logging
 import re
 import time
+from collections import OrderedDict
 
 import aiohttp
 import discord
@@ -180,18 +180,23 @@ class AI(commands.Cog):
             if self._session is None or self._session.closed:
                 timeout = aiohttp.ClientTimeout(total=20, connect=5, sock_read=15)
                 self._session = aiohttp.ClientSession(timeout=timeout)
-            async with message.channel.typing():
-                async with self._semaphore:
-                    async with self._session.post(
-                        DEEPSEEK_API_URL,
-                        headers={"Authorization": f"Bearer {config.DEEPSEEK_API_KEY}", "Content-Type": "application/json"},
-                        json=payload,
-                    ) as response:
-                        if response.status != 200:
-                            logger.warning("AI provider returned HTTP %s", response.status)
-                            await message.reply("معلش، خدمة محسن مش متاحة دلوقتي.", mention_author=False)
-                            return
-                        response_data = await response.json()
+            async with (
+                message.channel.typing(),
+                self._semaphore,
+                self._session.post(
+                    DEEPSEEK_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {config.DEEPSEEK_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                ) as response,
+            ):
+                if response.status != 200:
+                    logger.warning("AI provider returned HTTP %s", response.status)
+                    await message.reply("معلش، خدمة محسن مش متاحة دلوقتي.", mention_author=False)
+                    return
+                response_data = await response.json()
             choices = response_data.get("choices") or []
             ai_reply = str((choices[0].get("message") or {}).get("content") or "").strip() if choices else ""
             if not ai_reply:
@@ -203,7 +208,7 @@ class AI(commands.Cog):
             await message.reply(ai_reply, mention_author=False, allowed_mentions=discord.AllowedMentions.none())
         except asyncio.CancelledError:
             raise
-        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+        except (aiohttp.ClientError, TimeoutError) as exc:
             logger.warning("AI provider request failed (%s)", type(exc).__name__)
             try:
                 await message.reply("معلش، حصلت مشكلة في الاتصال بمحسن. جرّب تاني بعد شوية.", mention_author=False)
