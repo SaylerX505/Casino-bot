@@ -61,8 +61,8 @@ def load_database():
         logger.exception("Could not load GeoGuessr static database path=%s", DATABASE_FILE)
         return {}
 
-    if not isinstance(payload, (dict, list)):
-        logger.error("GeoGuessr database has an unsupported top-level type path=%s", DATABASE_FILE)
+    if not isinstance(payload, dict):
+        logger.error("GeoGuessr database must be a JSON object path=%s", DATABASE_FILE)
         return {}
     return payload
 
@@ -119,7 +119,8 @@ def get_guess_data(guess_text):
         if location and 'address' in location.raw:
             code = location.raw['address'].get('country_code', '').lower()
             return (location.latitude, location.longitude), code
-    except Exception: pass
+    except Exception:
+        logger.debug("Optional GeoGuessr enhancement failed", exc_info=True)
     return None, None
 
 def draw_dashed_line(draw, pt1, pt2, fill, width, dash_length=15):
@@ -189,8 +190,8 @@ async def generate_result_map(actual_coords, player_data_list):
                         ImageDraw.Draw(mask).ellipse((0, 0, 40, 40), fill=255)
                         base_map.paste(avatar_img, (int(px-20), int(py-20)), mask)
                         draw.arc([px-22, py-22, px+22, py+22], 0, 360, fill=line_color, width=3)
-            except Exception: pass
-
+            except Exception:
+                logger.debug("Optional GeoGuessr enhancement failed", exc_info=True)
     margin = 150
     min_x = max(0, min(all_x) - margin)
     max_x = min(width, max(all_x) + margin)
@@ -230,14 +231,15 @@ async def generate_dashboard_image(players_data, round_num, total_rounds):
         a = a.point(lambda p: p * 0.15)
         bg_img = Image.merge('RGBA', (r, g, b, a))
         board.paste(bg_img, (0, 0), bg_img)
-    except Exception: pass
-
+    except Exception:
+        logger.debug("Optional GeoGuessr enhancement failed", exc_info=True)
     draw = ImageDraw.Draw(board)
     try:
         font_large = ImageFont.truetype("arial.ttf", 40)
         font_medium = ImageFont.truetype("arial.ttf", 24)
         font_small = ImageFont.truetype("arial.ttf", 20)
     except Exception:
+        logger.debug("GeoGuessr image fonts are unavailable; using the default font", exc_info=True)
         font_large = font_medium = font_small = ImageFont.load_default()
 
     draw.text((width//2, 40), f"Round {round_num} / {total_rounds}", fill="white", font=font_large, anchor="mm")
@@ -279,8 +281,8 @@ async def generate_dashboard_image(players_data, round_num, total_rounds):
                         mask = Image.new("L", (80, 80), 0)
                         ImageDraw.Draw(mask).ellipse((0, 0, 80, 80), fill=255)
                         board.paste(av_img, (x+box_w//2-40, y+15), mask)
-            except Exception: pass
-
+            except Exception:
+                logger.debug("Optional GeoGuessr enhancement failed", exc_info=True)
     out_bytes = io.BytesIO()
     board.save(out_bytes, format='PNG')
     out_bytes.seek(0)
@@ -827,12 +829,28 @@ class GeoGuessr(commands.Cog):
     @is_staff_or_admin()
     async def start_geo(self, ctx):
         """يبدأ لعبة جيوغيسر"""
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        if not game_db:
+            return await ctx.send(
+                view=StatusPanel(
+                    "GeoGuessr غير متاحة مؤقتًا",
+                    "قاعدة بيانات اللعبة غير موجودة أو غير صالحة. اللعبة اتقفلت بدل ما تبدأ بجولة ناقصة.",
+                    "warning",
+                ),
+                **send_kwargs,
+            )
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await ctx.send(
+                view=StatusPanel("اللعبة مشغولة", "فيه لعبة أو لوبي شغال في الروم بالفعل.", "warning"),
+                **send_kwargs,
+            )
         view = GuessGameMenu(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "GeoGuessr lobby", view=view):
             view.timer_task.cancel()
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await ctx.send(
+                view=StatusPanel("اللعبة مشغولة", "فيه لعبة أو لوبي شغال في الروم بالفعل.", "warning"),
+                **send_kwargs,
+            )
         try:
             view.message = await ctx.send(view=view)
         except Exception:
