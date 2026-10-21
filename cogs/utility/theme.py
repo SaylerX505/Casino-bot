@@ -2,7 +2,7 @@
 """موحد شكل البوت - الوان الحفرة + helpers"""
 import discord
 import logging
-from discord.ui import Container, LayoutView, Separator, TextDisplay
+from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
 import config
 
 THEME = {
@@ -33,6 +33,63 @@ def base_embed(title: str = None, description: str = None, color: int = None) ->
     else:
         e.set_footer(text=f"كازينو الحفرة • {BRAND} • Developed by @neglawy")
     return e
+
+
+def embed_to_v2(embed: discord.Embed) -> LayoutView:
+    """Convert a legacy informational embed into a Components V2 panel.
+
+    This preserves the title, body, fields, footer, accent color, and meaningful
+    artwork while keeping every announcement as its own message/event. The
+    server-logo thumbnail used by base_embed is intentionally omitted so it
+    doesn't become a large, repetitive gallery image.
+    """
+    sections = []
+    author_name = getattr(getattr(embed, "author", None), "name", None)
+    if author_name:
+        sections.append(f"**{author_name}**")
+    if embed.title:
+        sections.append(f"# {embed.title}")
+    if embed.description:
+        sections.append(embed.description)
+    for field in getattr(embed, "fields", ()):
+        name = getattr(field, "name", "") or "تفاصيل"
+        value = getattr(field, "value", "") or "—"
+        sections.append(f"**{name}**\n{value}")
+    footer_text = getattr(getattr(embed, "footer", None), "text", None)
+    if footer_text:
+        sections.append(f"-# {footer_text}")
+
+    body = "\n\n".join(section for section in sections if section).strip()
+    if not body:
+        body = "# إشعار"
+    if len(body) > 3900:
+        body = body[:3897] + "…"
+
+    color = getattr(embed, "color", None)
+    accent = color.value if color is not None else THEME["grey"]
+    children = [TextDisplay(body)]
+
+    image_url = getattr(getattr(embed, "image", None), "url", None)
+    thumbnail_url = getattr(getattr(embed, "thumbnail", None), "url", None)
+    if not image_url and thumbnail_url and thumbnail_url != LOGO_URL:
+        image_url = thumbnail_url
+
+    if image_url:
+        children.extend(
+            [
+                Separator(),
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=image_url,
+                        description=(embed.title or "صورة مرفقة")[:256],
+                    )
+                ),
+            ]
+        )
+
+    view = LayoutView(timeout=180)
+    view.add_item(Container(*children, accent_color=accent))
+    return view
 
 
 class StatusPanel(LayoutView):
