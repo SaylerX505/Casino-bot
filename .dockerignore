@@ -7,6 +7,10 @@ Dockerfile
 
 .env
 **/.env
+.env.*
+**/.env.*
+!.env.example
+**/!.env.example
 
 .venv
 .venv/**
@@ -39,3 +43,19 @@ Thumbs.db
 **/*.sqlite
 **/*.sqlite3
 **/*.sqlite-*
+
+# Runtime AI history and activity snapshots (GeoGuessr's data/database.json stays included)
+data/ai_data.json
+data/state.json
+**/ai_data.json
+**/state.json
+
+# SQLite WAL/SHM journals and runtime backups
+*.db-*
+*.sqlite-*
+*.sqlite3-*
+**/*.db-*
+**/*.sqlite-*
+**/*.sqlite3-*
+data/backups/
+data/backups/**
