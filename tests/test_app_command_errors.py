@@ -81,7 +81,7 @@ class AppCommandErrorTests(unittest.IsolatedAsyncioTestCase):
             send=AsyncMock(),
         )
 
-        with unittest.mock.patch.object(bot, "get_channel", return_value=log_channel):
+        with patch.object(bot, "get_channel", return_value=log_channel):
             await on_command_error(ctx, RuntimeError("do not send cross-guild"))
 
         log_channel.send.assert_not_awaited()
