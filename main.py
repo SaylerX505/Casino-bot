@@ -3,7 +3,9 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+import logging
 import config
+from discord import app_commands
 
 # --- BOT CONFIGURATION ---
 intents = discord.Intents.default()
@@ -90,6 +92,46 @@ async def on_command_error(ctx, error):
         )
     except discord.HTTPException:
         pass
+@bot.tree.error
+async def on_app_command_error(interaction, error):
+    """Acknowledge slash-command failures safely without exposing internals."""
+    logger = logging.getLogger("casino.app_commands")
+    command_name = (
+        interaction.command.qualified_name
+        if getattr(interaction, "command", None) is not None
+        else "unknown"
+    )
+    user_id = getattr(getattr(interaction, "user", None), "id", "unknown")
+    guild_id = getattr(interaction, "guild_id", None)
+
+    if isinstance(error, app_commands.CheckFailure):
+        logger.warning(
+            "Rejected app command %s for user=%s guild=%s",
+            command_name,
+            user_id,
+            guild_id,
+        )
+        message = "الأمر ده مش متاح لصلاحيات حسابك."
+    else:
+        original = getattr(error, "original", error)
+        logger.error(
+            "Unhandled app command error command=%s user=%s guild=%s",
+            command_name,
+            user_id,
+            guild_id,
+            exc_info=(type(original), original, original.__traceback__),
+        )
+        message = "حصل عطل أثناء تنفيذ الأمر. تم تسجيل الخطأ من غير عرض تفاصيله للمستخدم."
+
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.HTTPException:
+        logger.exception("Could not send the app-command error acknowledgement")
+
+
 # --- EXTENSION LOADER ---
 async def load_cogs():
     """Automatically loads all python files inside the cogs subfolders"""
