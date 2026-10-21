@@ -210,13 +210,31 @@ class HelpPageView(LayoutView):
                 pass
 
 
-class HelpEntryView(discord.ui.View):
+class HelpEntryView(LayoutView):
     def __init__(self, bot):
         super().__init__(timeout=180)
         self.bot = bot
+        container = Container(
+            TextDisplay(
+                f"# Çukur • Help Center\n"
+                f"**Prefix:** `{config.PREFIX}`\n\n"
+                "افتح قائمة المساعدة الخاصة بيك عشان تشوف الأوامر المتاحة حسب صلاحياتك."
+            ),
+            Separator(),
+            accent_color=config.EMBED_COLOR,
+        )
+        row = ActionRow()
+        button = discord.ui.Button(
+            label="افتح المساعدة الخاصة",
+            emoji="📚",
+            style=discord.ButtonStyle.secondary,
+        )
+        button.callback = self.open_help
+        row.add_item(button)
+        container.add_item(row)
+        self.add_item(container)
 
-    @discord.ui.button(label="افتح المساعدة الخاصة", emoji="📚", style=discord.ButtonStyle.secondary)
-    async def open_help(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def open_help(self, interaction: discord.Interaction):
         latency = round(self.bot.latency * 1000)
         view = HelpLayout(interaction.user, latency, private_root=True)
         await interaction.response.send_message(view=view, ephemeral=True)
@@ -349,16 +367,8 @@ class HelpCommand(commands.Cog):
             view.message = await ctx.send(view=view, ephemeral=True)
             return
 
-        embed = discord.Embed(
-            title="Çukur • Help Center",
-            description=(
-                f"**Prefix:** `{config.PREFIX}`  ·  **Latency:** {latency}ms\n\n"
-                "افتح قائمة المساعدة الخاصة بيك من الزر تحت."
-            ),
-            color=config.EMBED_COLOR,
-        )
-        embed.set_thumbnail(url=config.SERVER_LOGO_URL)
-        await ctx.send(embed=embed, view=HelpEntryView(self.bot))
+        view = HelpEntryView(self.bot)
+        view.message = await ctx.send(view=view)
 
     @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
     async def stop_game(self, ctx):
