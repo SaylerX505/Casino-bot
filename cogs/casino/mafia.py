@@ -967,51 +967,98 @@ class Mafia(commands.Cog):
 
     @commands.hybrid_command(name='اكشف', aliases=['scan', 'كشف'], description='استخدم أداة كشف المافيا')
     async def mafia_scan(self, ctx):
-        """🔍 استخدم كشف مافيا: تلميح عن مافيا واحد عايش (بيشتغل في قناة اللعبة)"""
-        cur_cog = self.bot.get_cog('Currency')
+        """Use one scan item and deliver all investigation details privately."""
+        async def respond(title, description, kind="warning"):
+            kwargs = {"ephemeral": True} if getattr(ctx, "interaction", None) is not None else {}
+            return await ctx.send(
+                view=StatusPanel(title, description, kind),
+                **kwargs,
+            )
+
+        cur_cog = self.bot.get_cog("Currency")
         if cur_cog is None:
-            return await ctx.send("❌ سيستم الفلوس واقع! كلم نجلاوي.")
+            return await respond("الاقتصاد غير متاح", "مركز الاقتصاد مش محمّل حاليًا. جرّب تاني بعد إصلاح البوت.")
         if cur_cog.get_item_count(ctx.author.id, "mafia_scan") <= 0:
-            return await ctx.send(f"❌ {ctx.author.mention} معكش **كشف مافيا**! اشتريه من الشوب بـ 150 (`+رصيد` > Shop).")
-        if not hasattr(self.bot, 'active_games') or ctx.channel.id not in self.bot.active_games:
-            return await ctx.send("❌ مفيش لعبة مافيا شغالة هنا!")
-        game_data = self.bot.active_games[ctx.channel.id]
-        game = game_data.get('game_ref')
-        if game is None or getattr(game, 'game_name', '') != 'mafia':
-            return await ctx.send("❌ الأمر ده بيشتغل في لعبة المافيا بس!")
+            return await respond(
+                "أداة الكشف مش موجودة",
+                "مفيش كشف مافيا في شنطتك. تقدر تشتريه من المتجر داخل مركز الاقتصاد.",
+            )
+        active_games = getattr(self.bot, "active_games", {})
+        game_data = active_games.get(ctx.channel.id)
+        if game_data is None:
+            return await respond("مفيش لعبة مافيا", "ابدأ لعبة مافيا في الروم ده الأول.")
+        game = game_data.get("game_ref")
+        if game is None or getattr(game, "game_name", "") != "mafia":
+            return await respond("الأمر خاص بالمافيا", "أداة الكشف بتشتغل داخل جولة مافيا نشطة بس.")
         if ctx.author not in game.alive:
-            return await ctx.send("💀 الميتين مابيكشفوش!")
-        alive_mafias = [m for m in game.mafias if m in game.alive and m != ctx.author]
+            return await respond("أنت خارج الجولة", "اللاعبون اللي خرجوا من الجولة مش بيقدروا يستخدموا أدواتها.")
+        alive_mafias = [member for member in game.mafias if member in game.alive and member != ctx.author]
         if not alive_mafias:
-            return await ctx.send("❌ مفيش مافيا عايشة غيرك (او انت المافيا)!")
+            return await respond("مفيش هدف صالح", "مفيش مافيا تانية عايشة تقدر تكشفها دلوقتي.")
         if not cur_cog.remove_item(ctx.author.id, "mafia_scan", 1):
-            return await ctx.send(f"❌ {ctx.author.mention} أداة الكشف اتستخدمت أو مش موجودة. راجع شنطتك وحاول تاني.")
+            return await respond(
+                "تعذر استخدام الأداة",
+                "الأداة اتستخدمت أو مش موجودة. اتأكد من شنطتك وحاول تاني.",
+            )
+
         hint = random.choice(alive_mafias)
         masked = hint.display_name[:2] + "***"
-        embed = discord.Embed(
+        result_panel = discord.Embed(
             title="🔍 نتيجة الكشف (سري)",
-            description=f"الجهاز بيقول ان **{masked}** ({hint.mention}) عليه حركات مافيا... 👀\n(اتخصم منك 1 كشف)",
-            color=discord.Color.gold()
+            description=(
+                f"الجهاز بيقول إن **{masked}** ({hint.mention}) عليه حركات مافيا... 👀\n"
+                "(اتخصم منك 1 كشف)"
+            ),
+            color=discord.Color.gold(),
         )
         try:
-            await ctx.author.send(view=embed_to_v2(embed))
+            await ctx.author.send(
+                view=embed_to_v2(result_panel),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except discord.Forbidden:
             try:
                 cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
-            except Exception as refund_error:
-                print(f"Failed to refund mafia_scan after DM Forbidden: {refund_error}")
-                return await ctx.send("❌ افتح الخاص؛ فشل إرجاع أداة الكشف تلقائيًا، كلم الستاف.")
-            return await ctx.send(f"❌ {ctx.author.mention} افتح الرسائل الخاصة؛ رجعنا أداة الكشف لشنطتك.")
-        except discord.HTTPException as send_error:
+            except Exception:
+                logger.exception(
+                    "Failed to refund mafia_scan after DM Forbidden user_id=%s",
+                    ctx.author.id,
+                )
+                return await respond(
+                    "تعذر استرداد الأداة",
+                    "الخاص مقفول وفشل استرداد أداة الكشف تلقائيًا. تواصل مع إدارة السيرفر قبل استخدام أداة أخرى.",
+                )
+            return await respond(
+                "افتح الرسائل الخاصة",
+                "مش قادر أبعت نتيجة الكشف في الخاص، ورجّعنا الأداة لشنطتك.",
+            )
+        except discord.HTTPException:
             try:
                 cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
-            except Exception as refund_error:
-                print(f"Failed to refund mafia_scan after DM error: {refund_error}")
-                return await ctx.send("❌ فشل إرسال النتيجة وإرجاع الأداة تلقائيًا؛ كلم الستاف.")
-            print(f"Failed to deliver mafia_scan result: {send_error}")
-            return await ctx.send("❌ مقدرناش نبعت النتيجة في الخاص؛ رجعنا أداة الكشف لشنطتك.")
+            except Exception:
+                logger.exception(
+                    "Failed to refund mafia_scan after DM HTTP error user_id=%s",
+                    ctx.author.id,
+                )
+                return await respond(
+                    "تعذر استرداد الأداة",
+                    "فشل إرسال النتيجة واسترداد الأداة تلقائيًا. تواصل مع إدارة السيرفر قبل استخدام أداة أخرى.",
+                )
+            logger.warning(
+                "Could not deliver Mafia scan via DM; refunded item user_id=%s",
+                ctx.author.id,
+                exc_info=True,
+            )
+            return await respond(
+                "تعذر إرسال النتيجة",
+                "ما قدرناش نبعت النتيجة في الخاص، ورجّعنا الأداة لشنطتك.",
+            )
 
-        await ctx.send(f"📩 {ctx.author.mention} نتيجة الكشف اتبعتتلك في الخاص! (عشان اللعبة ماتتحرقش)")
+        return await respond(
+            "النتيجة اتبعتت في الخاص",
+            "راجع رسائلك الخاصة لمعرفة نتيجة الكشف. تفاصيل الهدف لا تظهر في شات اللعبة.",
+            "success",
+        )
 
 async def setup(bot):
     await bot.add_cog(Mafia(bot))
