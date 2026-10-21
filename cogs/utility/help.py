@@ -356,6 +356,14 @@ class HelpCommand(commands.Cog):
             )
         await interaction.response.send_message(view=ShopView(cog), ephemeral=True)
 
+    @app_commands.command(name="commands", description="عرض قائمة الأوامر المتاحة حسب صلاحياتك")
+    @app_commands.guild_only()
+    async def commands_menu(self, interaction: discord.Interaction):
+        latency = round(self.bot.latency * 1000)
+        view = HelpLayout(interaction.user, latency, private_root=True)
+        await interaction.response.send_message(view=view, ephemeral=True)
+        view.message = await interaction.original_response()
+
     def __init__(self, bot):
         self.bot = bot
 
