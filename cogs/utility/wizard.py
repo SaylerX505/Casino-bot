@@ -22,7 +22,9 @@ from cogs.casino.permissions import (
     GAME_LABELS,
     _parse_id_list,
     configured_manager_role_ids,
+    configured_log_channel_id,
     game_channel_setting_key,
+    log_channel_setting_key,
     has_admin_access,
     manager_role_setting_key,
     staff_role_setting_key,
@@ -100,6 +102,26 @@ def _channel_policy(guild_id: int, game_key: str) -> tuple[bool, list[int]]:
         return True, []
     values = _parse_id_list(raw)
     return (False, values or []) if values is not None else (False, [])
+
+
+LOG_TYPE_LABELS = {
+    "economy": "سجلات الاقتصاد",
+    "command_errors": "أخطاء الأوامر",
+}
+
+
+def _log_channel_fallback(log_type: str) -> int:
+    if log_type == "economy":
+        return int(getattr(config, "CURRENCY_LOG_CHANNEL_ID", 0) or 0)
+    return int(config.LOG_CHANNELS.get("command_errors", 0) or 0)
+
+
+def _configured_log_channel(guild_id: int, log_type: str) -> int:
+    return configured_log_channel_id(
+        guild_id,
+        log_type,
+        _log_channel_fallback(log_type),
+    )
 
 
 def _authorized(interaction: discord.Interaction, owner_id: int) -> bool:
@@ -213,6 +235,12 @@ class WizardHomeView(WizardLayout):
                 ),
                 ActionRow(
                     self._button(
+                        "السجلات",
+                        "wizard_logs",
+                        self.open_logs,
+                        emoji="📋",
+                    ),
+                    self._button(
                         "مراجعة الإعدادات",
                         "wizard_review",
                         self.open_review,
@@ -253,6 +281,13 @@ class WizardHomeView(WizardLayout):
             return
         await interaction.response.edit_message(
             view=GameChannelWizardView(interaction.guild, interaction.user)
+        )
+
+    async def open_logs(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        await interaction.response.edit_message(
+            view=LogChannelWizardView(interaction.guild, interaction.user)
         )
 
     async def open_review(self, interaction: discord.Interaction):
@@ -672,6 +707,170 @@ class GameChannelWizardView(WizardLayout):
         await interaction.response.edit_message(view=WizardHomeView(interaction.guild, interaction.user))
 
 
+class LogChannelWizardView(WizardLayout):
+    """Configure per-guild audit destinations without hard-coded cross-server channels."""
+
+    def __init__(self, guild, owner, *, selected_type="economy", notice=None):
+        super().__init__(guild, owner, notice=notice)
+        self.selected_type = selected_type if selected_type in LOG_TYPE_LABELS else "economy"
+        current_id = _configured_log_channel(guild.id, self.selected_type)
+        current = f"<#{current_id}>" if current_id else "متوقف"
+
+        self.type_select = Select(
+            placeholder="اختار نوع السجل",
+            options=[
+                discord.SelectOption(
+                    label=label,
+                    value=key,
+                    default=key == self.selected_type,
+                )
+                for key, label in LOG_TYPE_LABELS.items()
+            ],
+            min_values=1,
+            max_values=1,
+        )
+        self.type_select.callback = self.choose_type
+        self.channel_select = ChannelSelect(
+            placeholder="اختار قناة لاستقبال السجلات",
+            channel_types=[discord.ChannelType.text, discord.ChannelType.news],
+            min_values=1,
+            max_values=1,
+        )
+        self.channel_select.callback = self.save_channel
+
+        self.add_item(
+            Container(
+                TextDisplay(
+                    "# إعدادات السجلات\n"
+                    "اختار قناة مستقلة لسجلات الاقتصاد وأخطاء الأوامر. "
+                    "السجلات لا تُرسل إلا لقناة داخل السيرفر نفسه.\\n\\n"
+                    f"**نوع السجل:** {LOG_TYPE_LABELS[self.selected_type]}\\n"
+                    f"**القناة الحالية:** {current}\\n\\n"
+                    "اختيار قناة جديدة يحفظ التغيير فورًا. تقدر توقف النوع المحدد من الزر بالأسفل."
+                    + self._notice_text()
+                ),
+                Separator(),
+                ActionRow(self.type_select),
+                ActionRow(self.channel_select),
+                ActionRow(
+                    self._button("إيقاف هذا السجل", "wizard_logs_disable", self.disable_log),
+                    self._button("رجوع", "wizard_logs_back", self.go_home),
+                ),
+                accent_color=0x393A41,
+            )
+        )
+
+    async def choose_type(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        selected = self.type_select.values[0]
+        await interaction.response.edit_message(
+            view=LogChannelWizardView(
+                interaction.guild,
+                interaction.user,
+                selected_type=selected,
+            )
+        )
+
+    async def save_channel(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        channel = next(
+            (
+                value for value in self.channel_select.values
+                if getattr(getattr(value, "guild", None), "id", None) == self.guild_id
+            ),
+            None,
+        )
+        if channel is None:
+            return await interaction.response.send_message(
+                "اختار قناة نصية من نفس السيرفر.",
+                ephemeral=True,
+            )
+
+        bot_member = getattr(interaction.guild, "me", None)
+        if bot_member is not None:
+            permissions = channel.permissions_for(bot_member)
+            if not getattr(permissions, "view_channel", False) or not getattr(permissions, "send_messages", False):
+                return await interaction.response.send_message(
+                    "البوت محتاج صلاحية عرض القناة وإرسال الرسائل فيها قبل حفظها كسجل.",
+                    ephemeral=True,
+                )
+
+        try:
+            bank.set_setting(
+                log_channel_setting_key(self.guild_id, self.selected_type),
+                str(channel.id),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to persist log channel guild=%s type=%s",
+                self.guild_id,
+                self.selected_type,
+            )
+            return await interaction.response.send_message(
+                "تعذر حفظ قناة السجل. مفيش تغيير اتأكد حفظه.",
+                ephemeral=True,
+            )
+
+        logger.info(
+            "Wizard updated log channel guild=%s type=%s actor=%s channel_id=%s",
+            self.guild_id,
+            self.selected_type,
+            interaction.user.id,
+            channel.id,
+        )
+        await interaction.response.edit_message(
+            view=LogChannelWizardView(
+                interaction.guild,
+                interaction.user,
+                selected_type=self.selected_type,
+                notice=f"اتحفظت قناة {LOG_TYPE_LABELS[self.selected_type]}: <#{channel.id}>.",
+            )
+        )
+
+    async def disable_log(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        try:
+            bank.set_setting(
+                log_channel_setting_key(self.guild_id, self.selected_type),
+                "0",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to disable log channel guild=%s type=%s",
+                self.guild_id,
+                self.selected_type,
+            )
+            return await interaction.response.send_message(
+                "تعذر حفظ إعداد إيقاف السجل. جرّب تاني.",
+                ephemeral=True,
+            )
+
+        logger.info(
+            "Wizard disabled log channel guild=%s type=%s actor=%s",
+            self.guild_id,
+            self.selected_type,
+            interaction.user.id,
+        )
+        await interaction.response.edit_message(
+            view=LogChannelWizardView(
+                interaction.guild,
+                interaction.user,
+                selected_type=self.selected_type,
+                notice=f"تم إيقاف {LOG_TYPE_LABELS[self.selected_type]}.",
+            )
+        )
+
+    async def go_home(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        await interaction.response.edit_message(
+            view=WizardHomeView(interaction.guild, interaction.user)
+        )
+
+
 class WizardReviewView(WizardLayout):
     def __init__(self, guild, owner, *, notice=None):
         super().__init__(guild, owner, notice=notice)
@@ -693,6 +892,16 @@ class WizardReviewView(WizardLayout):
                 else (", ".join(f"<#{channel_id}>" for channel_id in channel_ids) or "اللعبة متوقفة")
             )
             lines.append(f"• **{GAME_LABELS[key]}:** {channels}")
+        economy_log = _configured_log_channel(guild.id, "economy")
+        error_log = _configured_log_channel(guild.id, "command_errors")
+        lines.extend(
+            [
+                "",
+                "**قنوات السجلات:**",
+                f"• **سجلات الاقتصاد:** {f'<#{economy_log}>' if economy_log else 'متوقفة'}",
+                f"• **أخطاء الأوامر:** {f'<#{error_log}>' if error_log else 'متوقفة'}",
+            ]
+        )
         self.add_item(
             Container(
                 TextDisplay(
@@ -707,6 +916,7 @@ class WizardReviewView(WizardLayout):
                     self._button("رولات الإدارة", "wizard_review_managers", self.open_manager_roles),
                     self._button("رولات الستاف", "wizard_review_roles", self.open_roles),
                     self._button("قنوات الألعاب", "wizard_review_channels", self.open_channels),
+                    self._button("السجلات", "wizard_review_logs", self.open_logs),
                 ),
                 ActionRow(
                     self._button("الرئيسية", "wizard_review_home", self.go_home),
@@ -737,6 +947,13 @@ class WizardReviewView(WizardLayout):
             return
         await interaction.response.edit_message(view=GameChannelWizardView(interaction.guild, interaction.user))
 
+    async def open_logs(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        await interaction.response.edit_message(
+            view=LogChannelWizardView(interaction.guild, interaction.user)
+        )
+
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
@@ -756,7 +973,7 @@ class SetupWizard(commands.Cog):
         guild = interaction.guild
         if guild is None or not _can_manage_wizard(interaction):
             return await interaction.response.send_message(
-                "فتح وتعديل معالج الإعداد متاح لمالك السيرفر أو حساب يمتلك Administrator.",
+                "فتح المعالج متاح لمالك السيرفر أو Administrator أو رولات إدارة البوت التي تم إعدادها مسبقًا.",
                 ephemeral=True,
             )
         view = WizardHomeView(guild, interaction.user)
