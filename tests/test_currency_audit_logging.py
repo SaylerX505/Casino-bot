@@ -43,8 +43,16 @@ class EconomyAuditLogTests(unittest.IsolatedAsyncioTestCase):
             )
 
         channel.send.assert_awaited_once()
-        self.assertIsInstance(channel.send.await_args.kwargs["embed"], discord.Embed)
-        mentions = channel.send.await_args.kwargs["allowed_mentions"]
+        kwargs = channel.send.await_args.kwargs
+        self.assertNotIn("embed", kwargs)
+        self.assertIsInstance(kwargs["view"], discord.ui.LayoutView)
+        view_content = "\n".join(
+            item.content
+            for item in kwargs["view"].walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("Transfer", view_content)
+        mentions = kwargs["allowed_mentions"]
         self.assertFalse(mentions.users)
         self.assertFalse(mentions.roles)
         self.assertFalse(mentions.everyone)
