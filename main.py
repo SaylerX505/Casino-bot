@@ -30,22 +30,18 @@ intents.reactions = True
 intents.guilds = True
 
 class HomeGuildCommandTree(app_commands.CommandTree):
-    """Reject app-command interactions outside the configured single home server."""
+    """Apply single-server and optional per-game channel restrictions."""
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         home_guild_id = getattr(config, "HOME_GUILD_ID", None)
-        if home_guild_id is None or interaction.guild_id == home_guild_id:
-            return True
-        if not interaction.response.is_done():
-            await interaction.response.send_message(
-                "البوت ده مخصص لسيرفر واحد ومش متاح خارج السيرفر الأساسي.",
-                ephemeral=True,
-            )
-        return False
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if not await super().interaction_check(interaction):
+        if home_guild_id is not None and interaction.guild_id != home_guild_id:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "البوت ده مخصص لسيرفر واحد ومش متاح خارج السيرفر الأساسي.",
+                    ephemeral=True,
+                )
             return False
+
         game_key = game_key_from_interaction(interaction)
         if game_key and not is_game_channel_allowed(
             interaction.guild_id,
