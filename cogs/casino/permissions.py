@@ -86,7 +86,7 @@ def configured_log_channel_id(guild_id: int | None, log_type: str, fallback: int
     except (TypeError, ValueError):
         logger.error("Malformed log-channel setting guild=%s type=%s", guild_id, log_type)
         return 0
-    return channel_id if channel_id > 0 else 0
+    return max(0, channel_id)
 
 
 def _parse_id_list(raw, *, fallback=None):
