@@ -67,9 +67,11 @@ class HomeGuildPolicyTests(unittest.IsolatedAsyncioTestCase):
             guild=SimpleNamespace(id=202),
             channel=SimpleNamespace(id=999),
         )
-        with patch("main.is_game_channel_allowed", return_value=False):
-            with self.assertRaises(main.GameChannelBlocked):
-                await main.enforce_game_channel_for_prefix(ctx)
+        with (
+            patch("main.is_game_channel_allowed", return_value=False),
+            self.assertRaises(main.GameChannelBlocked),
+        ):
+            await main.enforce_game_channel_for_prefix(ctx)
 
     async def test_prefix_game_command_is_allowed_in_configured_channel(self):
         ctx = SimpleNamespace(
