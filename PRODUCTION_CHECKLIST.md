@@ -16,8 +16,10 @@ This checklist is a release gate, not a claim that every item is already complet
 - [ ] Validate the backup and restore it into a test volume before production cutover.
 - [ ] Attach a persistent Docker volume at `/app/data`. Do not rely on an anonymous temporary volume to preserve wallets.
 - [ ] Keep one active bot process per shared SQLite database. Multiple replicas sharing the same database are not a supported topology.
-- [ ] The current source tree no longer contains generated AI history, activity snapshots, or the generated GeoGuessr used-image tracker. Their older Git-history copies are not purged by deleting current files; coordinate a separate history rewrite and verify backup/secret retention requirements.
-- [ ] Global wallet balances and AI toggle are not per-guild. Global economy/AI controls are restricted to the application owner; the global reset remains disabled until a reviewed migration exists.
+- [x] Runtime AI history, activity snapshots, used-image trackers, legacy currency JSON, SQLite database/journal files, and bot logs are removed from current snapshots of the active branches and excluded from Docker build contexts. Static game content remains tracked.
+- [ ] Older Git-history copies may still be retrievable by commit SHA. Coordinate a history rewrite and verify the result before claiming historical copies are purged.
+- [ ] The bot is designed for one Discord server. Set `HOME_GUILD_ID` on the host before production so prefix/app commands and registration are server-scoped; do not treat an empty value as enforced single-server mode.
+- [ ] Wallet rows use Discord user IDs within the one-server deployment; economy reset remains disabled through Discord and requires a manual, backed-up maintenance procedure.
 
 ## Staging Discord validation
 
