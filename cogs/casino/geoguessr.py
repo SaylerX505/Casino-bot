@@ -16,7 +16,7 @@ from geopy.distance import geodesic
 import config
 
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import lobby_embed, result_embed
+from cogs.utility.theme import lobby_embed, report_game_failure, result_embed
 
 logger = logging.getLogger(__name__)
 
@@ -494,6 +494,13 @@ async def run_game_loop(ctx, players):
 
     except asyncio.CancelledError:
         raise
+    except Exception:
+        logger.exception("GeoGuessr game loop failed")
+        await report_game_failure(
+            ctx,
+            "توقفت GeoGuessr بسبب خطأ",
+            "حصل عطل غير متوقع أثناء الجولة. تم تسجيل الخطأ، وحالة الرهان/الجولة لم يتم تعديلها تلقائيًا.",
+        )
     finally:
         release_game_task(ctx.bot, ctx.channel.id, asyncio.current_task())
 
