@@ -106,6 +106,67 @@ def save_used_images(used_set):
         raise
 
 game_db = load_database()
+GEO_ROUNDS_PER_GAME = 6
+
+
+def valid_geo_round_keys():
+    """Return only records with safe filenames, valid coordinates, and existing images."""
+    valid_keys = []
+    invalid_count = 0
+    image_root = os.path.abspath(IMAGES_DIR)
+
+    for key, record in game_db.items():
+        if not isinstance(key, str) or not isinstance(record, dict):
+            invalid_count += 1
+            continue
+
+        country_code = record.get("country_code")
+        country_ar = record.get("country_ar")
+        filename = record.get("filename")
+        coords = record.get("coords")
+
+        if (
+            not isinstance(country_code, str)
+            or len(country_code) != 2
+            or not country_code.isalpha()
+            or not isinstance(country_ar, str)
+            or not country_ar.strip()
+            or not isinstance(filename, str)
+            or not filename
+            or os.path.basename(filename) != filename
+            or not isinstance(coords, (list, tuple))
+            or len(coords) != 2
+        ):
+            invalid_count += 1
+            continue
+
+        latitude, longitude = coords
+        if (
+            not isinstance(latitude, (int, float))
+            or isinstance(latitude, bool)
+            or not math.isfinite(latitude)
+            or not -90 <= latitude <= 90
+            or not isinstance(longitude, (int, float))
+            or isinstance(longitude, bool)
+            or not math.isfinite(longitude)
+            or not -180 <= longitude <= 180
+        ):
+            invalid_count += 1
+            continue
+
+        image_path = os.path.abspath(os.path.join(image_root, filename))
+        if os.path.commonpath((image_root, image_path)) != image_root or not os.path.isfile(image_path):
+            invalid_count += 1
+            continue
+
+        valid_keys.append(key)
+
+    if invalid_count:
+        logger.warning(
+            "GeoGuessr skipped %s invalid or missing content record(s)",
+            invalid_count,
+        )
+    return sorted(valid_keys)
 
 def get_flag_emoji(country_code):
     if not country_code or len(country_code) != 2: return "❓"
@@ -292,35 +353,33 @@ async def generate_dashboard_image(players_data, round_num, total_rounds):
 async def run_game_loop(ctx, players):
     try:
         scores = {player: 0 for player in players}
-        total_rounds = 6
+        total_rounds = GEO_ROUNDS_PER_GAME
 
         used_images = load_used_images()
-        available_keys = set(game_db.keys())
-        unused_keys = list(available_keys - used_images)
+        available_keys = set(valid_geo_round_keys())
+        if len(available_keys) < total_rounds:
+            return await ctx.send(
+                view=StatusPanel(
+                    "صور غير كافية",
+                    "محتاجين 6 صور صالحة بملفات موجودة عشان نبدأ GeoGuessr.",
+                    "warning",
+                )
+            )
 
+        used_images.intersection_update(available_keys)
+        unused_keys = list(available_keys - used_images)
         if len(unused_keys) < total_rounds:
             await ctx.send(
                 view=StatusPanel(
                     "إعادة تعيين الصور",
-                    "تم لعب كل الصور المتاحة؛ هنبدأ دورة جديدة.",
-                    "warning",
+                    "اتلعبت كل الصور الصالحة؛ هنبدأ دورة جديدة.",
+                    "neutral",
                 )
             )
             used_images = set()
             unused_keys = list(available_keys)
 
-        if len(unused_keys) < total_rounds:
-            return await ctx.send(
-                view=StatusPanel(
-                    "صور غير كافية",
-                    "قاعدة البيانات لا تحتوي على صور كافية لبدء جولة كاملة.",
-                    "warning",
-                )
-            )
-
         selected_rounds = random.sample(unused_keys, total_rounds)
-        used_images.update(selected_rounds)
-        save_used_images(used_images)
 
         for round_num, db_key in enumerate(selected_rounds, 1):
             round_msg = await ctx.send(
@@ -341,26 +400,49 @@ async def run_game_loop(ctx, players):
             if not actual_country_center_coords:
                 actual_country_center_coords = actual_street_coords
 
-            await asyncio.sleep(1)
-            await round_msg.delete()
-
             try:
                 file = discord.File(fp=image_file_path, filename="streetview.png")
-            except FileNotFoundError:
+            except OSError:
+                logger.exception("GeoGuessr image became unavailable during a game path=%s", image_file_path)
                 await round_msg.edit(
                     view=StatusPanel(
-                        "الصورة غير موجودة",
-                        f"الصورة المطلوبة مش موجودة في مجلد {IMAGES_DIR}. هنعدّي الجولة.",
+                        "تعذر تجهيز الجولة",
+                        "صورة الجولة اختفت أو تعذر فتحها. أوقفنا اللعبة بدل ما نعرض جولة ناقصة.",
                         "warning",
                     ),
                     attachments=[],
                 )
-                continue
+                return
+
+            used_images.add(db_key)
+            try:
+                save_used_images(used_images)
+            except OSError:
+                logger.exception("Could not save GeoGuessr used-image tracker")
+                await round_msg.edit(
+                    view=StatusPanel(
+                        "تعذر حفظ الجولة",
+                        "حالة الصور لم تُحفظ بأمان، لذلك أوقفنا اللعبة قبل بدء الجولة.",
+                        "warning",
+                    ),
+                    attachments=[],
+                )
+                return
 
             timer_state = {"end_time": time.time() + 30.0}
             active_view = ActiveGameView(ctx.author, timer_state, round_num, total_rounds)
             msg = round_msg
-            await msg.edit(view=active_view, attachments=[file])
+            try:
+                await msg.edit(view=active_view, attachments=[file])
+            except discord.HTTPException:
+                logger.exception("Could not publish GeoGuessr round=%s", round_num)
+                file.close()
+                await report_game_failure(
+                    ctx,
+                    "تعذر عرض جولة GeoGuessr",
+                    "Discord رفض نشر صورة الجولة. أوقفنا اللعبة بدل ترك جلسة غير قابلة للعب.",
+                )
+                return
             active_view.message = msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), active_view)
 
@@ -830,11 +912,11 @@ class GeoGuessr(commands.Cog):
     async def start_geo(self, ctx):
         """يبدأ لعبة جيوغيسر"""
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
-        if not game_db:
+        if len(valid_geo_round_keys()) < GEO_ROUNDS_PER_GAME:
             return await ctx.send(
                 view=StatusPanel(
                     "GeoGuessr غير متاحة مؤقتًا",
-                    "قاعدة بيانات اللعبة غير موجودة أو غير صالحة. اللعبة اتقفلت بدل ما تبدأ بجولة ناقصة.",
+                    "قاعدة بيانات اللعبة أو الصور ناقصة/غير صالحة. اللعبة اتقفلت بدل ما تبدأ بجولات ناقصة.",
                     "warning",
                 ),
                 **send_kwargs,
