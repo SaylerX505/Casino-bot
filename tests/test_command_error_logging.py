@@ -1,4 +1,4 @@
-""""Regression tests for per-guild command-error logging configured by /wizard."""
+"""Regression tests for per-guild command-error logging configured by /wizard."""
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
