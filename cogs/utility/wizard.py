@@ -3,6 +3,8 @@ import json
 import logging
 
 import discord
+
+import config
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import (
@@ -43,7 +45,7 @@ GAME_ORDER = (
 def _configured_roles(guild_id: int) -> list[int]:
     try:
         raw = bank.get_setting(staff_role_setting_key(guild_id))
-        values = _parse_id_list(raw, fallback=[])
+        values = _parse_id_list(raw, fallback=config.STAFF_ROLE_IDS)
         return values or []
     except Exception:
         logger.exception("Wizard failed to read staff-role settings for guild=%s", guild_id)
