@@ -14,7 +14,7 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
-from cogs.utility.theme import base_embed, embed_to_v2, get_currency, THEME
+from cogs.utility.theme import THEME, base_embed, embed_to_v2, get_currency
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
