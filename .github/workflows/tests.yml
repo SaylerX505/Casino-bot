@@ -69,11 +69,8 @@ jobs:
           done
           exit 1
       - name: Verify image contains static data but no runtime secrets
-        shell: bash
         run: |
-          temp_data="$(mktemp -d)"
-          trap 'rm -rf "$temp_data"' EXIT
-          docker run --rm -e DISCORD_TOKEN= -v "$temp_data:/app/data" casino-bot:test sh -c '
+          docker run --rm -e DISCORD_TOKEN= casino-bot:test sh -c '
             test -f /app/data/database.json
             test -f /app/data/fazoora.json
             test ! -e /app/data/ai_data.json
