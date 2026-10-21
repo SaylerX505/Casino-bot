@@ -420,6 +420,7 @@ class RouletteLobby(LayoutView):
                     logger.debug("Could not disable roulette V2 targeting controls", exc_info=True)
 
                 kicked_players = []
+                round_notes = []
                 attacker_died = False
                 
                 if view.kicked_ids:
@@ -428,25 +429,18 @@ class RouletteLobby(LayoutView):
                         if p:
                             # --- SHIELD RESOLUTION ---
                             if currency_cog and currency_cog.remove_item(p.id, "shield", 1):
-                                embed = discord.Embed(
-                                    title="🛡️ Shield Activation!",
-                                    description=f"**Hold on!** {p.mention} had a **Shield (درع الحفره)** equipped!\n"
-                                                f"The shield reflected the shot back at {chosen_player.mention}!",
-                                    color=discord.Color.blue()
+                                round_notes.append(
+                                    f"🛡️ {p.mention} فعّل الدرع، فانعكست الرصاصة على القناص {chosen_player.mention}."
                                 )
-                                embed.set_thumbnail(url="https://emojipedia-us.s3.dualstack.us-west-2.amazonaws.com/thumbs/120/twitter/322/shield_1f6e1-fe0f.png")
-                                await self.ctx.send(embed=embed)
                                 if not attacker_died:
                                     kicked_players.append(chosen_player)
                                     attacker_died = True
                             else:
                                 # --- INSURANCE RESOLUTION ---
                                 if currency_cog and currency_cog.remove_item(p.id, "roulette_ins", 1):
-                                    embed = discord.Embed(
-                                        description=f"💉 **{p.mention}** استخدم **تأمين الروليت**! الرصاصة عدت من جنبه... عاش يا وحش!",
-                                        color=discord.Color.gold()
+                                    round_notes.append(
+                                        f"💉 {p.mention} استخدم تأمين الروليت ونجا من الرصاصة."
                                     )
-                                    await self.ctx.send(embed=embed)
                                     continue
                                 kicked_players.append(p)
                                 
@@ -455,57 +449,47 @@ class RouletteLobby(LayoutView):
                 
                 if kicked_players:
                     mentions = " و ".join([p.mention for p in kicked_players])
-                    embed = discord.Embed(
-                        description=f"💀 تم طرد {mentions} برا الحفرة!",
-                        color=discord.Color.red()
-                    )
-                    await self.ctx.send(embed=embed)
+                    round_notes.append(f"💀 تم طرد {mentions} برا الحفرة.")
                     for p in kicked_players:
                         if p in active_players:
                             active_players.remove(p)
                 elif not view.kicked_ids:
                     if chosen_player in active_players:
                         active_players.remove(chosen_player)
-                    embed = discord.Embed(
-                        description=f"⏰ تم طرد {chosen_player.mention} برا الحفرة بسبب الخمول!",
-                        color=discord.Color.red()
-                    )
-                    await self.ctx.send(embed=embed)
+                    round_notes.append(f"⏰ تم طرد {chosen_player.mention} بسبب انتهاء الوقت من غير اختيار.")
                 else:
-                    embed = discord.Embed(
-                        description="🛡️ كل اللاعبين المستهدفين نجوا بالتأمين. مفيش حد اتطرد في الجولة دي.",
-                        color=discord.Color.gold()
-                    )
-                    await self.ctx.send(embed=embed)
-                
+                    round_notes.append("🛡️ كل اللاعبين المستهدفين نجوا بالتأمين. مفيش حد اتطرد في الجولة دي.")
+                view._panel_text.content = (
+                    f"# نتيجة الجولة {round_num}\n"
+                    + ("\n\n".join(round_notes) if round_notes else "مفيش أحداث إضافية في الجولة دي.")
+                )[:4000]
+                try:
+                    await msg.edit(view=view)
+                except discord.HTTPException:
+                    logger.debug("Could not update roulette V2 round summary", exc_info=True)
+
                 round_num += 1
-                await asyncio.sleep(4)
+                await asyncio.sleep(2)
 
             # --- WINNER RESOLUTION ---
             if len(active_players) == 1:
                 winner = active_players[0]
-                final_embed = result_embed(
-                    title="🏆 بطل الروليت!",
-                    description=f"الناجي الوحيد والأقوى في الحفرة!\n\n🎉 الفائز النهائي هو **{winner.mention}**!",
-                    outcome="win",
-                    thumbnail_url=winner.display_avatar.url,
-                )
-                
+                final_description = f"الناجي الوحيد والأقوى في الحفرة!\n\nالفائز النهائي هو {winner.mention}."
                 if currency_cog:
                     credited, _balance = currency_cog.credit_balance(winner.id, 20)
                     if credited:
-                        final_embed.description += "\n\n💰 تم إضافة **20 عملة** لحسابك كمكافأة فوز!"
+                        final_description += "\n\n💰 تم إضافة 20 عملة كمكافأة فوز."
                     else:
-                        final_embed.description += "\n\n⚠️ فزت بالجولة، لكن رصيدك وصل للحد الأقصى؛ المكافأة لم تُصرف."
-                    
-                await self.ctx.send(embed=final_embed, view=WatermarkView())
-            else:
-                embed = result_embed(
-                    title="انتهت الروليت",
-                    description="💀 الكل طار! مفيش فايز الجيم ده.",
-                    outcome="loss",
+                        final_description += "\n\n⚠️ الفوز مؤكد، لكن المكافأة لم تُصرف لأن الرصيد وصل للحد الأقصى."
+                await msg.edit(
+                    view=StatusPanel("🏆 بطل الروليت!", final_description, "success"),
+                    attachments=[],
                 )
-                await self.ctx.send(embed=embed, view=WatermarkView())
+            else:
+                await msg.edit(
+                    view=StatusPanel("انتهت الروليت", "الكل خرج من اللعبة؛ مفيش فائز في الجولة دي.", "warning"),
+                    attachments=[],
+                )
 
         except asyncio.CancelledError:
             raise
