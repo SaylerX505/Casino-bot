@@ -72,8 +72,8 @@ class LobbyView(LayoutView):
 
     def _panel_content(self):
         embed = self.get_embed()
-        title = f"# {embed.title}\\n" if embed.title else ""
-        description = f"{embed.description or ''}\\n\\n"
+        title = f"# {embed.title}\n" if embed.title else ""
+        description = f"{embed.description or ''}\n\n"
         return (title + description + f"-# كازينو الحفرة • {config.BRAND}")[:4000]
 
     def _refresh_panel(self):
@@ -110,13 +110,13 @@ class LobbyView(LayoutView):
                 description="❌ العدد غير كافي لبدء الغميضة. (تحتاج لاعبين على الأقل)",
                 color=discord.Color.red()
             )
-            self._panel_text.content = "# تم إلغاء اللوبي\\nمحتاجين لاعبين على الأقل لبدء الغميضة."
+            self._panel_text.content = "# تم إلغاء اللوبي\nمحتاجين لاعبين على الأقل لبدء الغميضة."
             self._disable_buttons()
             if self.message: await self.message.edit(view=self)
             return
 
         self.game_started = True
-        self._panel_text.content = "# جاري بدء الغميضة\\nاللوبي اتقفل. جهّز نفسك."
+        self._panel_text.content = "# جاري بدء الغميضة\nاللوبي اتقفل. جهّز نفسك."
         self._disable_buttons()
         if self.message: await self.message.edit(view=self)
         
@@ -140,7 +140,7 @@ class LobbyView(LayoutView):
                 description="الخريطة اتملت (25 لاعب)!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             embed = discord.Embed(
                 description="أنت مسجل اسمك!",
@@ -162,7 +162,7 @@ class LobbyView(LayoutView):
                 description="اللعبة بدأت!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             self.players.remove(interaction.user)
             self._refresh_panel()
@@ -172,7 +172,7 @@ class LobbyView(LayoutView):
                 description="أنت مش في اللعبة!",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
 
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
@@ -180,7 +180,7 @@ class LobbyView(LayoutView):
                 description="للأدمن فقط!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         await interaction.response.defer()
         self.time_left = 0
         await self.auto_start()
@@ -191,7 +191,7 @@ class LobbyView(LayoutView):
                 description="للأدمن فقط!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         self.time_left += 10
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
