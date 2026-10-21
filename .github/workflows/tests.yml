@@ -10,10 +10,25 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-      - name: Reject tracked runtime state and secret files
+      - name: Reject tracked runtime state and environment secrets
         shell: bash
         run: |
-          tracked_env="$(git ls-files -- '.env' '.env.*' '**/.env' '**/.env.*' | grep -vE '(^|/)\.env\.example
+          while IFS= read -r path; do
+            case "$path" in
+              .env.example|*/.env.example) ;;
+              .env|.env.*|*/.env|*/.env.*)
+                echo "::error::Potential environment secret must not be tracked: $path"
+                exit 1
+                ;;
+            esac
+          done < <(git ls-files)
+
+          for path in data/ai_data.json data/state.json data/used_images.json; do
+            if git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
+              echo "::error::Generated runtime state must not be tracked: $path"
+              exit 1
+            fi
+          done
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -67,62 +82,6 @@ jobs:
             test ! -e /app/data/bank.db
             test ! -e /app/.env
           '
-      - name: Smoke-test startup without a token
-        run: |
-          output="$(docker run --rm -e DISCORD_TOKEN= casino-bot:test)"
-          printf '%s\n' "$output"
-          printf '%s\n' "$output" | grep -F "DISCORD_TOKEN is missing"
- || true)"
-          if [ -n "$tracked_env" ]; then
-            echo "::error::Potential environment secrets must not be tracked:"
-            printf '%s\n' "$tracked_env"
-            exit 1
-          fi
-          for path in data/ai_data.json data/state.json data/used_images.json; do
-            if git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
-              echo "::error::Sensitive runtime file must not be tracked: $path"
-              exit 1
-            fi
-          done
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt
-      - name: Compile Python files
-        run: python -m compileall -q main.py config.py cogs tests
-      - name: Run unit tests
-        run: python -m unittest discover -s tests -v
-
-  docker-image:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-      - name: Validate Docker build-context exclusions
-        shell: bash
-        run: |
-          test -f .dockerignore
-          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/used_images.json" "data/backups/"; do
-            if ! grep -Fxq "$pattern" .dockerignore; then
-              echo "::error::Missing Docker ignore rule: $pattern"
-              exit 1
-            fi
-          done
-          grep -Fxq "*.db" .dockerignore
-      - name: Build Docker image
-        run: |
-          for attempt in 1 2 3; do
-            if docker build --pull -t casino-bot:test .; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Docker build failed; retrying ($attempt/3)..."
-              sleep 5
-            fi
-          done
-          exit 1
       - name: Smoke-test startup without a token
         run: |
           output="$(docker run --rm -e DISCORD_TOKEN= casino-bot:test)"
