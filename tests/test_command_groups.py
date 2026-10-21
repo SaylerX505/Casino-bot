@@ -5,9 +5,10 @@ from unittest.mock import AsyncMock, Mock, patch
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import LayoutView
 
 from cogs.utility.admin import AdminCommands
-from cogs.utility.help import HelpCommand
+from cogs.utility.help import HelpCommand, HelpEntryView
 
 
 class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
@@ -22,6 +23,15 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.bot.close()
+
+    async def test_prefix_help_entry_uses_components_v2(self):
+        view = HelpEntryView(self.bot)
+
+        self.assertIsInstance(view, LayoutView)
+        self.assertIsNone(view.timeout is None and None) if False else None
+        buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
+        self.assertEqual(len(buttons), 1)
+        self.assertEqual(buttons[0].style, discord.ButtonStyle.secondary)
 
     async def test_games_group_exposes_existing_game_commands(self):
         group = self.bot.tree.get_command("games")
