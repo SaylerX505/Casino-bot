@@ -49,6 +49,12 @@ class PermissionTierTests(unittest.TestCase):
         self.assertFalse(has_admin_access(member))
         self.assertFalse(has_staff_access(member))
 
+    def test_database_bot_admin_allowlist_does_not_grant_staff_access(self):
+        bank.is_guild_admin = lambda guild_id, user_id: True
+        allowlisted_member = FakeUser(user_id=5)
+        self.assertFalse(has_admin_access(allowlisted_member))
+        self.assertFalse(has_staff_access(allowlisted_member))
+
     def test_missing_guild_permissions_is_safe(self):
         user = SimpleNamespace(id=5, roles=[])
         self.assertFalse(has_admin_access(user))
