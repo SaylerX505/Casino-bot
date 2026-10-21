@@ -4,23 +4,36 @@ import os
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
-DB_FILE = "data/bank.db"
+# Resolve storage from the project root, not the process working directory.
+DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
 _lock = threading.RLock()
 _conn = None
 
 def _connect():
     global _conn
     if _conn is None:
-        os.makedirs("data", exist_ok=True)
-        _conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+        os.makedirs(os.path.dirname(os.path.abspath(DB_FILE)), exist_ok=True)
+        _conn = sqlite3.connect(DB_FILE, timeout=30, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA synchronous=NORMAL")
+        _conn.execute("PRAGMA busy_timeout=30000")
         _conn.execute("CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0, last_daily REAL NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0)")
         _conn.execute("CREATE TABLE IF NOT EXISTS inventory (user_id TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, item))")
         _conn.execute("CREATE TABLE IF NOT EXISTS whitelist (kind TEXT NOT NULL, target_id INTEGER NOT NULL, PRIMARY KEY (kind, target_id))")
         _conn.execute("CREATE TABLE IF NOT EXISTS guild_admins (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (guild_id, user_id))")
+        _conn.execute("""CREATE TABLE IF NOT EXISTS rps_wagers (
+            game_id TEXT PRIMARY KEY,
+            player_a TEXT NOT NULL,
+            player_b TEXT NOT NULL,
+            amount INTEGER NOT NULL CHECK(amount > 0),
+            status TEXT NOT NULL,
+            outcome TEXT,
+            created_at REAL NOT NULL,
+            settled_at REAL
+        )""")
         _conn.commit()
     return _conn
 
@@ -386,6 +399,160 @@ def place_bet(player_a, player_b, amount):
         except Exception:
             c.rollback()
             raise
+
+
+
+def create_rps_wager(game_id, player_a, player_b, amount):
+    """Atomically debit both stakes and persist them as an recoverable wager."""
+    game_id, a, b, amount = str(game_id), str(player_a), str(player_b), int(amount)
+    if not game_id or a == b or amount <= 0 or amount > (1 << 63) - 1:
+        return False
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            if c.execute("SELECT 1 FROM rps_wagers WHERE game_id=?", (game_id,)).fetchone():
+                c.rollback()
+                return False
+
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (a,))
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (b,))
+            row_a = c.execute("SELECT balance FROM users WHERE user_id=?", (a,)).fetchone()
+            row_b = c.execute("SELECT balance FROM users WHERE user_id=?", (b,)).fetchone()
+            if not row_a or int(row_a["balance"]) < amount or not row_b or int(row_b["balance"]) < amount:
+                c.rollback()
+                return False
+
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
+            c.execute(
+                "INSERT INTO rps_wagers "
+                "(game_id,player_a,player_b,amount,status,created_at) VALUES (?,?,?,?,'active',?)",
+                (game_id, a, b, amount, now()),
+            )
+            c.commit()
+            return True
+        except Exception:
+            c.rollback()
+            raise
+
+
+def settle_rps_wager(game_id, winner_id=None):
+    """Settle or refund a persisted RPS wager exactly once."""
+    game_id = str(game_id)
+    sqlite_max_int = (1 << 63) - 1
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            wager = c.execute(
+                "SELECT player_a,player_b,amount,status FROM rps_wagers WHERE game_id=?",
+                (game_id,),
+            ).fetchone()
+            if wager is None:
+                c.rollback()
+                return {"settled": False, "reason": "not_found"}
+            if wager["status"] != "active":
+                c.rollback()
+                return {
+                    "settled": True,
+                    "already_settled": True,
+                    "status": wager["status"],
+                    "reason": None,
+                    "payout": 0,
+                    "tax": 0,
+                }
+
+            a, b, amount = str(wager["player_a"]), str(wager["player_b"]), int(wager["amount"])
+            if winner_id is not None and str(winner_id) not in (a, b):
+                c.rollback()
+                raise ValueError("winner is not a participant in this wager")
+
+            rows = c.execute(
+                "SELECT user_id,balance FROM users WHERE user_id IN (?,?)", (a, b)
+            ).fetchall()
+            balances = {str(row["user_id"]): int(row["balance"]) for row in rows}
+            if a not in balances or b not in balances:
+                c.rollback()
+                raise RuntimeError("RPS wager references a missing wallet")
+
+            status = "refunded"
+            outcome = "refund"
+            reason = None
+            payout = 0
+            tax = 0
+
+            def refund_stakes():
+                if balances[a] > sqlite_max_int - amount or balances[b] > sqlite_max_int - amount:
+                    return False
+                c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amount, a))
+                c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amount, b))
+                return True
+
+            if winner_id is not None:
+                winner = str(winner_id)
+                pot = amount * 2
+                payout = (pot * 95) // 100
+                tax = pot - payout
+                if balances[winner] <= sqlite_max_int - payout:
+                    c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (payout, winner))
+                    status = "settled"
+                    outcome = "winner:" + winner
+                else:
+                    if not refund_stakes():
+                        c.rollback()
+                        return {"settled": False, "reason": "balance_limit"}
+                    reason = "balance_limit"
+                    payout = 0
+                    tax = 0
+            elif not refund_stakes():
+                c.rollback()
+                return {"settled": False, "reason": "balance_limit"}
+
+            c.execute(
+                "UPDATE rps_wagers SET status=?, outcome=?, settled_at=? "
+                "WHERE game_id=? AND status='active'",
+                (status, outcome, now(), game_id),
+            )
+            c.commit()
+            return {
+                "settled": True,
+                "already_settled": False,
+                "status": status,
+                "reason": reason,
+                "winner_id": str(winner_id) if winner_id is not None and status == "settled" else None,
+                "payout": payout,
+                "tax": tax,
+            }
+        except Exception:
+            c.rollback()
+            raise
+
+
+def refund_orphaned_rps_wagers():
+    """Refund active RPS wagers left behind by a process restart."""
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id FROM rps_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        game_ids = [str(row["game_id"]) for row in rows]
+
+    refunded = 0
+    pending = 0
+    for game_id in game_ids:
+        result = settle_rps_wager(game_id)
+        if result.get("settled") and result.get("status") == "refunded":
+            refunded += 1
+        else:
+            pending += 1
+    if pending:
+        import logging
+        logging.getLogger(__name__).error(
+            "%s orphaned RPS wager(s) remain escrowed because an account is at its balance limit",
+            pending,
+        )
+    return refunded
 
 
 def charge_up_to(user_id, amount):
