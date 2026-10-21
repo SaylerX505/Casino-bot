@@ -12,7 +12,7 @@ from cogs.casino.permissions import configured_log_channel_id
 from cogs.utility.theme import StatusPanel, embed_to_v2
 
 COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
-LOG_CHANNEL_ID = config.CURRENCY_LOG_CHANNEL_ID
+LOG_CHANNEL_ID = int(getattr(config, "CURRENCY_LOG_CHANNEL_ID", 0) or 0)
 logger = logging.getLogger(__name__)
 SERVER_LOGO = "https://media.discordapp.net/attachments/1509650275164749994/1513741255786627162/c51bafdd9c1feb13e22458c35067c718.webp"
 INVENTORY_ITEMS = (
