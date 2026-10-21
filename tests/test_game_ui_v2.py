@@ -15,6 +15,18 @@ from cogs.casino.mafia import MafiaLobbyView
 from cogs.casino.wheel import WheelLobby
 
 
+class _FakeMember:
+    def __init__(self, user_id):
+        self.id = user_id
+        self.mention = f"<@{user_id}>"
+
+    def __hash__(self):
+        return hash(self.id)
+
+    def __eq__(self, other):
+        return getattr(other, "id", None) == self.id
+
+
 class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
     async def test_lobby_uses_v2_layout_and_secondary_controls(self):
         loop = asyncio.get_running_loop()
@@ -67,7 +79,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
                 {button.custom_id for button in buttons},
                 set(expected_ids),
             )
-            player = discord.Object(id=303)
+            player = _FakeMember(303)
             view.players.add(player) if player_collection == "set" else view.players.append(player)
             view._refresh_panel()
             self.assertIn(player.mention, view._panel_text.content)
