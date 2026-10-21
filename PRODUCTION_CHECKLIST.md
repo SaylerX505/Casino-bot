@@ -21,6 +21,7 @@ This checklist is a release gate, not a claim that every item is already complet
 - [x] The bot is designed for one Discord server. `HOME_GUILD_ID` is required; startup refuses to proceed without it, and slash/prefix commands are scoped to that guild.
 - [x] `/wizard` configures trusted manager roles, game-staff roles, and an independent channel allowlist (or all channels) for each game. Every change persists to SQLite without restart; manager roles cannot change their own manager-role allowlist.
 - [x] `/commands` opens the private command menu; `/wizard` replaces the need to remember separate setup commands for routine role/channel configuration.
+- [x] `/wizard` configures per-guild economy and command-error log destinations or disables either log type; prefix and slash failures use redacted V2 log panels and reject cross-guild destinations.
 - [ ] Wallet rows use Discord user IDs within the one-server deployment; economy reset remains disabled through Discord and requires a manual, backed-up maintenance procedure.
 
 ## Staging Discord validation
@@ -32,9 +33,11 @@ Run these against a staging server/channel before production:
 - [ ] Verify a Discord Administrator without bot-admin allowlist access cannot run protected bot management actions until explicitly added.
 - [ ] Exercise each game from lobby to completion, including lobby timeout, host cancellation, player departure, duplicate button clicks, and two simultaneous start attempts in one channel.
 - [ ] For Rock-Paper-Scissors, test winner, draw, timeout, insufficient funds, database/host restart mid-match, and repeated settlement. Confirm no stake is charged or paid twice.
+- [ ] Simulate several transient database failures during RPS settlement; verify one background recovery worker retries safely, updates the original message after recovery, and never double-pays. Confirm remaining escrow is refunded on restart.
 - [ ] Check every game result for correct balance receipts and verify that a failed game does not silently leave players charged.
 - [ ] Verify required Discord intents and permissions from the hosting environment. Inspect startup and application-command logs.
 - [ ] Confirm persistent inventory/economy views still respond after a process restart and after redeployment.
+- [ ] Set both log destinations through `/wizard`; verify command errors from prefix and slash commands arrive in the selected channel without pinging users, and that another guild's channel can never receive them.
 
 ## UI and operational gates
 
