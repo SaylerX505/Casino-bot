@@ -46,13 +46,29 @@ SEGMENT_COLORS = [
 
 
 def format_wheel_breakdown(payout, target_loss=None, refund=0):
-    lines = [f"**رسوم الدخول:** −{FEE:,} {COIN}"]
-    lines.append(f"**المكافأة المصروفة:** +{payout:,} {COIN}" if payout else f"**المكافأة المصروفة:** 0 {COIN}")
+    """Render mutually exclusive accounting paths with no double-counting."""
     if target_loss is not None:
-        lines.append(f"**الخسارة الإجمالية:** −{target_loss:,} {COIN}")
-    if refund:
-        lines.append(f"**المردود من رسوم الدخول:** +{refund:,} {COIN}")
-    return "\n".join(lines)
+        refund_note = (
+            f" (اترد {refund:,} من رسوم الدخول بالفعل)"
+            if refund
+            else ""
+        )
+        return (
+            f"**الخسارة النهائية شاملة رسوم الدخول:** "
+            f"−{target_loss:,} {COIN}{refund_note}"
+        )
+
+    return "\n".join(
+        [
+            f"**رسوم الدخول:** −{FEE:,} {COIN}",
+            (
+                f"**المكافأة المصروفة:** +{payout:,} {COIN}"
+                if payout
+                else f"**المكافأة المصروفة:** 0 {COIN}"
+            ),
+        ]
+    )
+
 
 # --- WHEEL ART ---
 def render_wheel(highlight=None):
@@ -251,6 +267,8 @@ class WheelLobby(discord.ui.View):
                     target_loss = abs(outcome)
                 else:
                     target_loss = FEE
+                    if outcome == 0:
+                        outcome_note = "\nلم تكسب جائزة؛ الخسارة النهائية هي رسوم الدخول."
 
                 settlement = currency.settle_wheel(
                     player.id,
