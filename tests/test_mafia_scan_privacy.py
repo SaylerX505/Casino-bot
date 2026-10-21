@@ -65,7 +65,7 @@ class MafiaScanPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.currency.add_item.assert_not_called()
 
         public_text = view_text(self.ctx.send.await_args.kwargs["view"])
-        self.assertIn("اتبعثت في الخاص", public_text)
+        self.assertIn("النتيجة اتبعتت في الخاص", public_text)
         self.assertNotIn("<@202>", public_text)
 
     async def test_dm_failure_refunds_item_and_never_exposes_hint(self):
