@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import discord
 from discord.ui import LayoutView
 
-from cogs.casino.chairs import ChairsLobby
+from cogs.casino.chairs import ChairActionView, ChairPrepView, ChairsLobby
 from cogs.casino.geoguessr import GuessGameMenu
 from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
 from cogs.casino.mafia import MafiaLobbyView
@@ -86,6 +86,50 @@ class HideAndSeekRoundV2Tests(unittest.TestCase):
         self.assertIn("<@202>", view._panel_text.content)
         view.disable_controls()
         self.assertTrue(dropdowns[0].disabled)
+
+
+class MusicalChairsRoundV2Tests(unittest.TestCase):
+    def test_prep_and_action_rounds_use_secondary_v2_button_rows(self):
+        members = [_FakeMember(2000 + index) for index in range(25)]
+        prep = ChairPrepView(round_num=2, num_chairs=24)
+        action = ChairActionView(members, num_chairs=24, round_type="normal", round_num=2)
+        try:
+            self.assertIsInstance(prep, LayoutView)
+            self.assertIsInstance(action, LayoutView)
+            prep_buttons = [
+                item for item in prep.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            action_buttons = [
+                item for item in action.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            self.assertEqual(len(prep_buttons), 24)
+            self.assertEqual(len(action_buttons), 24)
+            self.assertTrue(all(button.disabled for button in prep_buttons))
+            self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in action_buttons))
+            action.disable_controls()
+            self.assertTrue(all(button.disabled for button in action_buttons))
+        finally:
+            prep.stop()
+            action.stop()
+
+    def test_broken_chair_round_marks_disabled_controls_and_eliminations(self):
+        members = [_FakeMember(3000 + index) for index in range(4)]
+        action = ChairActionView(members, num_chairs=3, round_type="forbidden", round_num=3)
+        try:
+            self.assertIsInstance(action, LayoutView)
+            buttons = [
+                item for item in action.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            self.assertEqual(len(buttons), 3)
+            self.assertIn("فخ", action._panel_text.content)
+            action.eliminated_fools.add(members[0])
+            action.disable_controls()
+            self.assertTrue(all(button.disabled for button in buttons))
+        finally:
+            action.stop()
 
 
 class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
