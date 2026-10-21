@@ -66,6 +66,10 @@ def log_channel_setting_key(guild_id: int, log_type: str) -> str:
     return f"guild:{int(guild_id)}:log_channels:{log_type}"
 
 
+def ai_role_setting_key(guild_id: int) -> str:
+    return f"guild:{int(guild_id)}:ai_role_ids"
+
+
 def configured_log_channel_id(guild_id: int | None, log_type: str, fallback: int = 0) -> int:
     """Resolve a same-guild logging destination. Database failures fail closed."""
     if guild_id is None or log_type not in {"economy", "command_errors"}:
@@ -107,6 +111,24 @@ def _parse_id_list(raw, *, fallback=None):
         if value > 0 and value not in result:
             result.append(value)
     return result
+
+
+def configured_ai_role_ids(guild_id: int) -> set[int]:
+    """Return the explicitly configured AI role allowlist for this guild.
+
+    An absent setting retains the host-configured defaults for migration safety;
+    an explicit empty list means no extra AI roles. Database errors fail closed.
+    """
+    try:
+        raw = bank.get_setting(ai_role_setting_key(guild_id))
+    except Exception:
+        logger.exception("Could not read configured AI access roles for guild=%s", guild_id)
+        return set()
+    values = _parse_id_list(raw, fallback=getattr(config, "AI_ALLOWED_ROLE_IDS", set()))
+    if values is None:
+        logger.error("Malformed AI role configuration for guild=%s", guild_id)
+        return set()
+    return set(values)
 
 
 def configured_staff_role_ids(guild_id: int) -> set[int]:
