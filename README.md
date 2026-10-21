@@ -74,7 +74,7 @@ python -m compileall -q main.py config.py cogs tests
 python -m unittest discover -s tests -v
 ```
 
-The tests use temporary SQLite databases and should not operate on the live economy database. RPS wagers are recorded in the economy database as escrow; an interrupted challenge is refunded on startup, and settlement is idempotent. Run only one bot instance against a given economy database. GitHub Actions runs these checks on pushes and pull requests and builds the Docker image as a deployment smoke check.
+The tests use temporary SQLite databases and should not operate on the live economy database. RPS wagers are recorded in the economy database as escrow; unresolved settlements retry with bounded backoff while the process is alive, remaining orphaned wagers are refunded at startup, and settlement is idempotent. Run only one bot instance against a given economy database. GitHub Actions runs these checks on pushes and pull requests and builds the Docker image as a deployment smoke check.
 
 ## Deployment notes
 
