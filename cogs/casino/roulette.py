@@ -1,6 +1,6 @@
 import discord
 from functools import partial
-from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
+from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 from discord.ext import commands
 from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
@@ -86,87 +86,131 @@ class KickSelect(discord.ui.Select):
     def __init__(self, chosen_player, chunk_targets, active_players, part_num, total_parts):
         self.chosen_player = chosen_player
         options = []
-        for p in chunk_targets:
-            real_index = active_players.index(p) + 1
-            options.append(discord.SelectOption(label=f"{real_index}- {p.display_name}", value=str(p.id), description="يطير بره اللعبة"))
-            
+        for player in chunk_targets:
+            real_index = active_players.index(player) + 1
+            options.append(
+                discord.SelectOption(
+                    label=f"{real_index}- {player.display_name}",
+                    value=str(player.id),
+                    description="يطير بره اللعبة",
+                )
+            )
         placeholder = "اختار ضحية..." if total_parts == 1 else f"اختار ضحية... (قائمة {part_num})"
         super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user != self.chosen_player:
-            embed = discord.Embed(
-                description="مش دورك يا نجم!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("مش دورك", "اختيار الضحية متاح للقناص المختار فقط.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
         selected_id = int(self.values[0])
-        
         if selected_id in self.view.kicked_ids:
-            embed = discord.Embed(
-                description="انت اخترت الشخص ده خلاص! شوف حد تاني.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("اختيار مكرر", "أنت اخترت اللاعب ده بالفعل. اختار شخصًا آخر.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
         self.view.kicked_ids.append(selected_id)
-
         if self.view.double_shot_active and len(self.view.kicked_ids) < 2:
-            embed = discord.Embed(
-                description="✅ تم تحديد الضحية الأولى! اختار الشخص التاني بسرعة.",
-                color=discord.Color.green()
+            return await interaction.response.send_message(
+                view=StatusPanel("تم تسجيل الضحية الأولى", "اختار ضحية ثانية بسرعة.", "success"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        await interaction.response.send_message("✅ تم اعتماد اختيارك.", ephemeral=True)
+        self.view._panel_text.content = (
+            "# تم تسجيل الاختيار\nالاختيار اتسجل. بنجهز نتيجة الجولة دلوقتي."
+        )
+        await interaction.response.send_message(
+            view=StatusPanel("تم اعتماد الاختيار", "استنى نتيجة الجولة.", "success"),
+            ephemeral=True,
+        )
         self.view.stop()
 
-class KickView(discord.ui.View):
-    def __init__(self, chosen_player, active_players, has_weapon, currency_cog):
+
+class KickView(LayoutView):
+    def __init__(self, chosen_player, active_players, has_weapon, currency_cog, round_num=1):
         super().__init__(timeout=20.0)
         self.kicked_ids = []
         self.chosen_player = chosen_player
         self.double_shot_active = False
         self.currency_cog = currency_cog
-        
+        self.message = None
+        self.round_num = round_num
+        self._panel_text = TextDisplay(
+            f"# 🎯 الروليت — الجولة {round_num}\n"
+            f"القناص المختار: {chosen_player.mention}\n"
+            "قدامك 20 ثانية تختار ضحية من القائمة. الاختيار النهائي بيظهر بعد اعتمادك."
+        )
+        components = [
+            self._panel_text,
+            MediaGallery(
+                discord.MediaGalleryItem(
+                    media="attachment://sniper.png",
+                    description="صورة القناص المختار",
+                )
+            ),
+            Separator(),
+        ]
+        self._action_rows = []
+        self.weapon_btn = None
         if has_weapon:
-            self.weapon_btn = discord.ui.Button(label="سلاح الحفرة", style=discord.ButtonStyle.secondary, emoji="🔫", custom_id="use_weapon")
+            self.weapon_btn = discord.ui.Button(
+                label="سلاح الحفرة",
+                style=discord.ButtonStyle.secondary,
+                emoji="🔫",
+                custom_id="roulette_use_weapon",
+            )
             self.weapon_btn.callback = self.weapon_callback
-            self.add_item(self.weapon_btn)
-        
-        targets = [p for p in active_players if p != chosen_player]
+            self._action_rows.append(ActionRow(self.weapon_btn))
+
+        targets = [player for player in active_players if player != chosen_player]
         chunk_size = 25
         total_parts = (len(targets) - 1) // chunk_size + 1
-        
-        for i in range(0, len(targets), chunk_size):
-            chunk = targets[i:i + chunk_size]
-            self.add_item(KickSelect(chosen_player, chunk, active_players, (i//chunk_size)+1, total_parts))
+        self._selects = []
+        for index in range(0, len(targets), chunk_size):
+            select = KickSelect(
+                chosen_player,
+                targets[index:index + chunk_size],
+                active_players,
+                (index // chunk_size) + 1,
+                total_parts,
+            )
+            self._selects.append(select)
+            self._action_rows.append(ActionRow(select))
+
+        self.add_item(Container(*components, *self._action_rows, accent_color=THEME["red_dark"]))
+
+    def disable_controls(self):
+        if self.weapon_btn is not None:
+            self.weapon_btn.disabled = True
+        for select in self._selects:
+            select.disabled = True
 
     async def weapon_callback(self, interaction: discord.Interaction):
         if interaction.user != self.chosen_player:
-            embed = discord.Embed(
-                description="السلاح ده مش بتاعك!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("السلاح مش بتاعك", "استخدام السلاح متاح للقناص المختار فقط.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-        success = self.currency_cog.remove_item(self.chosen_player.id, "double_shot", 1)
+
+        success = self.currency_cog is not None and self.currency_cog.remove_item(
+            self.chosen_player.id, "double_shot", 1
+        )
         if not success:
-            embed = discord.Embed(
-                description="❌ حصل مشكلة في استخدام السلاح!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("تعذر استخدام السلاح", "الأداة مش موجودة في شنطتك أو نظام الاقتصاد مش متاح.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
         self.double_shot_active = True
         self.weapon_btn.disabled = True
-        
-        embed = discord.Embed(
-            description=f"🔥 **{self.chosen_player.mention} فعّل سلاح الحفرة!** يقدر يطرد شخصين الجولة دي! اختار ضحيتين بسرعة:",
-            color=discord.Color.orange()
+        self._panel_text.content = (
+            f"# الجولة {self.round_num} — السلاح اتفعل\n"
+            f"{self.chosen_player.mention} فعل سلاح الحفرة. يقدر يختار ضحيتين بدل واحدة."
         )
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(view=self)
 
 
 class RouletteLobby(LayoutView):
