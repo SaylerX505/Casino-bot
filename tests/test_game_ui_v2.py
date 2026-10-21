@@ -71,7 +71,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
                 item for item in view.walk_children()
                 if isinstance(item, discord.ui.Button)
             ]
-            self.assertEqual(len(buttons), 4)
+            self.assertEqual(len(buttons), len(expected_ids))
             self.assertTrue(
                 all(button.style is discord.ButtonStyle.secondary for button in buttons)
             )
@@ -85,9 +85,11 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(player.mention, view._panel_text.content)
             self.assertNotIn(chr(92) + "n", view._panel_text.content)
         finally:
-            view.timer_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await view.timer_task
+            task = getattr(view, "timer_task", None) or getattr(view, "lobby_task", None)
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     async def test_geoguessr_lobby_uses_v2_components(self):
         await self._assert_v2_lobby(
