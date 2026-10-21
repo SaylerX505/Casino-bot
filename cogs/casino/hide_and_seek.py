@@ -1,27 +1,150 @@
-import asyncio
-import io
-import logging
-import random
-from functools import partial
-
 import discord
-from discord.ext import commands
+from functools import partial
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
+from discord.ext import commands
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
+import asyncio
+import logging
 from PIL import Image, ImageDraw
-
+import io
+import random
 import config
-from cogs.casino.game_registry import (
-    is_active_game,
-    owns_game_task,
-    register_game_task,
-    release_game_task,
-    set_game_view,
-)
+
 from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
 
 
 logger = logging.getLogger(__name__)
+
+
+class WatermarkView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
+
+SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
+
+# --- LOCATION COORDINATES ---
+LOCATIONS = {
+    1: {"name": "الحفره", "pos": (0.85, 0.20)},
+    2: {"name": "محطة الوقود", "pos": (0.65, 0.25)},
+    3: {"name": "المدرسة", "pos": (0.35, 0.15)},
+    4: {"name": "المستودع", "pos": (0.15, 0.40)},
+    5: {"name": "محطة الحافلات", "pos": (0.45, 0.75)},
+    6: {"name": "المصنع", "pos": (0.40, 0.60)},
+    7: {"name": "المرآب", "pos": (0.15, 0.25)},
+    8: {"name": "ملعب الأطفال", "pos": (0.75, 0.75)},
+    9: {"name": "الحديقة", "pos": (0.40, 0.40)},
+    10: {"name": "النفق", "pos": (0.05, 0.75)},
+    11: {"name": "الكابينة", "pos": (0.10, 0.85)},
+    12: {"name": "المستشفى", "pos": (0.60, 0.45)},
+    13: {"name": "الجسر", "pos": (0.60, 0.80)},
+    14: {"name": "السوق", "pos": (0.40, 0.25)},
+    15: {"name": "العمارة", "pos": (0.65, 0.60)},
+    16: {"name": "المقهى", "pos": (0.50, 0.90)},
+    17: {"name": "موقع البناء", "pos": (0.10, 0.55)},
+    18: {"name": "المزرعة", "pos": (0.60, 0.15)},
+    19: {"name": "الملعب", "pos": (0.25, 0.70)},
+    20: {"name": "الميناء", "pos": (0.30, 0.90)},
+    21: {"name": "خزان المياه", "pos": (0.10, 0.15)},
+    22: {"name": "الكهف", "pos": (0.75, 0.90)},
+    23: {"name": "مركز الشرطة", "pos": (0.85, 0.50)},
+    24: {"name": "برج الإتصالات", "pos": (0.90, 0.35)},
+    25: {"name": "المنارة", "pos": (0.95, 0.80)}
+}
+
+async def generate_map_with_x(searched_locations):
+    try:
+        base = Image.open("mafiagame/locations.png").convert("RGBA")
+    except Exception:
+        base = Image.new("RGBA", (1200, 800), (40, 40, 40, 255))
+        
+    draw = ImageDraw.Draw(base)
+    width, height = base.size
+    
+    for loc_id in searched_locations:
+        if loc_id in LOCATIONS:
+            pos_pct = LOCATIONS[loc_id]["pos"]
+            cx = int(width * pos_pct[0])
+            cy = int(height * pos_pct[1])
+            
+            size = 35
+            draw.line((cx-size, cy-size, cx+size, cy+size), fill=(255, 20, 20, 255), width=10)
+            draw.line((cx+size, cy-size, cx-size, cy+size), fill=(255, 20, 20, 255), width=10)
+            
+    out = io.BytesIO()
+    base.save(out, format="PNG")
+    out.seek(0)
+    return out
+
+
+class HideDropdown(discord.ui.Select):
+    def __init__(self):
+        options = [discord.SelectOption(label=f"{k}- {v['name']}", value=str(k)) for k, v in LOCATIONS.items()]
+        super().__init__(placeholder="اختار مكان تستخبى فيه بسرعة...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user not in self.view.players:
+            embed = discord.Embed(
+                description="انت مش في اللعبة يا كابتن!",
+                color=discord.Color.red()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        if interaction.user in self.view.hiding_spots:
+            embed = discord.Embed(
+                description="انت استخبيت خلاص! خليك مكانك ومتتحركش.",
+                color=discord.Color.red()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        chosen_spot = int(self.values[0])
+        self.view.hiding_spots[interaction.user] = chosen_spot
+        embed = discord.Embed(
+            description=f"✅ تمام! انت دلوقتي مستخبي في **{LOCATIONS[chosen_spot]['name']}**. خليك ساكت!",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        if len(self.view.hiding_spots) == len(self.view.players):
+            self.view.stop()
+
+class HidingView(discord.ui.View):
+    def __init__(self, players):
+        super().__init__(timeout=50.0) 
+        self.players = players
+        self.hiding_spots = {}
+        self.add_item(HideDropdown())
+
+
+class SeekDropdown(discord.ui.Select):
+    def __init__(self, seeker, searched_locations):
+        self.seeker = seeker
+        options = []
+        for loc_id, loc_data in LOCATIONS.items():
+            if loc_id not in searched_locations:
+                options.append(discord.SelectOption(label=f"{loc_id}- {loc_data['name']}", value=str(loc_id)))
+                
+        super().__init__(placeholder="اختار مكان تفتشه...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.seeker:
+            embed = discord.Embed(
+                description="مش دورك تدور!",
+                color=discord.Color.red()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        self.view.choice = int(self.values[0])
+        await interaction.response.send_message("✅ تم تسجيل اختيارك.", ephemeral=True)
+        self.view.stop()
+
+class SeekerView(discord.ui.View):
+    def __init__(self, seeker, searched_locations):
+        super().__init__(timeout=15.0)
+        self.seeker = seeker
+        self.choice = None
+        self.add_item(SeekDropdown(seeker, searched_locations))
 
 
 class LobbyView(LayoutView):
@@ -49,12 +172,7 @@ class LobbyView(LayoutView):
             button.callback = partial(getattr(self, callback_name), button=button)
             self._buttons.append(button)
         self.add_item(
-            Container(
-                self._panel_text,
-                Separator(),
-                ActionRow(*self._buttons),
-                accent_color=THEME["grey"],
-            )
+            Container(self._panel_text, Separator(), ActionRow(*self._buttons), accent_color=THEME["grey"])
         )
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
@@ -130,11 +248,7 @@ class LobbyView(LayoutView):
                 description="اللعبة بدأت خلاص!",
                 color=discord.Color.red()
             )
-            return await self._private_notice(
-                interaction,
-                embed.title or "تنبيه",
-                embed.description or "الطلب غير متاح.",
-            )
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if len(self.players) >= 25:
             embed = discord.Embed(
                 description="الخريطة اتملت (25 لاعب)!",
@@ -146,11 +260,7 @@ class LobbyView(LayoutView):
                 description="أنت مسجل اسمك!",
                 color=discord.Color.red()
             )
-            await self._private_notice(
-                interaction,
-                embed.title or "تنبيه",
-                embed.description or "الطلب غير متاح.",
-            )
+            await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         else:
             self.players.append(interaction.user)
             self._refresh_panel()
