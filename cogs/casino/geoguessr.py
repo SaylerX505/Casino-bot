@@ -351,8 +351,10 @@ async def run_game_loop(ctx, players):
                     
                 if remaining % 5 == 0 and remaining != last_update:
                     game_embed.description = f"اكتب اسم الدولة (بالعربية أو الإنجليزية) في الشات!\nالوقت المتبقي: **{remaining}** ثواني."
-                    try: await msg.edit(embed=game_embed)
-                    except: pass
+                    try:
+                        await msg.edit(embed=game_embed)
+                    except discord.HTTPException:
+                        logger.debug("Could not refresh GeoGuessr timer panel", exc_info=True)
                     last_update = remaining
 
                 try:
@@ -535,8 +537,10 @@ class GuessGameMenu(discord.ui.View):
             self.time_left -= 5
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
-                try: await self.message.edit(embed=self.get_embed())
-                except: pass
+                try:
+                    await self.message.edit(embed=self.get_embed())
+                except discord.HTTPException:
+                    logger.debug("Could not refresh GeoGuessr lobby", exc_info=True)
 
     async def auto_start(self):
         if self.game_started: return
