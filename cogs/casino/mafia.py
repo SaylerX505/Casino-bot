@@ -12,7 +12,7 @@ import aiohttp
 import config
 
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
 
 logger = logging.getLogger(__name__)
 
@@ -604,12 +604,12 @@ async def run_mafia_game(ctx, players):
                 description=f"🌙 **الليلة {day_number}**\nالليل دخل على الحفرة... المافيا بتتحرك.",
                 color=discord.Color.dark_theme()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(view=embed_to_v2(embed))
             
             bb_bytes = await generate_billboard(alive)
             bb_embed = discord.Embed(color=discord.Color.dark_theme())
             bb_embed.set_image(url="attachment://billboard.jpg")
-            await ctx.send(embed=bb_embed, file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
+            await ctx.send(view=embed_to_v2(bb_embed), file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
             await asyncio.sleep(2)
 
             alive_mafias = [m for m in mafias if m in alive]
@@ -646,7 +646,7 @@ async def run_mafia_game(ctx, players):
                                 description=f"⚠️ **النظام:** المافيا {hitman.mention} نام في العسل لـ 3 جولات ورا بعض! تم استبعاده من اللعبة للكسل.",
                                 color=discord.Color.dark_grey()
                             )
-                            await ctx.send(embed=embed)
+                            await ctx.send(view=embed_to_v2(embed))
                     else:
                         afk_tracker[hitman] = 0
 
@@ -703,7 +703,7 @@ async def run_mafia_game(ctx, players):
                                 description=f"⚠️ **النظام:** الدكتور {doctor.mention} اتأخر 3 جولات ومأنقذش حد! تم سحب رخصته واستبعاده من اللعبة.",
                                 color=discord.Color.dark_grey()
                             )
-                            await ctx.send(embed=embed)
+                            await ctx.send(view=embed_to_v2(embed))
                     else:
                         afk_tracker[doctor] = 0
                     
@@ -733,7 +733,7 @@ async def run_mafia_game(ctx, players):
                 description="🌅 **الشمس طلعت على الحفرة...**",
                 color=discord.Color.gold()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(view=embed_to_v2(embed))
             await asyncio.sleep(1) 
             
             if mafia_target_id:
@@ -747,7 +747,7 @@ async def run_mafia_game(ctx, players):
                             color=discord.Color.green()
                         )
                         res_embed.set_image(url="attachment://saved.jpg")
-                        await ctx.send(embed=res_embed, file=discord.File(fp=save_bytes, filename="saved.jpg"))
+                        await ctx.send(view=embed_to_v2(res_embed), file=discord.File(fp=save_bytes, filename="saved.jpg"))
                     else:
                         alive.remove(target_obj)
                         if game_roles[target_obj] == 'doctor':
@@ -757,7 +757,7 @@ async def run_mafia_game(ctx, players):
                                 color=discord.Color.dark_theme()
                             )
                             res_embed.set_image(url="attachment://dead_doc.jpg")
-                            await ctx.send(embed=res_embed, file=discord.File(fp=kill_bytes, filename="dead_doc.jpg"))
+                            await ctx.send(view=embed_to_v2(res_embed), file=discord.File(fp=kill_bytes, filename="dead_doc.jpg"))
                         else:
                             kill_bytes = await generate_action_image("mafia_kill.jpg", target_obj, "dead_civilian")
                             res_embed = discord.Embed(
@@ -765,13 +765,13 @@ async def run_mafia_game(ctx, players):
                                 color=discord.Color.dark_theme()
                             )
                             res_embed.set_image(url="attachment://dead_civ.jpg")
-                            await ctx.send(embed=res_embed, file=discord.File(fp=kill_bytes, filename="dead_civ.jpg"))
+                            await ctx.send(view=embed_to_v2(res_embed), file=discord.File(fp=kill_bytes, filename="dead_civ.jpg"))
             else:
                 embed = discord.Embed(
                     description="الليلة دي عدت بسلام... المافيا نامت ومحدش مات. 🕊️",
                     color=discord.Color.blue()
                 )
-                await ctx.send(embed=embed)
+                await ctx.send(view=embed_to_v2(embed))
 
             await asyncio.sleep(2) 
 
@@ -789,7 +789,7 @@ async def run_mafia_game(ctx, players):
                 color=discord.Color.orange()
             )
             bb_embed.set_image(url="attachment://billboard.jpg")
-            await ctx.send(embed=bb_embed, file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
+            await ctx.send(view=embed_to_v2(bb_embed), file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
             
             vote_view = DayVoteView(alive)
             vote_msg = await ctx.send(view=vote_view)
@@ -810,7 +810,7 @@ async def run_mafia_game(ctx, players):
                     description="محدش صوت أصلاً... اليوم عدى على الفاضي.",
                     color=discord.Color.light_grey()
                 )
-                await ctx.send(embed=embed)
+                await ctx.send(view=embed_to_v2(embed))
             else:
                 final_tally_desc = "**📊 النتيجة النهائية للتصويت:**\n\n"
                 for t_id, count in tally.items():
@@ -824,7 +824,7 @@ async def run_mafia_game(ctx, players):
                     description=final_tally_desc,
                     color=discord.Color.blurple()
                 )
-                await ctx.send(embed=embed)
+                await ctx.send(view=embed_to_v2(embed))
                 await asyncio.sleep(2)
                 
                 sorted_tally = sorted(tally.items(), key=lambda x: x[1], reverse=True)
@@ -840,13 +840,13 @@ async def run_mafia_game(ctx, players):
                         description="الناس اختلفت والأصوات اتعادلت... محدش اتعدم النهاردة. ⚖️",
                         color=discord.Color.light_grey()
                     )
-                    await ctx.send(embed=embed)
+                    await ctx.send(view=embed_to_v2(embed))
                 elif top_target_id == "SKIP":
                     embed = discord.Embed(
                         description="الأغلبية اختارت تفوت التصويت... محدش هيتعدم النهاردة. ⏭️",
                         color=discord.Color.light_grey()
                     )
-                    await ctx.send(embed=embed)
+                    await ctx.send(view=embed_to_v2(embed))
                 else:
                     hanged_player = next((p for p in alive if p.id == top_target_id), None)
                     if hanged_player:
@@ -860,7 +860,7 @@ async def run_mafia_game(ctx, players):
                                 description=f"⛔ **{hanged_player.mention}** استخدم **فيتو**! الناس صوتت ضده بس الفيتو لغى الإعدام... عاش يا وحش!",
                                 color=discord.Color.gold()
                             )
-                            await ctx.send(embed=embed)
+                            await ctx.send(view=embed_to_v2(embed))
                             await asyncio.sleep(2)
                             alive_mafias = [m for m in mafias if m in alive]
                             if len(alive_mafias) == 0:
@@ -878,7 +878,7 @@ async def run_mafia_game(ctx, players):
                             description=f"🚨 الناس قررت تعدم **{hanged_player.mention}**! وبعد ما فتشوه اكتشفوا إنه كان: **{ar_role}**.",
                             color=discord.Color.red()
                         )
-                        await ctx.send(embed=embed)
+                        await ctx.send(view=embed_to_v2(embed))
 
             await asyncio.sleep(2) 
 
@@ -916,7 +916,7 @@ async def town_wins(ctx, mafias):
         outcome="win",
     )
     embed.set_image(url="attachment://reveal.jpg")
-    await ctx.send(embed=embed, file=discord.File(fp=reveal_bytes, filename="reveal.jpg"), view=WatermarkView())
+    await ctx.send(view=embed_to_v2(embed), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
 async def mafia_wins(ctx, mafias):
     reveal_bytes = await generate_mafia_reveal(mafias)
@@ -926,7 +926,7 @@ async def mafia_wins(ctx, mafias):
         outcome="loss",
     )
     embed.set_image(url="attachment://reveal.jpg")
-    await ctx.send(embed=embed, file=discord.File(fp=reveal_bytes, filename="reveal.jpg"), view=WatermarkView())
+    await ctx.send(view=embed_to_v2(embed), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
 # --- COG COMMANDS ---
 class Mafia(commands.Cog):
@@ -958,7 +958,7 @@ class Mafia(commands.Cog):
                 description=f"⚠️ تأكد من وجود مجلد `mafiagame` والصور بالأسماء الصحيحة. \nالخطأ: {e}",
                 color=discord.Color.red()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(view=embed_to_v2(embed))
 
     @commands.hybrid_command(name='اكشف', aliases=['scan', 'كشف'], description='استخدم أداة كشف المافيا')
     async def mafia_scan(self, ctx):
@@ -989,7 +989,7 @@ class Mafia(commands.Cog):
             color=discord.Color.gold()
         )
         try:
-            await ctx.author.send(embed=embed)
+            await ctx.author.send(view=embed_to_v2(embed))
         except discord.Forbidden:
             try:
                 cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
