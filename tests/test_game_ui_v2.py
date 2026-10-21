@@ -10,8 +10,8 @@ from discord.ui import LayoutView
 from cogs.casino.chairs import ChairsLobby
 from cogs.casino.geoguessr import GuessGameMenu
 from cogs.casino.hide_and_seek import LobbyView
-from cogs.casino.roulette import RouletteLobby
 from cogs.casino.mafia import MafiaLobbyView
+from cogs.casino.roulette import RouletteLobby
 from cogs.casino.wheel import WheelLobby
 
 
