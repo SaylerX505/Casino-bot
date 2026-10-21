@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 import json
 import os
+import logging
 import random
 import time
 import re
@@ -11,7 +12,8 @@ from cogs.casino import bank as bank
 from cogs.utility.theme import StatusPanel, base_embed, THEME
 
 COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
-LOG_CHANNEL_ID = 1513736075120742610
+LOG_CHANNEL_ID = config.CURRENCY_LOG_CHANNEL_ID
+logger = logging.getLogger(__name__)
 SERVER_LOGO = "https://media.discordapp.net/attachments/1509650275164749994/1513741255786627162/c51bafdd9c1feb13e22458c35067c718.webp"
 DATA_FILE = "data/currency.json"
 
@@ -373,6 +375,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
             ephemeral=True,
         )
         await self.cog.log_action(
+            interaction.guild,
             "💸 Transfer",
             f"From {interaction.user.mention} to {recipient.mention}: {fmt(amount)}",
             discord.Color.orange(),
@@ -531,14 +534,36 @@ class Currency(commands.Cog):
         redeemed, balance_after = bank.redeem_item(user_id, item_id, reward)
         return redeemed, reward, balance_after
 
-    async def log_action(self, title: str, description: str, color: discord.Color):
+    async def log_action(self, source_guild: discord.Guild, title: str, description: str, color: discord.Color):
+        """Write economy audit events only to a log channel in the originating guild."""
+        if source_guild is None:
+            logger.warning("Skipped economy audit log without a source guild")
+            return
+
         channel = self.bot.get_channel(LOG_CHANNEL_ID)
-        if channel:
-            embed = discord.Embed(title=title, description=description, color=color)
-            embed.set_footer(text=f"Bank Log • {config.BRAND}")
-            embed.set_thumbnail(url=SERVER_LOGO)
-            try: await channel.send(embed=embed)
-            except: pass
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(LOG_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                logger.warning("Could not resolve economy log channel (%s)", type(exc).__name__)
+                return
+
+        target_guild_id = getattr(getattr(channel, "guild", None), "id", None)
+        if target_guild_id != source_guild.id:
+            logger.error(
+                "Skipped economy audit log because configured channel guild %s does not match source guild %s",
+                target_guild_id,
+                source_guild.id,
+            )
+            return
+
+        embed = discord.Embed(title=title, description=description, color=color)
+        embed.set_footer(text=f"Bank Log • {config.BRAND}")
+        embed.set_thumbnail(url=SERVER_LOGO)
+        try:
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException as exc:
+            logger.warning("Could not send economy audit log (%s)", type(exc).__name__)
 
     @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
     async def balance(self, ctx):
