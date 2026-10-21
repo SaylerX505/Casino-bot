@@ -11,6 +11,8 @@ from cogs.casino.chairs import ChairsLobby
 from cogs.casino.geoguessr import GuessGameMenu
 from cogs.casino.hide_and_seek import LobbyView
 from cogs.casino.roulette import RouletteLobby
+from cogs.casino.mafia import MafiaLobbyView
+from cogs.casino.wheel import WheelLobby
 
 
 class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
@@ -35,9 +37,11 @@ class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
             view._disable_buttons()
             self.assertTrue(all(button.disabled for button in buttons))
         finally:
-            view.timer_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await view.timer_task
+            task = getattr(view, "timer_task", None) or getattr(view, "lobby_task", None)
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
 
 class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
@@ -67,7 +71,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             view.players.add(player) if player_collection == "set" else view.players.append(player)
             view._refresh_panel()
             self.assertIn(player.mention, view._panel_text.content)
-            self.assertNotIn("\\\\n", view._panel_text.content)
+            self.assertNotIn(chr(92) + "n", view._panel_text.content)
         finally:
             view.timer_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -91,6 +95,42 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             RouletteLobby,
             {"roulette_join", "roulette_leave", "roulette_start", "roulette_add_time"},
         )
+
+    async def test_wheel_lobby_uses_v2_components(self):
+        await self._assert_v2_lobby(
+            WheelLobby,
+            {"wheel_join", "wheel_leave", "wheel_start"},
+        )
+
+    async def test_mafia_lobby_uses_v2_components_and_keeps_cover_gallery(self):
+        loop = asyncio.get_running_loop()
+        ctx = SimpleNamespace(
+            bot=SimpleNamespace(loop=loop),
+            channel=SimpleNamespace(id=100),
+            author=SimpleNamespace(id=200),
+        )
+        view = MafiaLobbyView(ctx)
+        try:
+            self.assertIsInstance(view, LayoutView)
+            buttons = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            self.assertEqual(len(buttons), 4)
+            self.assertTrue(
+                all(button.style is discord.ButtonStyle.secondary for button in buttons)
+            )
+            galleries = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.MediaGallery)
+            ]
+            self.assertEqual(len(galleries), 1)
+            self.assertIn("attachment://menu.jpg", str(galleries[0].items[0].media.url))
+        finally:
+            task = view.timer_task
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 if __name__ == "__main__":
