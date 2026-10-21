@@ -1,6 +1,7 @@
 # --- AI CHAT SERVICE ---
 """Privacy-conscious AI replies. Conversation history is memory-only and scoped per channel."""
 import asyncio
+from collections import OrderedDict
 import logging
 import re
 import time
@@ -50,7 +51,7 @@ class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data = {"ai_enabled": self._read_enabled_setting()}
-        self._history = {}
+        self._history = OrderedDict()
         self._last_request = {}
         self._session = None
         self._semaphore = asyncio.Semaphore(2)
@@ -107,6 +108,7 @@ class AI(commands.Cog):
             {"role": "assistant", "content": assistant_content},
         ))
         del history[:-MAX_HISTORY_MESSAGES]
+        self._history.move_to_end(key)
         while len(self._history) > MAX_CONVERSATIONS:
             self._history.pop(next(iter(self._history)))
 
@@ -162,6 +164,7 @@ class AI(commands.Cog):
             self._last_request = {k: v for k, v in self._last_request.items() if v >= cutoff}
 
         content = message.clean_content or ""
+        content = content.replace(f"@{self.bot.user.name}", "").replace(f"@{self.bot.user.display_name}", "")
         content = re.sub(rf"<@!?{self.bot.user.id}>", "", content).strip()
         content = content[:MAX_PROMPT_CHARS].strip() or "عامل إيه؟"
         payload = {
