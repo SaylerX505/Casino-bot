@@ -7,6 +7,7 @@ import discord
 from discord.ui import LayoutView
 
 from cogs.casino.rps import (
+    RPS,
     RPSView,
     _RECOVERY_TASKS,
     _schedule_wager_recovery,
@@ -109,6 +110,32 @@ class RPSBackgroundRecoveryTests(unittest.IsolatedAsyncioTestCase):
         sleep.assert_awaited_once_with(5)
         on_recovered.assert_not_awaited()
         self.assertNotIn("missing-record-test", _RECOVERY_TASKS)
+
+
+class RPSStartupRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_database_recovery_failure_disables_new_wagers_without_crashing_load(self):
+        cog = RPS(SimpleNamespace())
+        with patch(
+            "cogs.casino.rps.bank.refund_orphaned_rps_wagers",
+            side_effect=OSError("database unavailable"),
+        ):
+            await cog.cog_load()
+
+        self.assertFalse(cog._escrow_ready)
+
+    async def test_startup_schedules_retries_for_escrow_left_active(self):
+        cog = RPS(SimpleNamespace())
+        with (
+            patch("cogs.casino.rps.bank.refund_orphaned_rps_wagers", return_value=2),
+            patch("cogs.casino.rps.bank.active_rps_wager_ids", return_value=["pending-a", "pending-b"]),
+            patch("cogs.casino.rps._schedule_wager_recovery") as schedule,
+        ):
+            await cog.cog_load()
+
+        self.assertTrue(cog._escrow_ready)
+        self.assertEqual(schedule.call_count, 2)
+        schedule.assert_any_call("pending-a")
+        schedule.assert_any_call("pending-b")
 
 
 if __name__ == "__main__":
