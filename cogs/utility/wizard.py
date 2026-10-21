@@ -155,7 +155,7 @@ class WizardLayout(LayoutView):
         next_view = kwargs.get("view")
         if isinstance(next_view, WizardLayout):
             next_view.message = interaction.message
-        return await self._edit_message(interaction,**kwargs)
+        return await interaction.response.edit_message(**kwargs)
 
     async def on_timeout(self):
         if self.message is not None:
