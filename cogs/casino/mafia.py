@@ -185,58 +185,93 @@ class SecretButtonView(discord.ui.View):
 class VoteDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
         self.view_parent = view_parent
-        options = [discord.SelectOption(label=p.display_name, value=str(p.id)) for p in targets]
-        super().__init__(placeholder="مين شاكك فيه؟ (اضغط للتصويت)", min_values=1, max_values=1, options=options)
+        options = [
+            discord.SelectOption(label=player.display_name, value=str(player.id))
+            for player in targets[:25]
+        ]
+        super().__init__(
+            placeholder="مين شاكك فيه؟ (اضغط للتصويت)",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user not in self.view_parent.alive_players:
-            embed = discord.Embed(
-                description="الميتين مابيتكلموش 💀",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("التصويت غير متاح", "الميتين مابيتكلموش؛ التصويت للأحياء فقط.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
         self.view_parent.votes[interaction.user] = int(self.values[0])
         await self.view_parent.update_embed(interaction)
 
-class DayVoteView(discord.ui.View):
-    def __init__(self, alive_players):
-        super().__init__(timeout=20.0) 
-        self.alive_players = alive_players
-        self.votes = {} 
-        self.add_item(VoteDropdown(alive_players[:25], self)) 
 
-    @discord.ui.button(label="تفويت (Skip)", style=discord.ButtonStyle.secondary)
-    async def skip_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user not in self.alive_players:
-            embed = discord.Embed(
-                description="الميتين مابيتكلموش 💀",
-                color=discord.Color.red()
+class DayVoteView(LayoutView):
+    def __init__(self, alive_players):
+        super().__init__(timeout=20.0)
+        self.alive_players = alive_players
+        self.votes = {}
+        self.message = None
+        self._panel_text = TextDisplay(self._vote_summary())
+        self.dropdown = VoteDropdown(alive_players[:25], self)
+        self.skip_button = discord.ui.Button(
+            label="تفويت (Skip)",
+            custom_id="mafia_vote_skip",
+            style=discord.ButtonStyle.secondary,
+        )
+        self.skip_button.callback = self.skip_btn
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(self.dropdown),
+                ActionRow(self.skip_button),
+                accent_color=THEME["orange"],
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+        )
+
+    def _vote_summary(self):
+        lines = ["# ⚖️ التصويت للإعدام", "اختار لاعبًا أو فوّت التصويت. يمكن تحديث اختيارك قبل انتهاء الوقت.", ""]
+        if not self.votes:
+            lines.append("في انتظار تصويت المواطنين...")
+        else:
+            lines.append("**الأصوات الحالية:**")
+            for voter, target_id in self.votes.items():
+                if target_id == "SKIP":
+                    lines.append(f"{voter.mention} → ⏭️ **تفويت**")
+                else:
+                    target = next(
+                        (player for player in self.alive_players if player.id == target_id),
+                        None,
+                    )
+                    if target:
+                        lines.append(f"{voter.mention} → 🔪 {target.mention}")
+        return "\n".join(lines)[:4000]
+
+    async def skip_btn(self, interaction: discord.Interaction):
+        if interaction.user not in self.alive_players:
+            return await interaction.response.send_message(
+                view=StatusPanel("التصويت غير متاح", "الميتين مابيتكلموش؛ التصويت للأحياء فقط.", "warning"),
+                ephemeral=True,
+            )
         self.votes[interaction.user] = "SKIP"
         await self.update_embed(interaction)
 
     async def update_embed(self, interaction):
-        desc = "**الأصوات الحالية:**\n\n"
-        for voter, target_id in self.votes.items():
-            if target_id == "SKIP":
-                desc += f"{voter.mention} ➔ ⏭️ **تفويت**\n"
-            else:
-                target_user = next((p for p in self.alive_players if p.id == target_id), None)
-                if target_user:
-                    desc += f"{voter.mention} ➔ 🔪 {target_user.mention}\n"
-                    
-        embed = interaction.message.embeds[0]
-        embed.description = desc
+        self._panel_text.content = self._vote_summary()
         try:
-            await interaction.response.edit_message(embed=embed)
+            await interaction.response.edit_message(view=self)
         except discord.HTTPException:
-            logger.debug("Could not update Mafia vote panel", exc_info=True)
-        
+            logger.debug("Could not update Mafia V2 vote panel", exc_info=True)
+
         if len(self.votes) >= len(self.alive_players):
             self.stop()
+
+    def disable_controls(self):
+        self.dropdown.disabled = True
+        self.skip_button.disabled = True
+
 
 class MafiaLobbyView(LayoutView):
     def __init__(self, ctx):
@@ -669,18 +704,13 @@ async def run_mafia_game(ctx, players):
             bb_embed.set_image(url="attachment://billboard.jpg")
             await ctx.send(embed=bb_embed, file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
             
-            embed = discord.Embed(
-                title="⚖️ التصويت للإعدام",
-                description="في انتظار تصويت المواطنين...",
-                color=discord.Color.gold()
-            )
             vote_view = DayVoteView(alive)
-            vote_msg = await ctx.send(embed=embed, view=vote_view)
+            vote_msg = await ctx.send(view=vote_view)
             vote_view.message = vote_msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), vote_view)
             await vote_view.wait() 
             
-            for c in vote_view.children: c.disabled = True
+            vote_view.disable_controls()
             try: await vote_msg.edit(view=vote_view)
             except discord.HTTPException: pass
             
