@@ -679,7 +679,7 @@ class GuessGameMenu(LayoutView):
             return await self._send_private_embed(interaction, embed)
         self.time_left += 10
         self._refresh_panel()
-            await interaction.response.edit_message(view=self)
+        await interaction.response.edit_message(view=self)
 
 class ActiveGameView(discord.ui.View):
     def __init__(self, executor, timer_state):
