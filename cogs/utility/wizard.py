@@ -21,6 +21,8 @@ from cogs.casino import bank
 from cogs.casino.permissions import (
     GAME_LABELS,
     _parse_id_list,
+    ai_role_setting_key,
+    configured_ai_role_ids,
     configured_log_channel_id,
     configured_manager_role_ids,
     game_channel_setting_key,
@@ -122,6 +124,18 @@ def _configured_log_channel(guild_id: int, log_type: str) -> int:
         log_type,
         _log_channel_fallback(log_type),
     )
+
+
+def _configured_ai_enabled() -> bool:
+    default = bool(getattr(config, "AI_ENABLED", True))
+    try:
+        raw = bank.get_setting("ai_enabled", "true" if default else "false")
+    except Exception:
+        logger.exception("Could not read AI enabled setting for the wizard")
+        return False
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in {"0", "false", "off", "no", "disabled"}
 
 
 def _authorized(interaction: discord.Interaction, owner_id: int) -> bool:
@@ -248,6 +262,12 @@ class WizardHomeView(WizardLayout):
                         emoji="📋",
                     ),
                     self._button(
+                        "الذكاء الاصطناعي",
+                        "wizard_ai_settings",
+                        self.open_ai_settings,
+                        emoji="🤖",
+                    ),
+                    self._button(
                         "مراجعة الإعدادات",
                         "wizard_review",
                         self.open_review,
@@ -295,6 +315,14 @@ class WizardHomeView(WizardLayout):
             return
         await self._edit_message(interaction,
             view=LogChannelWizardView(interaction.guild, interaction.user)
+        )
+
+    async def open_ai_settings(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        await self._edit_message(
+            interaction,
+            view=AISettingsWizardView(interaction.guild, interaction.user),
         )
 
     async def open_review(self, interaction: discord.Interaction):
@@ -878,6 +906,180 @@ class LogChannelWizardView(WizardLayout):
         )
 
 
+class AISettingsWizardView(WizardLayout):
+    """Manage the optional AI responder and its per-guild role allowlist."""
+
+    def __init__(self, guild, owner, *, notice=None):
+        super().__init__(guild, owner, notice=notice)
+        enabled = _configured_ai_enabled()
+        roles = sorted(configured_ai_role_ids(guild.id))
+        role_summary = ", ".join(f"<@&{role_id}>" for role_id in roles) or "لا توجد رولات إضافية"
+        api_state = "مفتاح API مضبوط" if config.DEEPSEEK_API_KEY else "مفتاح API غير مضبوط"
+        state = "شغال" if enabled else "متوقف"
+
+        self.role_select = RoleSelect(
+            placeholder="اختار رولات مسموح لها باستخدام محسن",
+            min_values=1,
+            max_values=25,
+        )
+        self.role_select.callback = self.save_roles
+        toggle_label = "إيقاف محسن" if enabled else "تشغيل محسن"
+
+        self.add_item(
+            Container(
+                TextDisplay(
+                    "# إعدادات محسن\n"
+                    f"**الحالة:** {state}\n"
+                    f"**التكامل:** {api_state}\n"
+                    f"**رولات الوصول:** {role_summary}\n\n"
+                    "مالك السيرفر والـBoosters لهم وصول دائم. الرولات هنا تضيف أعضاء مسموح لهم. "
+                    "اختيار رولات جديدة يحفظ القائمة فورًا، ومسحها يرجع لقواعد الوصول الأساسية.\n"
+                    "تشغيل محسن يحتاج مفتاح DeepSeek مضبوطًا في إعدادات الاستضافة."
+                    + self._notice_text()
+                ),
+                Separator(),
+                ActionRow(self.role_select),
+                ActionRow(
+                    self._button(toggle_label, "wizard_ai_toggle", self.toggle_ai),
+                    self._button("مسح رولات الوصول", "wizard_ai_clear_roles", self.clear_roles),
+                    self._button("رجوع", "wizard_ai_back", self.go_home),
+                ),
+                accent_color=0x393A41,
+            )
+        )
+
+    async def save_roles(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        role_ids = sorted({
+            int(role.id)
+            for role in self.role_select.values
+            if getattr(getattr(role, "guild", None), "id", None) == self.guild_id
+            and int(role.id) != self.guild_id
+        })
+        if not role_ids:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "اختيار غير صالح",
+                    "اختار رولة واحدة على الأقل من رولات السيرفر. استخدم زر مسح رولات الوصول لو عايز القائمة الإضافية تبقى فاضية.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+
+        try:
+            bank.set_setting(ai_role_setting_key(self.guild_id), json.dumps(role_ids))
+        except Exception:
+            logger.exception(
+                "Failed to persist AI role allowlist guild=%s",
+                self.guild_id,
+            )
+            return await interaction.response.send_message(
+                view=StatusPanel("تعذر حفظ الرولات", "مفيش تغيير اتأكد حفظه.", "warning"),
+                ephemeral=True,
+            )
+
+        logger.info(
+            "Wizard updated AI role allowlist guild=%s actor=%s role_count=%s",
+            self.guild_id,
+            interaction.user.id,
+            len(role_ids),
+        )
+        await self._edit_message(
+            interaction,
+            view=AISettingsWizardView(
+                interaction.guild,
+                interaction.user,
+                notice=f"اتحفظت {len(role_ids)} رولة للوصول إلى محسن.",
+            ),
+        )
+
+    async def clear_roles(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        try:
+            bank.set_setting(ai_role_setting_key(self.guild_id), "[]")
+        except Exception:
+            logger.exception("Failed to clear AI role allowlist guild=%s", self.guild_id)
+            return await interaction.response.send_message(
+                view=StatusPanel("تعذر مسح الرولات", "مفيش تغيير اتأكد حفظه.", "warning"),
+                ephemeral=True,
+            )
+
+        logger.info(
+            "Wizard cleared AI role allowlist guild=%s actor=%s",
+            self.guild_id,
+            interaction.user.id,
+        )
+        await self._edit_message(
+            interaction,
+            view=AISettingsWizardView(
+                interaction.guild,
+                interaction.user,
+                notice="تم مسح الرولات الإضافية؛ المالك والـBoosters ما زالوا مسموحين.",
+            ),
+        )
+
+    async def toggle_ai(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        enabled = not _configured_ai_enabled()
+        ai_cog = interaction.client.get_cog("AI")
+        if enabled and not config.DEEPSEEK_API_KEY:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "مفتاح API ناقص",
+                    "مش هنشغّل محسن قبل ما تضيف DEEPSEEK_API_KEY في إعدادات الاستضافة.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+        if enabled and ai_cog is None:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "محسن غير متاح",
+                    "إضافة الذكاء الاصطناعي مش محملة حاليًا؛ مفيش تغيير اتعمل.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+
+        try:
+            bank.set_setting("ai_enabled", "true" if enabled else "false")
+        except Exception:
+            logger.exception("Failed to persist AI enabled setting guild=%s", self.guild_id)
+            return await interaction.response.send_message(
+                view=StatusPanel("تعذر حفظ الإعداد", "محسن ما اتغيرتش حالته.", "warning"),
+                ephemeral=True,
+            )
+
+        if ai_cog is not None:
+            ai_cog.data["ai_enabled"] = enabled
+        logger.info(
+            "Wizard toggled AI guild=%s actor=%s enabled=%s",
+            self.guild_id,
+            interaction.user.id,
+            enabled,
+        )
+        state = "شغال" if enabled else "متوقف"
+        await self._edit_message(
+            interaction,
+            view=AISettingsWizardView(
+                interaction.guild,
+                interaction.user,
+                notice=f"محسن دلوقتي {state}.",
+            ),
+        )
+
+    async def go_home(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        await self._edit_message(
+            interaction,
+            view=WizardHomeView(interaction.guild, interaction.user),
+        )
+
+
 class WizardReviewView(WizardLayout):
     def __init__(self, guild, owner, *, notice=None):
         super().__init__(guild, owner, notice=notice)
@@ -901,8 +1103,13 @@ class WizardReviewView(WizardLayout):
             lines.append(f"• **{GAME_LABELS[key]}:** {channels}")
         economy_log = _configured_log_channel(guild.id, "economy")
         error_log = _configured_log_channel(guild.id, "command_errors")
+        ai_roles = sorted(configured_ai_role_ids(guild.id))
+        ai_role_summary = ", ".join(f"<@&{role_id}>" for role_id in ai_roles) or "لا توجد رولات إضافية"
         lines.extend(
             [
+                "",
+                f"**محسن:** {'شغال' if _configured_ai_enabled() else 'متوقف'} — {'مفتاح API مضبوط' if config.DEEPSEEK_API_KEY else 'مفتاح API ناقص'}",
+                f"**رولات الوصول الإضافية لمحسن:** {ai_role_summary}",
                 "",
                 "**قنوات السجلات:**",
                 f"• **سجلات الاقتصاد:** {f'<#{economy_log}>' if economy_log else 'متوقفة'}",
@@ -924,6 +1131,7 @@ class WizardReviewView(WizardLayout):
                     self._button("رولات الستاف", "wizard_review_roles", self.open_roles),
                     self._button("قنوات الألعاب", "wizard_review_channels", self.open_channels),
                     self._button("السجلات", "wizard_review_logs", self.open_logs),
+                    self._button("محسن", "wizard_review_ai", self.open_ai_settings),
                 ),
                 ActionRow(
                     self._button("الرئيسية", "wizard_review_home", self.go_home),
@@ -959,6 +1167,14 @@ class WizardReviewView(WizardLayout):
             return
         await self._edit_message(interaction,
             view=LogChannelWizardView(interaction.guild, interaction.user)
+        )
+
+    async def open_ai_settings(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        await self._edit_message(
+            interaction,
+            view=AISettingsWizardView(interaction.guild, interaction.user),
         )
 
     async def go_home(self, interaction: discord.Interaction):
