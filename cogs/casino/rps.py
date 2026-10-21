@@ -18,15 +18,21 @@ MAX_BET = 5000
 PAYOUT_RATE = 0.95
 
 
-def _settle_wager(game_id, winner_id=None):
-    """Fail closed and log when a wager cannot be settled immediately."""
-    try:
-        return bank.settle_rps_wager(game_id, winner_id)
-    except Exception:
-        logging.getLogger(__name__).exception(
-            "Failed to settle persisted RPS wager %s", game_id
-        )
-        return {"settled": False, "reason": "database_error"}
+async def _settle_wager(game_id, winner_id=None):
+    """Settle idempotently, retrying transient database failures before failing closed."""
+    logger = logging.getLogger(__name__)
+    for attempt in range(3):
+        try:
+            return bank.settle_rps_wager(game_id, winner_id)
+        except Exception:
+            logger.exception(
+                "Failed to settle persisted RPS wager %s (attempt %s/3)",
+                game_id,
+                attempt + 1,
+            )
+            if attempt < 2:
+                await asyncio.sleep(0.25 * (2 ** attempt))
+    return {"settled": False, "reason": "database_error"}
 
 
 # --- CHALLENGE VIEW ---
@@ -131,7 +137,7 @@ class RPSView(discord.ui.View):
         else:
             winner, winning_move, losing_move = self.opponent, opponent_choice, player_choice
 
-        result = _settle_wager(self.game_id, winner.id)
+        result = await _settle_wager(self.game_id, winner.id)
 
         if not result.get("settled"):
             embed = base_embed(
@@ -309,7 +315,7 @@ class RPS(commands.Cog):
             "Rock Paper Scissors",
             view=view,
         ):
-            refund = _settle_wager(game_id)
+            refund = await _settle_wager(game_id)
             message = (
                 "❌ فيه لعبة شغالة في الروم؛ رجعنا الرهان للطرفين."
                 if refund.get("settled")
