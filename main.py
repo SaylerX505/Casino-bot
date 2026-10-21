@@ -271,7 +271,7 @@ async def load_cogs():
     base_dir = pathlib.Path(__file__).parent
     cog_directories = ['cogs.casino', 'cogs.utility']
     # --- HELPER MODULE FILTER ---
-    utility_allow = {'help.py', 'ai.py', 'admin.py'}
+    utility_allow = {'help.py', 'ai.py', 'admin.py', 'wizard.py'}
 
     failures = []
     logger = logging.getLogger("casino.extensions")
