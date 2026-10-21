@@ -1,6 +1,7 @@
 # --- EMBED THEME ---
 """موحد شكل البوت - الوان الحفرة + helpers"""
 import discord
+import logging
 from discord.ui import Container, LayoutView, Separator, TextDisplay
 import config
 
@@ -52,6 +53,40 @@ class StatusPanel(LayoutView):
                 accent_color=colors.get(outcome, THEME["grey"]),
             )
         )
+
+
+async def report_game_failure(ctx, title: str, description: str, fallback_view=None) -> bool:
+    """Report an unexpected game failure by editing the live panel when possible.
+
+    Editing the active message is preferred to avoid stacking duplicate failure
+    posts into a game channel. A new panel is sent only when no usable message
+    is available or Discord rejects the edit.
+    """
+    logger = logging.getLogger(__name__)
+    panel = StatusPanel(title, description, "warning")
+    active_games = getattr(ctx.bot, "active_games", {})
+    entry = active_games.get(ctx.channel.id, {}) if isinstance(active_games, dict) else {}
+    active_view = entry.get("view") if isinstance(entry, dict) else None
+    message = (
+        getattr(active_view, "message", None)
+        or getattr(fallback_view, "message", None)
+        or entry.get("message")
+    )
+
+    if message is not None:
+        try:
+            await message.edit(content=None, embeds=[], attachments=[], view=panel)
+            return True
+        except discord.HTTPException:
+            logger.exception("Failed to replace the active game message with a failure panel")
+
+    try:
+        await ctx.send(view=panel)
+        return True
+    except discord.HTTPException:
+        logger.exception("Failed to send a game failure panel")
+        return False
+
 
 def result_embed(
     title: str,
