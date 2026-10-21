@@ -8,6 +8,13 @@ from discord import app_commands
 from discord.ext import commands
 
 import config
+from cogs.casino.permissions import (
+    GAME_LABELS,
+    GameChannelBlocked,
+    game_key_from_command_name,
+    game_key_from_interaction,
+    is_game_channel_allowed,
+)
 
 logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
@@ -36,6 +43,24 @@ class HomeGuildCommandTree(app_commands.CommandTree):
             )
         return False
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not await super().interaction_check(interaction):
+            return False
+        game_key = game_key_from_interaction(interaction)
+        if game_key and not is_game_channel_allowed(
+            interaction.guild_id,
+            interaction.channel_id,
+            game_key,
+        ):
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"لعبة **{GAME_LABELS[game_key]}** متاحة في قنوات محددة بس. "
+                    "راجع الستاف أو جرّب القناة المخصصة.",
+                    ephemeral=True,
+                )
+            return False
+        return True
+
 
 bot = commands.Bot(
     command_prefix=config.PREFIX,
@@ -60,6 +85,20 @@ async def _send_command_error(ctx, message):
 async def enforce_home_guild_for_prefix(ctx):
     home_guild_id = getattr(config, "HOME_GUILD_ID", None)
     return home_guild_id is None or getattr(ctx.guild, "id", None) == home_guild_id
+
+
+@bot.check
+async def enforce_game_channel_for_prefix(ctx):
+    game_key = game_key_from_command_name(getattr(ctx.command, "name", None))
+    if game_key and not is_game_channel_allowed(
+        getattr(ctx.guild, "id", None),
+        getattr(ctx.channel, "id", None),
+        game_key,
+    ):
+        raise GameChannelBlocked(
+            f"{game_key} is restricted to configured game channels."
+        )
+    return True
 
 
 @bot.event
@@ -119,6 +158,17 @@ async def on_ready():
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
+        return
+    if isinstance(error, GameChannelBlocked):
+        game_key = game_key_from_command_name(getattr(ctx.command, "name", None))
+        game_label = GAME_LABELS.get(game_key, "اللعبة")
+        try:
+            await _send_command_error(
+                ctx,
+                f"🔒 {game_label} متاحة في قنوات محددة بس. راجع الستاف أو جرّب القناة المخصصة.",
+            )
+        except discord.HTTPException:
+            pass
         return
     if isinstance(error, commands.CheckFailure):
         try:
