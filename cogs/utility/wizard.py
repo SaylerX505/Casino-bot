@@ -21,11 +21,11 @@ from cogs.casino import bank
 from cogs.casino.permissions import (
     GAME_LABELS,
     _parse_id_list,
-    configured_manager_role_ids,
     configured_log_channel_id,
+    configured_manager_role_ids,
     game_channel_setting_key,
-    log_channel_setting_key,
     has_admin_access,
+    log_channel_setting_key,
     manager_role_setting_key,
     staff_role_setting_key,
 )
