@@ -159,20 +159,28 @@ class WizardHomeView(WizardLayout):
     def __init__(self, guild, owner, *, notice=None):
         super().__init__(guild, owner, notice=notice)
         roles = _configured_roles(guild.id)
+        manager_roles = _configured_manager_roles(guild.id)
         restricted = [
             GAME_LABELS[key]
             for key in GAME_ORDER
             if not _channel_policy(guild.id, key)[0]
         ]
-        role_summary = ", ".join(f"<@&{role_id}>" for role_id in roles) or "لا توجد رولات ستاف مخصصة؛ Administrator يقدر يشغل الألعاب."
+        role_summary = ", ".join(f"<@&{role_id}>" for role_id in roles) or (
+            "لا توجد رولات ستاف مخصصة؛ Administrator يقدر يشغل الألعاب."
+        )
+        manager_summary = ", ".join(f"<@&{role_id}>" for role_id in manager_roles) or (
+            "المالك وAdministrator فقط."
+        )
         channel_summary = ", ".join(restricted) or "كل الألعاب مسموح بها في كل القنوات."
         text = (
             "# Çukur • إعداد البوت\n"
             "معالج إعداد خاص ومتدرج. كل تغيير بيتحفظ في قاعدة البيانات فور تأكيده، "
             "ومش محتاج تعيد تشغيل البوت.\n\n"
+            f"**رولات إدارة البوت:** {manager_summary}\n"
             f"**رولات الستاف:** {role_summary}\n"
             f"**قيود القنوات:** {channel_summary}\n\n"
-            "اختار القسم اللي عايز تعدّله. إعدادات المعالج نفسها للمالك أو Administrator فقط."
+            "رولات الإدارة تقدر تفتح المعالج وتعدل إعدادات الألعاب؛ "
+            "تغيير رولات الإدارة نفسها للـAdministrator فقط."
             + self._notice_text()
         )
         self.add_item(
@@ -180,12 +188,38 @@ class WizardHomeView(WizardLayout):
                 TextDisplay(text[:3900]),
                 Separator(),
                 ActionRow(
-                    self._button("رولات الستاف", "wizard_staff_roles", self.open_roles, emoji="🛡️"),
-                    self._button("قنوات الألعاب", "wizard_game_channels", self.open_channels, emoji="🎮"),
-                    self._button("مراجعة الإعدادات", "wizard_review", self.open_review, emoji="⚙️"),
+                    self._button(
+                        "رولات الإدارة",
+                        "wizard_manager_roles",
+                        self.open_manager_roles,
+                        emoji="🔐",
+                    ),
+                    self._button(
+                        "رولات الستاف",
+                        "wizard_staff_roles",
+                        self.open_roles,
+                        emoji="🛡️",
+                    ),
+                    self._button(
+                        "قنوات الألعاب",
+                        "wizard_game_channels",
+                        self.open_channels,
+                        emoji="🎮",
+                    ),
                 ),
                 ActionRow(
-                    self._button("إغلاق المعالج", "wizard_close", self.close_wizard, emoji="✕")
+                    self._button(
+                        "مراجعة الإعدادات",
+                        "wizard_review",
+                        self.open_review,
+                        emoji="⚙️",
+                    ),
+                    self._button(
+                        "إغلاق المعالج",
+                        "wizard_close",
+                        self.close_wizard,
+                        emoji="✕",
+                    ),
                 ),
                 accent_color=0x393A41,
             )
@@ -206,17 +240,23 @@ class WizardHomeView(WizardLayout):
     async def open_roles(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(view=StaffRoleWizardView(interaction.guild, interaction.user))
+        await interaction.response.edit_message(
+            view=StaffRoleWizardView(interaction.guild, interaction.user)
+        )
 
     async def open_channels(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(view=GameChannelWizardView(interaction.guild, interaction.user))
+        await interaction.response.edit_message(
+            view=GameChannelWizardView(interaction.guild, interaction.user)
+        )
 
     async def open_review(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(view=WizardReviewView(interaction.guild, interaction.user))
+        await interaction.response.edit_message(
+            view=WizardReviewView(interaction.guild, interaction.user)
+        )
 
     async def close_wizard(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
@@ -629,6 +669,18 @@ class WizardReviewView(WizardLayout):
                 ),
                 accent_color=0x393A41,
             )
+        )
+
+    async def open_manager_roles(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        if not _is_discord_admin(interaction):
+            return await interaction.response.send_message(
+                "تغيير رولات إدارة البوت متاح للمالك أو Administrator فقط.",
+                ephemeral=True,
+            )
+        await interaction.response.edit_message(
+            view=AdminRoleWizardView(interaction.guild, interaction.user)
         )
 
     async def open_roles(self, interaction: discord.Interaction):
