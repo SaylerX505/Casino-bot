@@ -101,7 +101,9 @@ class WizardViewTests(unittest.TestCase):
             item for item in view.walk_children()
             if isinstance(item, discord.ui.Button)
         ]
-        self.assertIn("wizard_channels_all_roulette", {button.custom_id for button in buttons})
+        button_ids = {button.custom_id for button in buttons}
+        self.assertIn("wizard_channels_all_roulette", button_ids)
+        self.assertIn("wizard_channels_disable_roulette", button_ids)
 
     def test_review_lists_every_game_and_roles(self):
         with patch("cogs.utility.wizard.bank.get_setting", side_effect=self._get_setting):
