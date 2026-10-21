@@ -35,6 +35,17 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+      - name: Validate Docker build-context exclusions
+        shell: bash
+        run: |
+          test -f .dockerignore
+          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/backups/"; do
+            if ! grep -Fxq "$pattern" .dockerignore; then
+              echo "::error::Missing Docker ignore rule: $pattern"
+              exit 1
+            fi
+          done
+          grep -Fxq "*.db" .dockerignore
       - name: Build Docker image
         run: |
           for attempt in 1 2 3; do
