@@ -261,9 +261,16 @@ async def load_cogs():
 
 # --- APPLICATION STARTUP ---
 async def main():
+    logger = logging.getLogger("casino.startup")
     if not config.TOKEN:
-        logging.getLogger("casino.startup").error(
+        logger.error(
             "DISCORD_TOKEN is missing. Configure the host environment using .env.example."
+        )
+        return
+    if not config.HOME_GUILD_ID:
+        logger.error(
+            "HOME_GUILD_ID is required for this single-server bot. "
+            "Set it to the target Discord server ID before startup."
         )
         return
     try:
