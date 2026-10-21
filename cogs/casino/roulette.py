@@ -403,8 +403,11 @@ class RouletteLobby(discord.ui.View):
                 )
                 
                 if currency_cog:
-                    currency_cog.update_balance(winner.id, 20)
-                    final_embed.description += f"\n\n💰 تم إضافة **20 عملة** لحسابك كمكافأة فوز!"
+                    credited, _balance = currency_cog.credit_balance(winner.id, 20)
+                    if credited:
+                        final_embed.description += "\n\n💰 تم إضافة **20 عملة** لحسابك كمكافأة فوز!"
+                    else:
+                        final_embed.description += "\n\n⚠️ فزت بالجولة، لكن رصيدك وصل للحد الأقصى؛ المكافأة لم تُصرف."
                     
                 await self.ctx.send(embed=final_embed, view=WatermarkView())
             else:
