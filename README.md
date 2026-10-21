@@ -69,4 +69,4 @@ The tests use temporary SQLite databases and should not operate on the live econ
 - Store tokens in environment variables, not in source code.
 - Preserve persistent storage across host redeployments.
 - Verify the bot's startup logs and test a small set of commands in a non-production channel after deploying a new version.
-- The automated suite cannot replace an end-to-end test against a real Discord server.
+- The automated suite cannot replace an end-to-end test against a real Discord server. Use [`PRODUCTION_CHECKLIST.md`](PRODUCTION_CHECKLIST.md) as the release gate before switching a live host to a new image.
