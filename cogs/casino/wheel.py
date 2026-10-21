@@ -302,16 +302,11 @@ class WheelLobby(LayoutView):
     async def play_rounds(self):
         currency = get_currency(self.ctx.bot)
         results = []
-        result_message = self.message
 
         async def publish_panel(panel, file=None):
-            nonlocal result_message
-            attachments = [file] if file is not None else []
-            if result_message is not None:
-                await result_message.edit(view=panel, attachments=attachments)
-            else:
-                kwargs = {"file": file} if file is not None else {}
-                result_message = await self.ctx.send(view=panel, **kwargs)
+            # Each spin remains a separate channel event rather than overwriting prior results.
+            kwargs = {"file": file} if file is not None else {}
+            return await self.ctx.send(view=panel, **kwargs)
 
         try:
             if currency is None:
@@ -436,7 +431,7 @@ class WheelLobby(LayoutView):
                 await publish_panel(
                     StatusPanel(
                         "حصل خطأ في العجلة",
-                        "الجولة اتوقفت بسبب خطأ تقني. سجّلنا التفاصيل من غير تكرار رسائل جديدة.",
+                        "الجولة اتوقفت بسبب خطأ تقني. سجّلنا التفاصيل، والنتائج السابقة تفضل ظاهرة كسجل للجولة.",
                         "warning",
                     )
                 )
