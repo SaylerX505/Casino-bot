@@ -1,9 +1,12 @@
 import asyncio
+import logging
 import re
+import uuid
 
 import discord
 from discord.ext import commands
 
+from cogs.casino import bank
 from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task
 from cogs.utility.theme import THEME, WatermarkView, base_embed, get_currency
 
@@ -17,12 +20,13 @@ PAYOUT_RATE = 0.95
 
 # --- CHALLENGE VIEW ---
 class RPSView(discord.ui.View):
-    def __init__(self, ctx, player, opponent, bet):
+    def __init__(self, ctx, player, opponent, bet, game_id):
         super().__init__(timeout=60)
         self.ctx = ctx
         self.player = player
         self.opponent = opponent
         self.bet = bet
+        self.game_id = str(game_id)
         self.choices = {}
         self.done = False
         self.message = None
@@ -65,34 +69,35 @@ class RPSView(discord.ui.View):
             return
         self.done = True
 
-        currency = get_currency(self.ctx.bot)
-        prize = int(self.bet * 2 * PAYOUT_RATE)
-        tax = self.bet * 2 - prize
         player_choice = self.choices.get(self.player.id)
         opponent_choice = self.choices.get(self.opponent.id)
 
         if player_choice is None or opponent_choice is None:
-            if currency:
-                currency.update_balance(self.player.id, self.bet)
-                currency.update_balance(self.opponent.id, self.bet)
+            result = bank.settle_rps_wager(self.game_id)
+            if not result.get("settled"):
+                description = "الرهان لسه محجوز بأمان، ومفيش خصم إضافي. هيتم إعادة محاولة التسوية لاحقًا."
+            else:
+                description = "حد اتأخر في الاختيار؛ رجعنا الرهان للطرفين بالكامل."
             embed = base_embed(
                 title="⏰ التحدي انتهى",
-                description="حد اتأخر في الاختيار؛ رجعنا الرهان للطرفين.",
+                description=description,
                 color=THEME["orange"],
             )
             return await self.publish_result(embed, interaction)
 
         if player_choice == opponent_choice:
-            if currency:
-                currency.update_balance(self.player.id, self.bet)
-                currency.update_balance(self.opponent.id, self.bet)
-            embed = base_embed(
-                title="🤝 تعادل!",
-                description=(
+            result = bank.settle_rps_wager(self.game_id)
+            if not result.get("settled"):
+                description = "الرهان لسه محجوز بأمان، ومفيش خصم إضافي. هيتم إعادة محاولة التسوية لاحقًا."
+            else:
+                description = (
                     f"اختارتوا الاتنين **{MOVE_NAMES[player_choice]}**.\n"
                     "رجعنا الرهان كامل للطرفين."
-                ),
-                color=THEME["grey"],
+                )
+            embed = base_embed(
+                title="🤝 تعادل!",
+                description=description,
+                color=THEME["grey"] if result.get("settled") else THEME["orange"],
             )
             return await self.publish_result(embed, interaction)
 
@@ -101,19 +106,38 @@ class RPSView(discord.ui.View):
         else:
             winner, winning_move, losing_move = self.opponent, opponent_choice, player_choice
 
-        if currency:
-            try:
-                currency.update_balance(winner.id, prize)
-            except OverflowError:
-                currency.update_balance(self.player.id, self.bet)
-                currency.update_balance(self.opponent.id, self.bet)
-                embed = base_embed(
-                    title="⚠️ تعذر صرف الجائزة",
-                    description="رصيد الفائز وصل للحد الأقصى؛ رجعنا الرهان للطرفين.",
-                    color=THEME["orange"],
-                )
-                return await self.publish_result(embed, interaction)
+        try:
+            result = bank.settle_rps_wager(self.game_id, winner.id)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to settle persisted RPS wager %s", self.game_id
+            )
+            result = {"settled": False, "reason": "database_error"}
 
+        if not result.get("settled"):
+            embed = base_embed(
+                title="⚠️ الرهان محفوظ",
+                description=(
+                    "حصل عطل أثناء تسوية الرهان. المبلغ ما زال مسجلًا في قاعدة البنك، "
+                    "ومش هنكرر الخصم أو نصرف جائزة غير مؤكدة. راجعوا حالة البوت قبل بدء رهان جديد."
+                ),
+                color=THEME["orange"],
+            )
+            return await self.publish_result(embed, interaction)
+
+        if result.get("status") == "refunded":
+            embed = base_embed(
+                title="⚠️ رجّعنا الرهان",
+                description=(
+                    "تعذر صرف الجائزة بأمان بسبب حد الرصيد؛ رجعنا رهان الطرفين بالكامل. "
+                    "مفيش فائز مالي في الجولة دي."
+                ),
+                color=THEME["orange"],
+            )
+            return await self.publish_result(embed, interaction)
+
+        prize = int(result["payout"])
+        tax = int(result["tax"])
         embed = base_embed(
             title="🏆 فايز!",
             description=(
@@ -134,13 +158,22 @@ class RPSView(discord.ui.View):
         if self.done:
             return
         self.done = True
-        currency = get_currency(self.ctx.bot)
-        if currency:
-            currency.update_balance(self.player.id, self.bet)
-            currency.update_balance(self.opponent.id, self.bet)
+        try:
+            settlement = bank.settle_rps_wager(self.game_id)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to refund aborted RPS wager %s", self.game_id
+            )
+            settlement = {"settled": False}
+
+        description = (
+            "تم إيقاف التحدي وإرجاع الرهان للطرفين."
+            if settlement.get("settled")
+            else "التحدي اتوقف؛ الرهان ما زال محفوظًا في سجل البنك لإعادة التسوية بأمان."
+        )
         embed = base_embed(
             title="🛑 التحدي اتوقف",
-            description="تم إيقاف التحدي؛ رجعنا الرهان للطرفين.",
+            description=description,
             color=THEME["orange"],
         )
         await self.publish_result(embed)
@@ -179,6 +212,13 @@ class RPS(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def cog_load(self):
+        refunded = bank.refund_orphaned_rps_wagers()
+        if refunded:
+            logging.getLogger(__name__).warning(
+                "Refunded %s interrupted RPS wager(s) during startup", refunded
+            )
+
     @commands.hybrid_command(
         name="حومص",
         aliases=["rps", "حجرة", "مقص"],
@@ -193,10 +233,8 @@ class RPS(commands.Cog):
                 )
             )
 
-        try:
-            amount = int(re.sub(r"\\D", "", bet or ""))
-        except ValueError:
-            amount = 0
+        raw_bet = (bet or "").strip().replace(",", "")
+        amount = int(raw_bet) if re.fullmatch(r"[0-9]+", raw_bet) else 0
 
         usage = "/حومص" if ctx.interaction is not None else f"{ctx.prefix}حومص"
         if amount < MIN_BET:
@@ -223,9 +261,10 @@ class RPS(commands.Cog):
         currency = get_currency(self.bot)
         if currency is None:
             return await ctx.send(embed=base_embed(description="❌ الفلوس واقعة! كلم نجلاوي.", color=THEME["red_dark"]))
-        if not currency.place_bet(ctx.author.id, opponent.id, amount):
-            player_balance = currency.get_balance(ctx.author.id)
-            opponent_balance = currency.get_balance(opponent.id)
+        game_id = uuid.uuid4().hex
+        if not bank.create_rps_wager(game_id, ctx.author.id, opponent.id, amount):
+            player_balance = bank.get_balance(ctx.author.id)
+            opponent_balance = bank.get_balance(opponent.id)
             if player_balance < amount:
                 return await ctx.send(
                     embed=base_embed(
@@ -242,12 +281,12 @@ class RPS(commands.Cog):
                 )
             return await ctx.send(
                 embed=base_embed(
-                    description="❌ الرصيد اتغير أثناء تسجيل الرهان. راجع الرصيد وحاول تاني.",
+                    description="❌ تعذر تسجيل الرهان بأمان. مفيش مبلغ اتخصم؛ راجع الرصيد وحاول تاني.",
                     color=THEME["red_dark"],
                 )
             )
 
-        view = RPSView(ctx, ctx.author, opponent, amount)
+        view = RPSView(ctx, ctx.author, opponent, amount, game_id)
         task = asyncio.current_task()
         if task is None or not register_game_task(
             self.bot,
@@ -257,8 +296,7 @@ class RPS(commands.Cog):
             "Rock Paper Scissors",
             view=view,
         ):
-            currency.update_balance(ctx.author.id, amount)
-            currency.update_balance(opponent.id, amount)
+            bank.settle_rps_wager(game_id)
             return await ctx.send(
                 embed=base_embed(
                     description="❌ فيه لعبة شغالة في الروم؛ رجعنا الرهان للطرفين.",
