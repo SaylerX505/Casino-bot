@@ -3,6 +3,7 @@ import io
 import logging
 import math
 import random
+import config
 from functools import partial
 
 import discord
