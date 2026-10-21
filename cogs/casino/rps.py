@@ -89,8 +89,6 @@ async def _retry_wager_recovery(game_id, winner_id=None, on_recovered=None):
                     game_id,
                     result.get("reason", "unknown"),
                 )
-    except asyncio.CancelledError:
-        raise
     finally:
         current = asyncio.current_task()
         if _RECOVERY_TASKS.get(game_id) is current:
