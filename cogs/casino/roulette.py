@@ -31,7 +31,8 @@ async def fetch_avatar(session, user, size=(80, 80)):
             data = await resp.read()
             img = Image.open(io.BytesIO(data)).convert("RGBA").resize(size)
             return img
-    except Exception: 
+    except Exception:
+        logger.debug("Could not load a player avatar for the roulette image", exc_info=True)
         return Image.new("RGBA", size, (50, 50, 50, 255))
 
 async def generate_sniper_image(player):
@@ -71,9 +72,12 @@ async def generate_sniper_image(player):
             draw.rectangle((40, height - 120, 120, height - 40), outline=(0, 255, 0, 200), width=3)
             
             try: font = ImageFont.truetype("tahoma.ttf", 20)
-            except Exception: font = ImageFont.load_default()
+            except Exception:
+                logger.debug("Roulette image font unavailable; using the default font", exc_info=True)
+                font = ImageFont.load_default()
             draw.text((40, height - 35), "SNIPER ACTIVE", fill=(0, 255, 0, 200), font=font)
-        except Exception: pass
+        except Exception:
+            logger.debug("Could not compose the optional roulette avatar overlay", exc_info=True)
             
     out_bytes = io.BytesIO()
     base.save(out_bytes, format='PNG')
