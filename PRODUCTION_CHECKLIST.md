@@ -22,6 +22,7 @@ This checklist is a release gate, not a claim that every item is already complet
 - [x] `/wizard` configures trusted manager roles, game-staff roles, and an independent channel allowlist (or all channels) for each game. Every change persists to SQLite without restart; manager roles cannot change their own manager-role allowlist.
 - [x] `/commands` opens the private command menu; `/wizard` replaces the need to remember separate setup commands for routine role/channel configuration.
 - [x] `/wizard` configures per-guild economy and command-error log destinations or disables either log type; prefix and slash failures use redacted V2 log panels and reject cross-guild destinations.
+- [x] `/wizard` manages the optional AI responder and its per-guild access-role override; AI cannot be enabled through the wizard without `DEEPSEEK_API_KEY`.
 - [ ] Wallet rows use Discord user IDs within the one-server deployment; economy reset remains disabled through Discord and requires a manual, backed-up maintenance procedure.
 
 ## Staging Discord validation
@@ -38,6 +39,7 @@ Run these against a staging server/channel before production:
 - [ ] Verify required Discord intents and permissions from the hosting environment. Inspect startup and application-command logs.
 - [ ] Confirm persistent inventory/economy views still respond after a process restart and after redeployment.
 - [ ] Set both log destinations through `/wizard`; verify command errors from prefix and slash commands arrive in the selected channel without pinging users, and that another guild's channel can never receive them.
+- [ ] Verify `/wizard` can enable AI only when the key is configured, persists the toggle across restart, and applies the saved AI role override; verify unauthorized roles receive no AI response.
 
 ## UI and operational gates
 
