@@ -42,6 +42,44 @@ class HomeGuildPolicyTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await main.bot.tree.interaction_check(interaction))
         interaction.response.send_message.assert_not_awaited()
 
+    async def test_slash_game_command_is_rejected_outside_its_allowed_channels(self):
+        interaction = SimpleNamespace(
+            guild_id=202,
+            channel_id=999,
+            command=SimpleNamespace(name="games", qualified_name="games mafia"),
+            data={"name": "games", "options": [{"name": "mafia", "type": 1}]},
+            response=SimpleNamespace(is_done=lambda: False, send_message=AsyncMock()),
+        )
+        with (
+            patch("main.config.HOME_GUILD_ID", 202),
+            patch("main.is_game_channel_allowed", return_value=False),
+        ):
+            allowed = await main.bot.tree.interaction_check(interaction)
+
+        self.assertFalse(allowed)
+        interaction.response.send_message.assert_awaited_once()
+        self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+        self.assertIn("المافيا", interaction.response.send_message.await_args.args[0])
+
+    async def test_prefix_game_command_is_rejected_outside_its_allowed_channels(self):
+        ctx = SimpleNamespace(
+            command=SimpleNamespace(name="مافيا"),
+            guild=SimpleNamespace(id=202),
+            channel=SimpleNamespace(id=999),
+        )
+        with patch("main.is_game_channel_allowed", return_value=False):
+            with self.assertRaises(main.GameChannelBlocked):
+                await main.enforce_game_channel_for_prefix(ctx)
+
+    async def test_prefix_game_command_is_allowed_in_configured_channel(self):
+        ctx = SimpleNamespace(
+            command=SimpleNamespace(name="مافيا"),
+            guild=SimpleNamespace(id=202),
+            channel=SimpleNamespace(id=200),
+        )
+        with patch("main.is_game_channel_allowed", return_value=True):
+            self.assertTrue(await main.enforce_game_channel_for_prefix(ctx))
+
 
 if __name__ == "__main__":
     unittest.main()
