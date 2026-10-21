@@ -17,6 +17,7 @@ from cogs.casino.game_registry import (
 )
 from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
+    embed_to_v2,
     THEME,
     StatusPanel,
     lobby_embed,
@@ -313,7 +314,7 @@ class ChairsLobby(LayoutView):
                 description="للأدمن فقط!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await interaction.response.send_message(view=embed_to_v2(embed), ephemeral=True)
         self.time_left += 10
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
