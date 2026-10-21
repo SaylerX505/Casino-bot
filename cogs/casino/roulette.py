@@ -177,6 +177,30 @@ class RouletteLobby(LayoutView):
         self.game_started = False
         self.time_left = 35
         self.message = None
+        self._panel_text = TextDisplay(self._panel_content())
+        self._buttons = []
+        for label, custom_id, callback_name, emoji in (
+            ("انضمام (Join)", "roulette_join", "join_btn", None),
+            ("مغادرة (Leave)", "roulette_leave", "leave_btn", None),
+            ("ابدأ الآن", "roulette_start", "start_btn", None),
+            ("+10 ثواني", "roulette_add_time", "add_time_btn", "⏱️"),
+        ):
+            button = discord.ui.Button(
+                label=label,
+                custom_id=custom_id,
+                style=discord.ButtonStyle.secondary,
+                emoji=emoji,
+            )
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(*self._buttons),
+                accent_color=THEME["teal"],
+            )
+        )
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
