@@ -9,7 +9,7 @@ from discord.ui import LayoutView
 
 from cogs.casino.chairs import ChairsLobby
 from cogs.casino.geoguessr import GuessGameMenu
-from cogs.casino.hide_and_seek import LobbyView
+from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
 from cogs.casino.mafia import MafiaLobbyView
 from cogs.casino.roulette import RouletteLobby
 from cogs.casino.wheel import WheelLobby
@@ -54,6 +54,37 @@ class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+
+class HideAndSeekRoundV2Tests(unittest.TestCase):
+    def test_hiding_panel_preserves_map_gallery_and_secret_selection(self):
+        view = HidingView([_FakeMember(101)])
+        self.assertIsInstance(view, LayoutView)
+        dropdowns = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Select)
+        ]
+        galleries = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.MediaGallery)
+        ]
+        self.assertEqual(len(dropdowns), 1)
+        self.assertEqual(len(galleries), 1)
+        self.assertIn("attachment://map.png", str(galleries[0].items[0].media.url))
+        view.disable_controls()
+        self.assertTrue(dropdowns[0].disabled)
+
+    def test_seeker_panel_is_v2_and_has_only_a_select_action(self):
+        view = SeekerView(_FakeMember(202), set())
+        self.assertIsInstance(view, LayoutView)
+        dropdowns = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Select)
+        ]
+        self.assertEqual(len(dropdowns), 1)
+        self.assertIn("<@202>", view._panel_text.content)
+        view.disable_controls()
+        self.assertTrue(dropdowns[0].disabled)
 
 
 class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
