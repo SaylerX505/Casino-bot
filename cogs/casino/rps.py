@@ -201,7 +201,7 @@ class RPSView(LayoutView):
             else:
                 description = (
                     f"اكتملت تسوية الرهان بنجاح. الفائز: <@{winner_id}>.\n"
-                    f"الجائزة المسجلة: **{int(result.get('payout', 0)):,}** {COIN}."
+                    f"الجائزة المسجلة: **{int(result.get('payout', 0)):,}** عملة."
                 )
         elif result.get("status") == "refunded":
             description = "اكتملت التسوية بإرجاع الرهان للطرفين بالكامل."
