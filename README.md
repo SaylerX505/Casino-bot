@@ -45,6 +45,9 @@ Never commit the live database, SQLite journal files, user histories, activity s
 AI conversation history is kept **in memory only**, scoped by guild, channel, and user; it is not written to a JSON file and is cleared on restart. The bot no longer reads recent channel history to add other members' messages to an AI request. Only the invoking user's prompt and their own recent AI conversation are sent to the configured DeepSeek API. The `/ai-forget` or `+ai-forget` command clears that user's context in the current channel. Configure AI access roles explicitly and provide the required API key only on the host.
 
 The small AI-enabled setting is stored in the SQLite database. The Git repository's earlier commits may still contain deleted data files; deleting files from current branch snapshots does not remove historical Git objects. A coordinated history rewrite and post-rewrite verification are still needed before claiming the historical copies have been purged.
+
+The private `/wizard` also configures the economy-audit and command-error log channels independently for this server. Set each destination to a text/announcement channel the bot can view and send to, or explicitly disable that log type. Command and economy log delivery checks the destination guild before sending, and automated log panels disable mentions. Unexpected prefix and slash command errors use the same redacted, Components V2 reporting path.
+
 ## Docker deployment
 
 The `Dockerfile` builds a Python 3.11 slim image, installs dependencies in a cache-friendly layer, and runs the bot as an unprivileged user. The image starts the bot with `python -u main.py`; it does not expose a web port because this is a Discord gateway bot.
