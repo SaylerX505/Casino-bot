@@ -30,7 +30,7 @@ The bot uses the configured prefix `+`. See the in-bot help menu for the availab
 
 ## Single-server configuration
 
-This bot is designed to run in one Discord server. Set `HOME_GUILD_ID` in the host environment before production use. When set, prefix commands and slash commands are restricted to that guild, slash commands are registered as guild commands, and the bot leaves other guilds. If it is empty, this safety restriction is disabled. `AI_GUILD_ID` can override the AI guild separately. Configure `CURRENCY_LOG_CHANNEL_ID` and, when needed, `AI_ALLOWED_ROLE_IDS` as comma-separated Discord IDs.
+This bot is designed to run in one Discord server. `HOME_GUILD_ID` is required: the process refuses to start when it is missing. When configured, prefix commands and slash commands are restricted to that guild, slash commands are registered as guild commands, and the bot leaves other guilds. `AI_GUILD_ID` can override the AI guild separately. Configure `CURRENCY_LOG_CHANNEL_ID` and, when needed, `AI_ALLOWED_ROLE_IDS` as comma-separated Discord IDs.
 
 ## Data and persistence
 
