@@ -18,6 +18,17 @@ MAX_BET = 5000
 PAYOUT_RATE = 0.95
 
 
+def _settle_wager(game_id, winner_id=None):
+    """Fail closed and log when a wager cannot be settled immediately."""
+    try:
+        return bank.settle_rps_wager(game_id, winner_id)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to settle persisted RPS wager %s", game_id
+        )
+        return {"settled": False, "reason": "database_error"}
+
+
 # --- CHALLENGE VIEW ---
 class RPSView(discord.ui.View):
     def __init__(self, ctx, player, opponent, bet, game_id):
@@ -73,7 +84,7 @@ class RPSView(discord.ui.View):
         opponent_choice = self.choices.get(self.opponent.id)
 
         if player_choice is None or opponent_choice is None:
-            result = bank.settle_rps_wager(self.game_id)
+            result = _settle_wager(self.game_id)
             if not result.get("settled"):
                 description = "الرهان لسه محجوز بأمان، ومفيش خصم إضافي. هيتم إعادة محاولة التسوية لاحقًا."
             else:
@@ -86,7 +97,7 @@ class RPSView(discord.ui.View):
             return await self.publish_result(embed, interaction)
 
         if player_choice == opponent_choice:
-            result = bank.settle_rps_wager(self.game_id)
+            result = _settle_wager(self.game_id)
             if not result.get("settled"):
                 description = "الرهان لسه محجوز بأمان، ومفيش خصم إضافي. هيتم إعادة محاولة التسوية لاحقًا."
             else:
@@ -106,13 +117,7 @@ class RPSView(discord.ui.View):
         else:
             winner, winning_move, losing_move = self.opponent, opponent_choice, player_choice
 
-        try:
-            result = bank.settle_rps_wager(self.game_id, winner.id)
-        except Exception:
-            logging.getLogger(__name__).exception(
-                "Failed to settle persisted RPS wager %s", self.game_id
-            )
-            result = {"settled": False, "reason": "database_error"}
+        result = _settle_wager(self.game_id, winner.id)
 
         if not result.get("settled"):
             embed = base_embed(
@@ -158,13 +163,7 @@ class RPSView(discord.ui.View):
         if self.done:
             return
         self.done = True
-        try:
-            settlement = bank.settle_rps_wager(self.game_id)
-        except Exception:
-            logging.getLogger(__name__).exception(
-                "Failed to refund aborted RPS wager %s", self.game_id
-            )
-            settlement = {"settled": False}
+        settlement = _settle_wager(self.game_id)
 
         description = (
             "تم إيقاف التحدي وإرجاع الرهان للطرفين."
@@ -296,10 +295,15 @@ class RPS(commands.Cog):
             "Rock Paper Scissors",
             view=view,
         ):
-            bank.settle_rps_wager(game_id)
+            refund = _settle_wager(game_id)
+            message = (
+                "❌ فيه لعبة شغالة في الروم؛ رجعنا الرهان للطرفين."
+                if refund.get("settled")
+                else "❌ فيه لعبة شغالة في الروم. الرهان محفوظ في سجل البنك؛ راجعوا حالة البوت قبل أي محاولة جديدة."
+            )
             return await ctx.send(
                 embed=base_embed(
-                    description="❌ فيه لعبة شغالة في الروم؛ رجعنا الرهان للطرفين.",
+                    description=message,
                     color=THEME["red_dark"],
                 )
             )
