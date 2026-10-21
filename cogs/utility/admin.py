@@ -26,6 +26,11 @@ class AdminCommands(commands.Cog):
         description="إدارة إعدادات البوت داخل السيرفر",
         default_permissions=discord.Permissions(administrator=True),
     )
+    access = app_commands.Group(
+        name="access",
+        description="إدارة قائمة أدمنز البوت داخل السيرفر",
+    )
+    admin.add_command(access)
 
     def __init__(self, bot):
         self.bot = bot
@@ -74,7 +79,7 @@ class AdminCommands(commands.Cog):
                 await interaction.response.send_message(
                     view=AdminResult(
                         "محتاج تفعيل وصول البوت",
-                        "لازم تكون Administrator في Discord ومضافًا لقائمة أدمنز البوت. استخدم /admin access-add لإضافتك أو اطلب من أدمن مخوّل إضافتك.",
+                        "لازم تكون Administrator في Discord ومضافًا لقائمة أدمنز البوت. استخدم /admin access add لإضافتك أو اطلب من أدمن مخوّل إضافتك.",
                         success=False,
                     ),
                     ephemeral=True,
@@ -82,7 +87,7 @@ class AdminCommands(commands.Cog):
                 return False
         return True
 
-    @admin.command(name="access-add", description="السماح لأدمن Discord باستخدام أدوات إدارة البوت")
+    @access.command(name="add", description="السماح لأدمن Discord باستخدام أدوات إدارة البوت")
     @app_commands.describe(member="عضو يمتلك بالفعل صلاحية Administrator في Discord")
     async def access_add(self, interaction: discord.Interaction, member: discord.Member):
         if not await self._require_admin(interaction):
@@ -116,7 +121,7 @@ class AdminCommands(commands.Cog):
             ephemeral=True,
         )
 
-    @admin.command(name="access-remove", description="إزالة أدمن من قائمة أدمنز البوت")
+    @access.command(name="remove", description="إزالة أدمن من قائمة أدمنز البوت")
     @app_commands.describe(member="الأدمن المراد إزالة وصوله لأدوات البوت")
     async def access_remove(self, interaction: discord.Interaction, member: discord.Member):
         if not await self._require_admin(interaction):
@@ -132,13 +137,13 @@ class AdminCommands(commands.Cog):
             ephemeral=True,
         )
 
-    @admin.command(name="access-list", description="عرض أدمنز البوت المحددين لهذا السيرفر")
+    @access.command(name="list", description="عرض أدمنز البوت المحددين لهذا السيرفر")
     async def access_list(self, interaction: discord.Interaction):
         if not await self._require_admin(interaction):
             return
         user_ids = bank.list_guild_admins(interaction.guild_id)
         if not user_ids:
-            description = "لسه مفيش أدمنز بوت مضافين. استخدم /admin access-add لإضافة Administrator."
+            description = "لسه مفيش أدمنز بوت مضافين. استخدم /admin access add لإضافة Administrator."
         else:
             description = "\n".join(f"• <@{user_id}>" for user_id in user_ids[:25])
             if len(user_ids) > 25:
