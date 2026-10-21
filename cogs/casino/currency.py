@@ -461,6 +461,18 @@ class Currency(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data = load_data()
+        self._persistent_hub_view = None
+
+    async def cog_load(self):
+        """Restore persistent public economy buttons when the extension loads."""
+        self._persistent_hub_view = CurrencyHubLayout(self)
+        self.bot.add_view(self._persistent_hub_view)
+
+    def cog_unload(self):
+        """Unregister the view when reloading or unloading this extension."""
+        if self._persistent_hub_view is not None:
+            self.bot.remove_view(self._persistent_hub_view)
+            self._persistent_hub_view = None
 
     def check_whitelist(self, user: discord.Member) -> bool:
         permissions = getattr(user, "guild_permissions", None)
