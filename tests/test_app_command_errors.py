@@ -4,8 +4,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from discord import app_commands
+from discord.ext import commands
 
-from main import on_app_command_error
+from main import on_app_command_error, on_command_error
 
 
 def fake_interaction(*, acknowledged=False):
@@ -22,6 +23,29 @@ def fake_interaction(*, acknowledged=False):
 
 
 class AppCommandErrorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_prefix_check_failure_does_not_pass_ephemeral_kwarg(self):
+        ctx = SimpleNamespace(
+            interaction=None,
+            send=AsyncMock(),
+        )
+
+        await on_command_error(ctx, commands.CheckFailure("denied"))
+
+        ctx.send.assert_awaited_once_with("❌ الأمر ده مش متاح لصلاحيات حسابك.")
+
+    async def test_hybrid_check_failure_uses_ephemeral_interaction_response(self):
+        ctx = SimpleNamespace(
+            interaction=object(),
+            send=AsyncMock(),
+        )
+
+        await on_command_error(ctx, commands.CheckFailure("denied"))
+
+        ctx.send.assert_awaited_once_with(
+            "❌ الأمر ده مش متاح لصلاحيات حسابك.",
+            ephemeral=True,
+        )
+
     async def test_check_failure_is_acknowledged_ephemerally(self):
         interaction = fake_interaction()
 
