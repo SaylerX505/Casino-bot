@@ -279,7 +279,7 @@ class AdminCommands(commands.Cog):
         active_games = len(getattr(self.bot, "active_games", {}))
         description = (
             f"**أدمنز البوت:** {len(admins)}\n"
-            f"**محسن:** {ai_state} (إعداد مشترك على مستوى البوت)\n"
+            f"**محسن:** {ai_state} (الإعداد محفوظ في SQLite)\n"
             f"**الألعاب النشطة:** {active_games}\n"
             "**تصفير الاقتصاد:** متوقف لحماية قاعدة البيانات المشتركة"
         )
