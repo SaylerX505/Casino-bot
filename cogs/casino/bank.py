@@ -1,5 +1,6 @@
 # --- SQLITE BANK ---
 """SQLite bank: balances, daily, streaks, inventory, whitelist. Thread-safe + atomic."""
+import math
 import os
 import sqlite3
 import threading
@@ -10,6 +11,7 @@ from pathlib import Path
 DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
 _lock = threading.RLock()
 _conn = None
+SQLITE_MAX_INT = (1 << 63) - 1
 
 def _connect():
     global _conn
@@ -580,11 +582,20 @@ def charge_up_to(user_id, amount):
             raise
 
 def set_balance(user_id, amount):
-    uid = str(user_id)
+    """Set a wallet balance to a valid SQLite integer; negative balances are forbidden."""
+    uid, amount = str(user_id), int(amount)
+    if amount < 0 or amount > SQLITE_MAX_INT:
+        raise ValueError("balance must be within SQLite's non-negative integer range")
     with _lock:
-        _ensure(uid)
-        _connect().execute("UPDATE users SET balance=? WHERE user_id=?", (int(amount), uid))
-        _connect().commit()
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            c.execute("UPDATE users SET balance=? WHERE user_id=?", (amount, uid))
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
 
 def get_daily(uid):
     uid = str(uid)
@@ -594,11 +605,24 @@ def get_daily(uid):
         return float(row["last_daily"]), int(row["streak"])
 
 def set_daily(uid, last, streak):
-    uid = str(uid)
+    uid, last, streak = str(uid), float(last), int(streak)
+    if not math.isfinite(last) or last < 0:
+        raise ValueError("last daily timestamp must be finite and non-negative")
+    if streak < 0 or streak > SQLITE_MAX_INT:
+        raise ValueError("daily streak must be a non-negative SQLite integer")
     with _lock:
-        _ensure(uid)
-        _connect().execute("UPDATE users SET last_daily=?, streak=? WHERE user_id=?", (float(last), int(streak), uid))
-        _connect().commit()
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            c.execute(
+                "UPDATE users SET last_daily=?, streak=? WHERE user_id=?",
+                (last, streak, uid),
+            )
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
 
 def get_item_count(user_id, item):
     with _lock:
@@ -616,15 +640,35 @@ def top_balances(limit=10):
         return [(r["user_id"], int(r["balance"])) for r in rows]
 
 def add_item(user_id, item, amount=1):
-    uid = str(user_id)
+    """Add a strictly positive quantity without overflowing SQLite's integer range."""
+    uid, amount = str(user_id), int(amount)
+    if not str(item).strip() or amount <= 0 or amount > SQLITE_MAX_INT:
+        raise ValueError("item and positive quantity are required")
     with _lock:
-        _ensure(uid)
-        row = _connect().execute("SELECT qty FROM inventory WHERE user_id=? AND item=?", (uid, item)).fetchone()
-        if row is None:
-            _connect().execute("INSERT INTO inventory (user_id, item, qty) VALUES (?,?,?)", (uid, item, int(amount)))
-        else:
-            _connect().execute("UPDATE inventory SET qty = qty + ? WHERE user_id=? AND item=?", (int(amount), uid, item))
-        _connect().commit()
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute(
+                "SELECT qty FROM inventory WHERE user_id=? AND item=?", (uid, item)
+            ).fetchone()
+            if row is None:
+                c.execute(
+                    "INSERT INTO inventory (user_id, item, qty) VALUES (?,?,?)",
+                    (uid, item, amount),
+                )
+            else:
+                current = int(row["qty"])
+                if current < 0 or current > SQLITE_MAX_INT - amount:
+                    raise OverflowError("inventory quantity would exceed SQLite's integer range")
+                c.execute(
+                    "UPDATE inventory SET qty=qty+? WHERE user_id=? AND item=?",
+                    (amount, uid, item),
+                )
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
 
 def remove_item(user_id, item, amount=1):
     """Atomically consume inventory only when sufficient quantity exists."""
@@ -759,3 +803,12 @@ def set_setting(key, value):
             (key.strip(), value, time.time()),
         )
         connection.commit()
+
+
+def close_database():
+    """Close the process-local SQLite connection cleanly during shutdown."""
+    global _conn
+    with _lock:
+        if _conn is not None:
+            _conn.close()
+            _conn = None
