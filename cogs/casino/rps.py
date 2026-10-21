@@ -41,6 +41,73 @@ async def _settle_wager(game_id, winner_id=None):
     return {"settled": False, "reason": "database_error"}
 
 
+
+_RECOVERY_DELAYS_SECONDS = (5, 15, 30, 60, 120, 300)
+_RECOVERY_TASKS: dict[str, asyncio.Task] = {}
+
+
+async def _retry_wager_recovery(game_id, winner_id=None, on_recovered=None):
+    """Keep retrying unresolved escrow while this process is alive.
+
+    The bank transition is idempotent. If the process shuts down, startup recovery
+    refunds any remaining active escrow, so retrying cannot double-pay a wager.
+    """
+    game_id = str(game_id)
+    logger = logging.getLogger(__name__)
+    attempt = 0
+    try:
+        while True:
+            delay = _RECOVERY_DELAYS_SECONDS[min(attempt, len(_RECOVERY_DELAYS_SECONDS) - 1)]
+            await asyncio.sleep(delay)
+            result = await _settle_wager(game_id, winner_id)
+            if result.get("settled"):
+                logger.info(
+                    "Recovered pending RPS wager game_id=%s status=%s",
+                    game_id,
+                    result.get("status"),
+                )
+                if on_recovered is not None:
+                    try:
+                        await on_recovered(result)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception("Could not refresh the recovered RPS wager message")
+                return
+            if result.get("reason") == "not_found":
+                logger.critical(
+                    "Cannot recover RPS wager because its escrow record is missing game_id=%s",
+                    game_id,
+                )
+                return
+
+            attempt += 1
+            if attempt % 3 == 0:
+                logger.error(
+                    "RPS wager remains escrowed after recovery attempts=%s game_id=%s reason=%s",
+                    attempt,
+                    game_id,
+                    result.get("reason", "unknown"),
+                )
+    except asyncio.CancelledError:
+        raise
+    finally:
+        current = asyncio.current_task()
+        if _RECOVERY_TASKS.get(game_id) is current:
+            _RECOVERY_TASKS.pop(game_id, None)
+
+
+def _schedule_wager_recovery(game_id, winner_id=None, on_recovered=None):
+    """Schedule at most one background recovery worker per wager."""
+    key = str(game_id)
+    existing = _RECOVERY_TASKS.get(key)
+    if existing is not None and not existing.done():
+        return existing
+    task = asyncio.create_task(_retry_wager_recovery(key, winner_id, on_recovered))
+    _RECOVERY_TASKS[key] = task
+    return task
+
+
 # --- CHALLENGE VIEW ---
 class RPSView(LayoutView):
     def __init__(self, ctx, player, opponent, bet, game_id):
@@ -115,6 +182,54 @@ class RPSView(LayoutView):
         for button in self._buttons:
             button.disabled = True
 
+    def _queue_recovery_if_needed(self, result, winner_id=None):
+        if result.get("settled"):
+            return
+        if result.get("reason") not in {"database_error", "balance_limit"}:
+            return
+        _schedule_wager_recovery(
+            self.game_id,
+            winner_id,
+            self._publish_recovered_settlement,
+        )
+
+    async def _publish_recovered_settlement(self, result):
+        if self.message is None:
+            return
+        if result.get("status") == "settled":
+            winner_id = result.get("winner_id")
+            if winner_id is None:
+                description = "تم التأكد أن الرهان اتسوى بالفعل. لم نكرر أي خصم أو صرف."
+            else:
+                description = (
+                    f"اكتملت تسوية الرهان بنجاح. الفائز: <@{winner_id}>.\n"
+                    f"الجائزة المسجلة: **{int(result.get('payout', 0)):,}** {COIN}."
+                )
+        elif result.get("status") == "refunded":
+            description = "اكتملت التسوية بإرجاع الرهان للطرفين بالكامل."
+        else:
+            description = "تمت معالجة الرهان بأمان."
+        self._refresh_panel(
+            base_embed(
+                title="✅ تم تحديث حالة الرهان",
+                description=description,
+                color=THEME["teal"],
+            )
+        )
+        try:
+            await self.message.edit(view=self)
+        except discord.NotFound:
+            logging.getLogger(__name__).info(
+                "Recovered RPS wager after its original message was deleted game_id=%s",
+                self.game_id,
+            )
+        except discord.HTTPException:
+            logging.getLogger(__name__).warning(
+                "Recovered RPS wager but could not update its message game_id=%s",
+                self.game_id,
+                exc_info=True,
+            )
+
     async def publish_result(self, embed, interaction=None):
         self._disable_buttons()
         self._refresh_panel(embed)
@@ -156,7 +271,8 @@ class RPSView(LayoutView):
         if player_choice is None or opponent_choice is None:
             result = await _settle_wager(self.game_id)
             if not result.get("settled"):
-                description = "الرهان لسه محجوز بأمان، ومفيش خصم إضافي. هيتم إعادة محاولة التسوية لاحقًا."
+                self._queue_recovery_if_needed(result)
+                description = "الرهان لسه محجوز بأمان. البوت هيعيد محاولة التسوية تلقائيًا، ولو حصل Restart هيتراجع الرهان عند بدء التشغيل."
             else:
                 description = "حد اتأخر في الاختيار؛ رجعنا الرهان للطرفين بالكامل."
             embed = base_embed(
@@ -169,7 +285,8 @@ class RPSView(LayoutView):
         if player_choice == opponent_choice:
             result = await _settle_wager(self.game_id)
             if not result.get("settled"):
-                description = "الرهان لسه محجوز بأمان، ومفيش خصم إضافي. هيتم إعادة محاولة التسوية لاحقًا."
+                self._queue_recovery_if_needed(result)
+                description = "الرهان لسه محجوز بأمان. البوت هيعيد محاولة التسوية تلقائيًا، ولو حصل Restart هيتراجع الرهان عند بدء التشغيل."
             else:
                 description = (
                     f"اختارتوا الاتنين **{MOVE_NAMES[player_choice]}**.\n"
@@ -190,6 +307,7 @@ class RPSView(LayoutView):
         result = await _settle_wager(self.game_id, winner.id)
 
         if not result.get("settled"):
+            self._queue_recovery_if_needed(result, winner.id)
             embed = base_embed(
                 title="⚠️ الرهان محفوظ",
                 description=(
@@ -235,10 +353,12 @@ class RPSView(LayoutView):
         self.done = True
         settlement = await _settle_wager(self.game_id)
 
+        if not settlement.get("settled"):
+            self._queue_recovery_if_needed(settlement)
         description = (
             "تم إيقاف التحدي وإرجاع الرهان للطرفين."
             if settlement.get("settled")
-            else "التحدي اتوقف؛ الرهان ما زال محفوظًا في سجل البنك لإعادة التسوية بأمان."
+            else "التحدي اتوقف؛ الرهان محفوظ، والبوت هيعيد محاولة التسوية تلقائيًا."
         )
         embed = base_embed(
             title="🛑 التحدي اتوقف",
@@ -364,10 +484,12 @@ class RPS(commands.Cog):
             view=view,
         ):
             refund = await _settle_wager(game_id)
+            if not refund.get("settled") and refund.get("reason") in {"database_error", "balance_limit"}:
+                _schedule_wager_recovery(game_id)
             message = (
                 "❌ فيه لعبة شغالة في الروم؛ رجعنا الرهان للطرفين."
                 if refund.get("settled")
-                else "❌ فيه لعبة شغالة في الروم. الرهان محفوظ في سجل البنك؛ راجعوا حالة البوت قبل أي محاولة جديدة."
+                else "❌ فيه لعبة شغالة في الروم. الرهان محفوظ، والبوت هيعيد محاولة التسوية تلقائيًا."
             )
             return await ctx.send(
                 view=embed_to_v2(base_embed(
