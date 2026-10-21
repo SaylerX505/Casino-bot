@@ -10,8 +10,8 @@ from cogs.casino.permissions import GAME_LABELS
 from cogs.utility.wizard import (
     AdminRoleWizardView,
     GameChannelWizardView,
-    StaffRoleWizardView,
     SetupWizard,
+    StaffRoleWizardView,
     WizardHomeView,
     WizardReviewView,
 )
