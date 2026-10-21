@@ -1,7 +1,7 @@
 """Regression tests for single-guild economy audit logging."""
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
@@ -20,12 +20,13 @@ class EconomyAuditLogTests(unittest.IsolatedAsyncioTestCase):
         )
         cog, _ = self.build_cog(channel)
 
-        await cog.log_action(
-            SimpleNamespace(id=222),
-            "Transfer",
-            "member transfer",
-            discord.Color.orange(),
-        )
+        with patch("cogs.casino.currency.configured_log_channel_id", return_value=111):
+            await cog.log_action(
+                SimpleNamespace(id=222),
+                "Transfer",
+                "member transfer",
+                discord.Color.orange(),
+            )
 
         channel.send.assert_not_awaited()
 
@@ -33,12 +34,13 @@ class EconomyAuditLogTests(unittest.IsolatedAsyncioTestCase):
         channel = SimpleNamespace(guild=SimpleNamespace(id=111), send=AsyncMock())
         cog, _ = self.build_cog(channel)
 
-        await cog.log_action(
-            SimpleNamespace(id=111),
-            "Transfer",
-            "member transfer",
-            discord.Color.orange(),
-        )
+        with patch("cogs.casino.currency.configured_log_channel_id", return_value=111):
+            await cog.log_action(
+                SimpleNamespace(id=111),
+                "Transfer",
+                "member transfer",
+                discord.Color.orange(),
+            )
 
         channel.send.assert_awaited_once()
         self.assertIsInstance(channel.send.await_args.kwargs["embed"], discord.Embed)
