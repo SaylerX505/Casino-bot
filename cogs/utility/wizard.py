@@ -11,8 +11,8 @@ from discord.ui import (
     Container,
     LayoutView,
     RoleSelect,
-    Separator,
     Select,
+    Separator,
     TextDisplay,
 )
 
