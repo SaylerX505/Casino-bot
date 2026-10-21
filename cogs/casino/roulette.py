@@ -338,8 +338,7 @@ class RouletteLobby(discord.ui.View):
                         p = next((x for x in active_players if x.id == kid), None)
                         if p:
                             # --- SHIELD RESOLUTION ---
-                            if currency_cog and currency_cog.get_item_count(p.id, "shield") > 0:
-                                currency_cog.remove_item(p.id, "shield", 1)
+                            if currency_cog and currency_cog.remove_item(p.id, "shield", 1):
                                 embed = discord.Embed(
                                     title="🛡️ Shield Activation!",
                                     description=f"**Hold on!** {p.mention} had a **Shield (درع الحفره)** equipped!\n"
@@ -353,8 +352,7 @@ class RouletteLobby(discord.ui.View):
                                     attacker_died = True
                             else:
                                 # --- INSURANCE RESOLUTION ---
-                                if currency_cog and currency_cog.get_item_count(p.id, "roulette_ins") > 0:
-                                    currency_cog.remove_item(p.id, "roulette_ins", 1)
+                                if currency_cog and currency_cog.remove_item(p.id, "roulette_ins", 1):
                                     embed = discord.Embed(
                                         description=f"💉 **{p.mention}** استخدم **تأمين الروليت**! الرصاصة عدت من جنبه... عاش يا وحش!",
                                         color=discord.Color.gold()
