@@ -7,6 +7,11 @@ import logging
 import config
 from discord import app_commands
 
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 # --- BOT CONFIGURATION ---
 intents = discord.Intents.default()
 intents.message_content = True
@@ -85,11 +90,11 @@ async def on_ready():
     else:
         logger.warning("HOME_GUILD_ID is not configured; single-server enforcement is disabled")
 
-    print(f'🔥 Bot is online! Logged in as {bot.user}')
+    logger.info("Bot is online as user_id=%s", getattr(bot.user, "id", "unknown"))
     try:
-        await bot.change_presence(status=discord.Status.dnd, activity=discord.CustomActivity(name='مرحبا المانيا, انا الحفرة'))
-    except Exception as e:
-        print(f"⚠️ Presence failed: {e}")
+        await bot.change_presence(status=discord.Status.dnd, activity=discord.CustomActivity(name="مرحبا المانيا, انا الحفرة"))
+    except discord.HTTPException:
+        logger.exception("Could not set bot presence")
     
     if not getattr(bot, "_slash_commands_synced", False):
         try:
@@ -221,6 +226,7 @@ async def load_cogs():
     utility_allow = {'help.py', 'ai.py', 'admin.py'}
 
     failures = []
+    logger = logging.getLogger("casino.extensions")
     for directory in cog_directories:
         folder_path = base_dir / directory.replace('.', '/')
         if not folder_path.exists():
@@ -243,10 +249,10 @@ async def load_cogs():
                 cog_path = f"{directory}.{filename[:-3]}"
                 try:
                     await bot.load_extension(cog_path)
-                    print(f"📦 Loaded Cog: {cog_path}")
+                    logger.info("Loaded extension %s", cog_path)
                 except Exception as e:
-                    failures.append(f"{cog_path}: {type(e).__name__}: {e}")
-                    print(f"❌ Failed to load {cog_path}: {e}")
+                    failures.append(f"{cog_path}: {type(e).__name__}")
+                    logger.exception("Failed to load extension %s", cog_path)
 
     if failures:
         raise RuntimeError("Required extensions failed to load:\n" + "\n".join(failures))
@@ -254,11 +260,17 @@ async def load_cogs():
 # --- APPLICATION STARTUP ---
 async def main():
     if not config.TOKEN:
-        print("❌ DISCORD_TOKEN is missing! Put it in the .env file (see .env.example).")
+        logging.getLogger("casino.startup").error(
+            "DISCORD_TOKEN is missing. Configure the host environment using .env.example."
+        )
         return
-    async with bot:
-        await load_cogs()
-        await bot.start(config.TOKEN)
+    try:
+        async with bot:
+            await load_cogs()
+            await bot.start(config.TOKEN)
+    finally:
+        from cogs.casino import bank
+        bank.close_database()
 
 if __name__ == "__main__":
     asyncio.run(main())
