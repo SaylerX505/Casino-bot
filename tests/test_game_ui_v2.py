@@ -22,6 +22,7 @@ from cogs.casino.mafia import (
 )
 from cogs.casino.roulette import KickView, RouletteLobby
 from cogs.casino.wheel import WheelLobby, WheelResultPanel
+from cogs.utility.theme import embed_to_v2
 
 
 class _FakeMember:
@@ -35,6 +36,35 @@ class _FakeMember:
 
     def __eq__(self, other):
         return getattr(other, "id", None) == self.id
+
+
+class LegacyAnnouncementMigrationTests(unittest.TestCase):
+    def test_legacy_embed_renderer_keeps_text_and_attached_art_in_v2(self):
+        legacy = discord.Embed(
+            title="اختبار نتيجة",
+            description="النتيجة ظهرت بشكل منفصل.",
+            color=discord.Color.orange(),
+        )
+        legacy.add_field(name="التفاصيل", value="اللاعب كسب 20 نقطة.", inline=False)
+        legacy.set_footer(text="Çukur • Game Result")
+        legacy.set_image(url="attachment://result.png")
+
+        panel = embed_to_v2(legacy)
+        self.assertIsInstance(panel, LayoutView)
+        text = "\\n".join(
+            item.content
+            for item in panel.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("اختبار نتيجة", text)
+        self.assertIn("النتيجة ظهرت بشكل منفصل", text)
+        self.assertIn("اللاعب كسب 20 نقطة", text)
+        self.assertIn("Çukur • Game Result", text)
+        gallery = next(
+            item for item in panel.walk_children()
+            if isinstance(item, discord.ui.MediaGallery)
+        )
+        self.assertIn("attachment://result.png", str(gallery.items[0].media.url))
 
 
 class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
