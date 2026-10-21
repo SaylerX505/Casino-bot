@@ -57,6 +57,7 @@ async def generate_map_with_x(searched_locations):
     try:
         base = Image.open("mafiagame/locations.png").convert("RGBA")
     except Exception:
+        logger.debug("Hide-and-seek location image unavailable; using a fallback canvas", exc_info=True)
         base = Image.new("RGBA", (1200, 800), (40, 40, 40, 255))
         
     draw = ImageDraw.Draw(base)
