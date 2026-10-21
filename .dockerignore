@@ -60,3 +60,5 @@ data/used_images.json
 **/*.sqlite3-*
 data/backups/
 data/backups/**
+archive-wrapper-files/
+data/currency.json
