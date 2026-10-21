@@ -13,6 +13,17 @@ class HomeGuildPolicyTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await main.enforce_home_guild_for_prefix(ctx))
             self.assertTrue(await main.enforce_home_guild_for_prefix(SimpleNamespace(guild=SimpleNamespace(id=202))))
 
+    async def test_startup_refuses_to_run_without_home_guild(self):
+        with (
+            patch("main.config.TOKEN", "test-token"),
+            patch("main.config.HOME_GUILD_ID", None),
+            patch("main.logging.getLogger") as get_logger,
+        ):
+            await main.main()
+
+        get_logger.return_value.error.assert_called_once()
+        self.assertIn("HOME_GUILD_ID is required", get_logger.return_value.error.call_args.args[0])
+
     async def test_slash_commands_acknowledge_wrong_guild_privately(self):
         interaction = SimpleNamespace(
             guild_id=101,
