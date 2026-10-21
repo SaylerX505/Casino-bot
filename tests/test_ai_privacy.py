@@ -55,6 +55,21 @@ class AIPrivacyTests(unittest.TestCase):
         with patch("cogs.utility.ai.config.AI_ALLOWED_ROLE_IDS", {54321}):
             self.assertFalse(self.ai._is_authorized(member))
 
+    def test_wizard_role_override_takes_precedence_over_environment_defaults(self):
+        member = make_message(roles=[SimpleNamespace(id=12345)])
+        with patch("cogs.casino.permissions.bank.get_setting", return_value="[12345]"):
+            self.assertTrue(self.ai._is_authorized(member))
+        with patch("cogs.casino.permissions.bank.get_setting", return_value="[]"):
+            self.assertFalse(self.ai._is_authorized(member))
+
+    def test_ai_role_configuration_fails_closed_when_database_is_unavailable(self):
+        member = make_message(roles=[SimpleNamespace(id=12345)])
+        with (
+            patch("cogs.casino.permissions.bank.get_setting", side_effect=OSError("storage unavailable")),
+            patch("cogs.utility.ai.config.AI_ALLOWED_ROLE_IDS", {12345}),
+        ):
+            self.assertFalse(self.ai._is_authorized(member))
+
 
 if __name__ == "__main__":
     unittest.main()
