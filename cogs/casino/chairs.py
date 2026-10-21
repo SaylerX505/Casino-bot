@@ -169,7 +169,7 @@ class ChairsLobby(LayoutView):
     def _panel_content(self):
         embed = self.get_embed()
         description = embed.description or ""
-        return f"# {embed.title or 'لعبة الكراسي الموسيقية'}\\n{description}\\n\\n-# كازينو الحفرة • {config.BRAND}"
+        return f"# {embed.title or 'لعبة الكراسي الموسيقية'}\n{description}\n\n-# كازينو الحفرة • {config.BRAND}"
 
     def _refresh_panel(self):
         self._panel_text.content = self._panel_content()[:4000]
@@ -195,13 +195,13 @@ class ChairsLobby(LayoutView):
         if self.game_started: return
         if len(self.players) < 2:
             self.game_started = True
-            self._panel_text.content = "# العدد غير كافي\\nمحتاجين لاعبين على الأقل عشان الجولة تبدأ."
+            self._panel_text.content = "# العدد غير كافي\nمحتاجين لاعبين على الأقل عشان الجولة تبدأ."
             self._disable_buttons()
             if self.message: await self.message.edit(view=self)
             return
 
         self.game_started = True
-        self._panel_text.content = "# جاري تجهيز الكراسي الموسيقية\\nهنبدأ الجولة دلوقتي. جهّز نفسك."
+        self._panel_text.content = "# جاري تجهيز الكراسي الموسيقية\nهنبدأ الجولة دلوقتي. جهّز نفسك."
         self._disable_buttons()
         if self.message: await self.message.edit(view=self)
         
@@ -400,8 +400,7 @@ class Chairs(commands.Cog):
             view.timer_task.cancel()
             raise
         if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
-            for child in view.children:
-                child.disabled = True
+            view._disable_buttons()
             await view.message.edit(view=view)
 
 async def setup(bot):
