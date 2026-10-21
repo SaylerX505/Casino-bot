@@ -2,13 +2,17 @@ import discord
 from discord.ext import commands
 from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
+import logging
 from PIL import Image, ImageDraw
 import io
 import random
 import config
 
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import lobby_embed, result_embed
+from cogs.utility.theme import lobby_embed, report_game_failure, result_embed
+
+
+logger = logging.getLogger(__name__)
 
 
 class WatermarkView(discord.ui.View):
@@ -419,6 +423,13 @@ async def run_game_loop(ctx, players):
 
     except asyncio.CancelledError:
         raise
+    except Exception:
+        logger.exception("Hide-and-seek game loop failed")
+        await report_game_failure(
+            ctx,
+            "توقفت الغميضة بسبب خطأ",
+            "حصل عطل غير متوقع أثناء الجولة. تم تسجيل الخطأ، ولم يتم تنفيذ أي خصم إضافي بسبب الخطأ.",
+        )
     finally:
         release_game_task(ctx.bot, ctx.channel.id, asyncio.current_task())
 
