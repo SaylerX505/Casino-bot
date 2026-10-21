@@ -1,8 +1,93 @@
-"""Centralized permission checks for game hosting and bot administration."""
+"""Centralized, configurable permissions and game-channel policy."""
+import json
+import logging
+
 import discord
 from discord.ext import commands
 
 import config
+from cogs.casino import bank
+
+logger = logging.getLogger(__name__)
+
+# Canonical game keys are also the persisted channel-setting keys.
+GAME_LABELS = {
+    "mafia": "المافيا",
+    "roulette": "الروليت الروسي",
+    "hide_and_seek": "الغميضة",
+    "geoguessr": "GeoGuessr",
+    "chairs": "الكراسي الموسيقية",
+    "wheel": "عجلة الحفرة",
+    "rps": "حجرة ورقة مقص",
+    "riddle": "الفزورة",
+}
+GAME_COMMAND_ALIASES = {
+    "mafia": "mafia",
+    "مافيا": "mafia",
+    "roulette": "roulette",
+    "روليت": "roulette",
+    "hide-and-seek": "hide_and_seek",
+    "hide_and_seek": "hide_and_seek",
+    "غميضه": "hide_and_seek",
+    "غميضة": "hide_and_seek",
+    "geoguessr": "geoguessr",
+    "geo": "geoguessr",
+    "جيو": "geoguessr",
+    "كراسي": "chairs",
+    "chairs": "chairs",
+    "wheel": "wheel",
+    "عجلة": "wheel",
+    "rps": "rps",
+    "حومص": "rps",
+    "riddle": "riddle",
+    "فزورة": "riddle",
+}
+
+
+class GameChannelBlocked(commands.CheckFailure):
+    """Raised when a game command is used outside its configured channel(s)."""
+
+
+def staff_role_setting_key(guild_id: int) -> str:
+    return f"guild:{int(guild_id)}:staff_role_ids"
+
+
+def game_channel_setting_key(guild_id: int, game_key: str) -> str:
+    return f"guild:{int(guild_id)}:game_channels:{game_key}"
+
+
+def _parse_id_list(raw, *, fallback=None):
+    if raw is None:
+        return list(fallback or [])
+    try:
+        values = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(values, list):
+        return None
+    result = []
+    for value in values:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            continue
+        if value > 0 and value not in result:
+            result.append(value)
+    return result
+
+
+def configured_staff_role_ids(guild_id: int) -> set[int]:
+    """Return configured game-staff roles; unsaved guilds use the legacy defaults."""
+    try:
+        raw = bank.get_setting(staff_role_setting_key(guild_id))
+    except Exception:
+        logger.exception("Could not read configured staff roles for guild=%s", guild_id)
+        return set()
+    values = _parse_id_list(raw, fallback=config.STAFF_ROLE_IDS)
+    if values is None:
+        logger.error("Malformed staff-role configuration for guild=%s", guild_id)
+        return set()
+    return set(values)
 
 
 def has_admin_access(user) -> bool:
@@ -11,20 +96,83 @@ def has_admin_access(user) -> bool:
 
 
 def has_staff_access(user) -> bool:
-    """Game staff comes only from Administrator or explicitly configured staff roles.
-
-    The per-guild bot-admin allowlist is deliberately not a staff-role shortcut:
-    it gates sensitive bot tools, but must never elevate game permissions.
-    """
+    """Game staff comes from Discord Administrator or explicitly configured roles."""
     if has_admin_access(user):
         return True
 
+    guild = getattr(user, "guild", None)
+    guild_id = getattr(guild, "id", None)
+    if guild_id is None:
+        return False
     role_ids = {
         getattr(role, "id", None)
         for role in getattr(user, "roles", ())
     }
-    staff_role_ids = set(getattr(config, "STAFF_ROLE_IDS", ()) or ())
-    return bool(role_ids.intersection(staff_role_ids))
+    return bool(role_ids.intersection(configured_staff_role_ids(guild_id)))
+
+
+def game_key_from_command_name(name: str | None) -> str | None:
+    if not name:
+        return None
+    return GAME_COMMAND_ALIASES.get(str(name).strip().lower())
+
+
+def _interaction_command_names(interaction: discord.Interaction) -> list[str]:
+    names = []
+    command = getattr(interaction, "command", None)
+    if command is not None:
+        names.extend(
+            str(value)
+            for value in (
+                getattr(command, "name", None),
+                getattr(command, "qualified_name", None),
+            )
+            if value
+        )
+
+    data = getattr(interaction, "data", None)
+    if isinstance(data, dict):
+        def collect(node):
+            if not isinstance(node, dict):
+                return
+            name = node.get("name")
+            if isinstance(name, str):
+                names.append(name)
+            for option in node.get("options", ()) or ():
+                collect(option)
+        collect(data)
+    return names
+
+
+def game_key_from_interaction(interaction: discord.Interaction) -> str | None:
+    for name in reversed(_interaction_command_names(interaction)):
+        game_key = game_key_from_command_name(name)
+        if game_key:
+            return game_key
+    return None
+
+
+def is_game_channel_allowed(guild_id: int | None, channel_id: int | None, game_key: str) -> bool:
+    """Missing/'all' policy means unrestricted; a configured list is an allowlist."""
+    if guild_id is None or channel_id is None or game_key not in GAME_LABELS:
+        return True
+    try:
+        raw = bank.get_setting(game_channel_setting_key(guild_id, game_key), "all")
+    except Exception:
+        logger.exception(
+            "Could not read channel policy guild=%s game=%s",
+            guild_id,
+            game_key,
+        )
+        return False
+
+    if raw is None or str(raw).strip().lower() == "all":
+        return True
+    channel_ids = _parse_id_list(raw)
+    if channel_ids is None:
+        logger.error("Malformed channel policy guild=%s game=%s", guild_id, game_key)
+        return False
+    return int(channel_id) in set(channel_ids)
 
 
 def is_staff_or_admin():
