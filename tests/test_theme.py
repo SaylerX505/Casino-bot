@@ -1,7 +1,9 @@
 """Regression tests for shared result presentation."""
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
-from cogs.utility.theme import THEME, result_embed
+from cogs.utility.theme import THEME, StatusPanel, report_game_failure, result_embed
 
 
 class ResultEmbedTests(unittest.TestCase):
@@ -23,6 +25,50 @@ class ResultEmbedTests(unittest.TestCase):
 
         self.assertEqual(loss.color.value, THEME["red_dark"])
         self.assertEqual(unknown.color.value, THEME["grey"])
+
+
+
+class GameFailureReportingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_edits_active_game_message_instead_of_sending_duplicate(self):
+        message = SimpleNamespace(edit=AsyncMock())
+        bot = SimpleNamespace(
+            active_games={10: {"view": SimpleNamespace(message=message)}}
+        )
+        ctx = SimpleNamespace(
+            bot=bot,
+            channel=SimpleNamespace(id=10),
+            send=AsyncMock(),
+        )
+
+        reported = await report_game_failure(
+            ctx,
+            "Game stopped",
+            "The round failed safely.",
+        )
+
+        self.assertTrue(reported)
+        message.edit.assert_awaited_once()
+        ctx.send.assert_not_awaited()
+        kwargs = message.edit.await_args.kwargs
+        self.assertEqual(kwargs["embeds"], [])
+        self.assertIsInstance(kwargs["view"], StatusPanel)
+
+    async def test_sends_failure_panel_when_no_active_message_exists(self):
+        ctx = SimpleNamespace(
+            bot=SimpleNamespace(active_games={}),
+            channel=SimpleNamespace(id=11),
+            send=AsyncMock(),
+        )
+
+        reported = await report_game_failure(
+            ctx,
+            "Game stopped",
+            "The round failed safely.",
+        )
+
+        self.assertTrue(reported)
+        ctx.send.assert_awaited_once()
+        self.assertIsInstance(ctx.send.await_args.kwargs["view"], StatusPanel)
 
 
 if __name__ == "__main__":
