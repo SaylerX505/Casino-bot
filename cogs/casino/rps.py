@@ -243,7 +243,7 @@ class RPS(commands.Cog):
         aliases=["rps", "حجرة", "مقص"],
         description="تحدَّ عضوًا في حجرة ورقة مقص برهان",
     )
-    async def rps(self, ctx, bet: str = None, opponent: discord.Member = None):
+    async def rps(self, ctx, bet: str | None = None, opponent: discord.Member | None = None):
         if is_active_game(self.bot, ctx.channel.id):
             return await ctx.send(
                 embed=base_embed(
