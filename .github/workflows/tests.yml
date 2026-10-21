@@ -13,7 +13,7 @@ jobs:
       - name: Reject tracked runtime state and secret files
         shell: bash
         run: |
-          for path in .env data/ai_data.json data/state.json; do
+          for path in .env data/ai_data.json data/state.json data/used_images.json; do
             if git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
               echo "::error::Sensitive runtime file must not be tracked: $path"
               exit 1
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           test -f .dockerignore
-          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/backups/"; do
+          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/used_images.json" "data/backups/"; do
             if ! grep -Fxq "$pattern" .dockerignore; then
               echo "::error::Missing Docker ignore rule: $pattern"
               exit 1
