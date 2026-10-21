@@ -7,9 +7,9 @@ import discord
 from discord.ui import LayoutView
 
 from cogs.casino.rps import (
+    _RECOVERY_TASKS,
     RPS,
     RPSView,
-    _RECOVERY_TASKS,
     _schedule_wager_recovery,
     _settle_wager,
 )
