@@ -1,13 +1,14 @@
+import logging
+import random
+import re
+
 import discord
 from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
-import logging
-import random
-import time
-import re
+
 import config
-from cogs.casino import bank as bank
-from cogs.utility.theme import StatusPanel, base_embed, THEME
+from cogs.casino import bank
+from cogs.utility.theme import StatusPanel
 
 COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
 LOG_CHANNEL_ID = config.CURRENCY_LOG_CHANNEL_ID
@@ -484,7 +485,7 @@ class Currency(commands.Cog):
     def charge_up_to(self, user_id: int, amount: int):
         return bank.charge_up_to(user_id, amount)
 
-    def settle_wheel(self, user_id: int, payout: int = 0, target_loss: int = None):
+    def settle_wheel(self, user_id: int, payout: int = 0, target_loss: int | None = None):
         return bank.settle_wheel(user_id, 50, payout=payout, target_loss=target_loss)
     def place_bet(self, player_a: int, player_b: int, amount: int) -> bool:
         return bank.place_bet(player_a, player_b, amount)
@@ -581,7 +582,7 @@ class Currency(commands.Cog):
         )
 
     @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
-    async def use_item(self, ctx, item: str = None):
+    async def use_item(self, ctx, item: str | None = None):
         private = ctx.interaction is not None
         if not item:
             return await ctx.send(
