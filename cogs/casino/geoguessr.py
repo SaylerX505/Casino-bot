@@ -1,25 +1,37 @@
+import asyncio
+import io
+import json
+import logging
+import math
+import os
+import random
+import time
+from functools import partial
+
+import aiohttp
 import discord
 from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
-import asyncio
-import logging
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import io
-import time
-import aiohttp
-import json
-import random
-import os
-import math
-from geopy.geocoders import Nominatim
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 from geopy.distance import geodesic
+from geopy.geocoders import Nominatim
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
 import config
-
+from cogs.casino.game_registry import (
+    is_active_game,
+    owns_game_task,
+    register_game_task,
+    release_game_task,
+    set_game_view,
+)
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import lobby_embed, report_game_failure, result_embed
-
-logger = logging.getLogger(__name__)
-
+from cogs.utility.theme import (
+    THEME,
+    StatusPanel,
+    lobby_embed,
+    report_game_failure,
+    result_embed,
+)
 
 class WatermarkView(discord.ui.View):
     def __init__(self):
@@ -508,7 +520,7 @@ async def run_game_loop(ctx, players):
 
 
 # --- MENUS AND VIEWS ---
-class GuessGameMenu(discord.ui.View):
+class GuessGameMenu(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
@@ -516,6 +528,18 @@ class GuessGameMenu(discord.ui.View):
         self.game_started = False
         self.time_left = 40
         self.message = None
+        self._panel_text = TextDisplay(self._panel_content())
+        self._buttons = []
+        for label, custom_id, callback_name, emoji in (
+            ("انضمام (Join)", "geoguessr_join", "join_button", None),
+            ("مغادرة (Leave)", "geoguessr_leave", "leave_button", None),
+            ("ابدأ الآن", "geoguessr_start", "start_button", None),
+            ("+10 ثواني", "geoguessr_add_time", "add_time", "⏱️"),
+        ):
+            button = discord.ui.Button(label=label, custom_id=custom_id, style=discord.ButtonStyle.secondary, emoji=emoji)
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(Container(self._panel_text, Separator(), ActionRow(*self._buttons), accent_color=THEME["gold"]))
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
@@ -530,6 +554,27 @@ class GuessGameMenu(discord.ui.View):
         embed.set_thumbnail(url=SERVER_LOGO_URL)
         return embed
 
+    def _panel_content(self):
+        embed = self.get_embed()
+        return f"# {embed.title or 'GeoGuessr'}\n{embed.description or ''}\n\n-# كازينو الحفرة • {config.BRAND}"[:4000]
+
+    def _refresh_panel(self, embed=None):
+        embed = embed or self.get_embed()
+        title = f"# {embed.title}\n" if embed.title else ""
+        description = f"{embed.description}\n\n" if embed.description else ""
+        footer = f"-# كازينو الحفرة • {config.BRAND}"
+        self._panel_text.content = (title + description + footer)[:4000]
+
+    def _disable_buttons(self):
+        for button in self._buttons:
+            button.disabled = True
+
+    async def _send_private_embed(self, interaction, embed):
+        await interaction.response.send_message(
+            view=StatusPanel(embed.title or "تنبيه", embed.description or "حصل خطأ غير متوقع.", "warning"),
+            ephemeral=True,
+        )
+
     async def run_timer(self):
         while self.time_left > 0 and not self.game_started:
             await asyncio.sleep(5)
@@ -538,7 +583,7 @@ class GuessGameMenu(discord.ui.View):
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
                 try:
-                    await self.message.edit(embed=self.get_embed())
+                    self._refresh_panel()\n                    await self.message.edit(view=self)
                 except discord.HTTPException:
                     logger.debug("Could not refresh GeoGuessr lobby", exc_info=True)
 
@@ -551,8 +596,8 @@ class GuessGameMenu(discord.ui.View):
                 description="الوقت خلص و محدش دخل, دنتو عيال فصيله",
                 color=discord.Color.red()
             )
-            await self.ctx.send(embed=cancel_embed)
-            for child in self.children: child.disabled = True
+            self._refresh_panel(cancel_embed)
+            self._disable_buttons()
             if self.message: await self.message.edit(view=self)
             return
 
@@ -563,78 +608,74 @@ class GuessGameMenu(discord.ui.View):
             color=discord.Color.green()
         )
         start_embed.set_thumbnail(url=SERVER_LOGO_URL)
-        await self.ctx.send(embed=start_embed, delete_after=5)
-        for child in self.children: child.disabled = True
+        self._refresh_panel(start_embed)
+        self._disable_buttons()
         if self.message: await self.message.edit(view=self)
         
         task = self.ctx.bot.loop.create_task(run_game_loop(self.ctx, list(self.players)))
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "GeoGuessr", replace_task=self.timer_task):
             task.cancel()
 
-    @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.secondary)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
                 description="اللعبه شغاله يابا",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._send_private_embed(interaction, embed)
         if len(self.players) >= 15:
             embed = discord.Embed(
                 description="الحد الأقصى 15 لاعب!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._send_private_embed(interaction, embed)
         if interaction.user in self.players:
             embed = discord.Embed(
                 description="منتا دخلت يا عم متقرفناش بقي",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await self._send_private_embed(interaction, embed)
         else:
             self.players.add(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()\n            await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.secondary)
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
                 description="اللعبة بدأت ياعمنااا",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._send_private_embed(interaction, embed)
         if interaction.user in self.players:
             self.players.discard(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()\n            await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
                 description="ولا انتا مش ف اللعبه يلا بطل استعباط",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await self._send_private_embed(interaction, embed)
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
                 description="بس يلا هش بعيد",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._send_private_embed(interaction, embed)
         await interaction.response.defer()
         self.time_left = 0
         await self.auto_start()
 
-    @discord.ui.button(label="+10 ثواني", style=discord.ButtonStyle.secondary, emoji="⏱️")
     async def add_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
                 description="هش بعيد ياه",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._send_private_embed(interaction, embed)
         self.time_left += 10
-        await interaction.response.edit_message(embed=self.get_embed())
+        self._refresh_panel()\n            await interaction.response.edit_message(view=self)
 
 class ActiveGameView(discord.ui.View):
     def __init__(self, executor, timer_state):
@@ -674,7 +715,7 @@ class GeoGuessr(commands.Cog):
             view.timer_task.cancel()
             return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
         try:
-            view.message = await ctx.send(embed=view.get_embed(), view=view)
+            view.message = await ctx.send(view=view)
         except Exception:
             release_game_task(self.bot, ctx.channel.id, view.timer_task)
             view.timer_task.cancel()
