@@ -55,6 +55,48 @@ class AdminSafetyTests(unittest.IsolatedAsyncioTestCase):
         add_admin.assert_called_once_with(123, 20)
         interaction.response.send_message.assert_awaited_once()
 
+    async def test_economy_credit_is_owner_only_while_wallets_are_global(self):
+        interaction = fake_interaction()
+        member = SimpleNamespace(id=20, mention="<@20>")
+        self.cog.bot.is_owner = AsyncMock(return_value=False)
+
+        with (
+            patch.object(self.cog, "_require_admin", new=AsyncMock(return_value=True)),
+            patch.object(bank, "credit_balance") as credit,
+        ):
+            await self.cog.economy_credit.callback(self.cog, interaction, member, 100)
+
+        credit.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+        view = interaction.response.send_message.await_args.kwargs["view"]
+        self.assertEqual(view.children[0].children[0].content.split("\n", 1)[0], "# الإعداد ده مش متاح لأدمن السيرفر")
+
+    async def test_economy_debit_is_owner_only_while_wallets_are_global(self):
+        interaction = fake_interaction()
+        member = SimpleNamespace(id=20, mention="<@20>")
+        self.cog.bot.is_owner = AsyncMock(return_value=False)
+
+        with (
+            patch.object(self.cog, "_require_admin", new=AsyncMock(return_value=True)),
+            patch.object(bank, "remove_balance") as remove,
+        ):
+            await self.cog.economy_debit.callback(self.cog, interaction, member, 100)
+
+        remove.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+
+    async def test_ai_toggle_is_owner_only_while_setting_is_global(self):
+        interaction = fake_interaction()
+        self.cog.bot.is_owner = AsyncMock(return_value=False)
+
+        with (
+            patch.object(self.cog, "_require_admin", new=AsyncMock(return_value=True)),
+        ):
+            await self.cog.ai_toggle.callback(self.cog, interaction, False)
+
+        self.cog.bot.get_cog.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+
     async def test_bank_reset_is_blocked_without_deleting_shared_economy(self):
         interaction = fake_interaction()
 
