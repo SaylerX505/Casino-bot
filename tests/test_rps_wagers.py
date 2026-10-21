@@ -2,6 +2,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from cogs.casino import bank
 
@@ -61,6 +62,30 @@ class RPSWagerTests(unittest.TestCase):
         self.assertFalse(bank.create_rps_wager("match-insufficient", 101, 202, 100))
         self.assertEqual(bank.get_balance(101), 1_000)
         self.assertEqual(bank.get_balance(202), 50)
+
+    def test_active_wager_ids_lists_only_unsettled_escrow(self):
+        self.assertTrue(bank.create_rps_wager("match-active", 101, 202, 100))
+        self.assertEqual(bank.active_rps_wager_ids(), ["match-active"])
+
+        self.assertTrue(bank.settle_rps_wager("match-active")["settled"])
+        self.assertEqual(bank.active_rps_wager_ids(), [])
+
+    def test_one_failed_orphan_does_not_block_other_refunds(self):
+        self.assertTrue(bank.create_rps_wager("match-fails-recovery", 101, 202, 100))
+        self.assertTrue(bank.create_rps_wager("match-recovers", 101, 202, 100))
+        real_settle = bank.settle_rps_wager
+
+        def fail_one_record(game_id, winner_id=None):
+            if game_id == "match-fails-recovery":
+                raise RuntimeError("simulated per-record storage fault")
+            return real_settle(game_id, winner_id)
+
+        with patch("cogs.casino.bank.settle_rps_wager", side_effect=fail_one_record):
+            self.assertEqual(bank.refund_orphaned_rps_wagers(), 1)
+
+        self.assertEqual(bank.active_rps_wager_ids(), ["match-fails-recovery"])
+        self.assertEqual(bank.get_balance(101), 900)
+        self.assertEqual(bank.get_balance(202), 900)
 
     def test_non_participant_cannot_settle_a_wager(self):
         self.assertTrue(bank.create_rps_wager("match-invalid-winner", 101, 202, 100))
