@@ -725,8 +725,7 @@ class GeoGuessr(commands.Cog):
             view.timer_task.cancel()
             raise
         if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
-            for child in view.children:
-                child.disabled = True
+            view._disable_buttons()
             await view.message.edit(view=view)
 
 async def setup(bot):
