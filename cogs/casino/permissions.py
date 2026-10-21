@@ -52,6 +52,10 @@ def staff_role_setting_key(guild_id: int) -> str:
     return f"guild:{int(guild_id)}:staff_role_ids"
 
 
+def manager_role_setting_key(guild_id: int) -> str:
+    return f"guild:{int(guild_id)}:manager_role_ids"
+
+
 def game_channel_setting_key(guild_id: int, game_key: str) -> str:
     return f"guild:{int(guild_id)}:game_channels:{game_key}"
 
@@ -95,8 +99,22 @@ def has_admin_access(user) -> bool:
     return bool(getattr(permissions, "administrator", False))
 
 
+def configured_manager_role_ids(guild_id: int) -> set[int]:
+    """Return roles trusted to open the setup wizard; only Discord admins can edit them."""
+    try:
+        raw = bank.get_setting(manager_role_setting_key(guild_id))
+    except Exception:
+        logger.exception("Could not read configured manager roles for guild=%s", guild_id)
+        return set()
+    values = _parse_id_list(raw, fallback=[])
+    if values is None:
+        logger.error("Malformed manager-role configuration for guild=%s", guild_id)
+        return set()
+    return set(values)
+
+
 def has_staff_access(user) -> bool:
-    """Game staff comes from Discord Administrator or explicitly configured roles."""
+    """Discord admins, configured bot managers, and game-staff roles can host games."""
     if has_admin_access(user):
         return True
 
@@ -108,7 +126,9 @@ def has_staff_access(user) -> bool:
         getattr(role, "id", None)
         for role in getattr(user, "roles", ())
     }
-    return bool(role_ids.intersection(configured_staff_role_ids(guild_id)))
+    permitted_roles = configured_staff_role_ids(guild_id)
+    permitted_roles.update(configured_manager_role_ids(guild_id))
+    return bool(role_ids.intersection(permitted_roles))
 
 
 def game_key_from_command_name(name: str | None) -> str | None:
