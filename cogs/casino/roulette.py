@@ -396,29 +396,28 @@ class RouletteLobby(LayoutView):
                 
                 img_bytes = await generate_sniper_image(chosen_player)
                 file = discord.File(fp=img_bytes, filename="sniper.png")
-                
-                embed = discord.Embed(
-                    title=f"🎯 الجولة {round_num}",
-                    description=f"✅ القناص اتحدد!\nقدامك **20 ثانية** تختار ضحيتك...",
-                    color=discord.Color.red()
+
+                has_weapon = bool(
+                    currency_cog
+                    and currency_cog.get_item_count(chosen_player.id, "double_shot") > 0
                 )
-                embed.set_image(url="attachment://sniper.png")
-                
-                has_weapon = False
-                if currency_cog:
-                    has_weapon = currency_cog.get_item_count(chosen_player.id, "double_shot") > 0
-                
-                view = KickView(chosen_player, active_players, has_weapon, currency_cog)
-                msg = await self.ctx.send(content=f"🔔 السلاح في إيدك يا **{chosen_player.mention}** دورك جه!", embed=embed, file=file, view=view)
+                view = KickView(
+                    chosen_player,
+                    active_players,
+                    has_weapon,
+                    currency_cog,
+                    round_num=round_num,
+                )
+                msg = await self.ctx.send(view=view, file=file)
                 view.message = msg
                 set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), view)
                 await view.wait()
-                
-                for child in view.children: child.disabled = True
+
+                view.disable_controls()
                 try:
                     await msg.edit(view=view)
                 except discord.HTTPException:
-                    logger.debug("Could not disable roulette action buttons", exc_info=True)
+                    logger.debug("Could not disable roulette V2 targeting controls", exc_info=True)
 
                 kicked_players = []
                 attacker_died = False
