@@ -51,7 +51,7 @@ def _ensure(uid):
 def fmt(n):
     try:
         return format(int(n), ",d")
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return str(n)
 
 def now():
