@@ -201,8 +201,10 @@ class RouletteLobby(discord.ui.View):
             self.time_left -= 5
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
-                try: await self.message.edit(embed=self.get_embed())
-                except: pass
+                try:
+                    await self.message.edit(embed=self.get_embed())
+                except discord.HTTPException:
+                    logger.debug("Could not refresh roulette lobby", exc_info=True)
 
     async def auto_start(self):
         if self.game_started: return
@@ -327,8 +329,10 @@ class RouletteLobby(discord.ui.View):
                 await view.wait()
                 
                 for child in view.children: child.disabled = True
-                try: await msg.edit(view=view)
-                except: pass
+                try:
+                    await msg.edit(view=view)
+                except discord.HTTPException:
+                    logger.debug("Could not disable roulette action buttons", exc_info=True)
 
                 kicked_players = []
                 attacker_died = False
