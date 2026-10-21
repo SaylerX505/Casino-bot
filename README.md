@@ -30,11 +30,11 @@ The bot uses the configured prefix `+`. See the in-bot help menu for the availab
 
 ## Data and persistence
 
-The economy's SQLite database is configured at the relative path `data/bank.db`. Start the process from the repository root and ensure that the host keeps the project's data directory on persistent storage between restarts and deployments.
+The economy's SQLite database defaults to the project-root `data/bank.db` path (independent of the process working directory). Set `BANK_DB_FILE` only when the host requires a custom location. Ensure the host keeps the data directory on persistent storage between restarts and deployments.
 
 Do not delete, replace, or recreate the live database as part of an ordinary code update. Before a deployment that could affect persistence, take a backup of the active database while the bot is stopped or through a consistent SQLite backup method. The files under `data/` and `archive-wrapper-files/` may represent different snapshots; do not assume an archived database is the currently active one.
 
-AI conversation/state data is stored at runtime in `data/ai_data.json`. This generated file is intentionally not tracked in Git; the bot initializes an empty history file when it is absent. Use the persistent `/app/data` volume in Docker if histories need to survive redeployments. Treat stored user data and backups as sensitive and restrict access to them.
+AI conversation history is initialized at runtime when `data/ai_data.json` is absent; it must remain untracked. The old `data/state.json` activity snapshot was not referenced by the active Python runtime and has been removed from the current source tree because it contained server/member identifiers and activity statistics. Generated state, live databases, logs, and backups must stay out of Git. Use the persistent `/app/data` volume in Docker if runtime state needs to survive redeployments. Treat stored user data and backups as sensitive and restrict access to them. Removing a file from the current tree does not purge earlier copies from Git history.
 
 ## Docker deployment
 
@@ -62,7 +62,7 @@ python -m compileall -q main.py config.py cogs tests
 python -m unittest discover -s tests -v
 ```
 
-The tests use a temporary SQLite database and should not operate on the live economy database. GitHub Actions runs these checks on pushes and pull requests and builds the Docker image as a deployment smoke check.
+The tests use temporary SQLite databases and should not operate on the live economy database. RPS wagers are recorded in the economy database as escrow; an interrupted challenge is refunded on startup, and settlement is idempotent. Run only one bot instance against a given economy database. GitHub Actions runs these checks on pushes and pull requests and builds the Docker image as a deployment smoke check.
 
 ## Deployment notes
 
