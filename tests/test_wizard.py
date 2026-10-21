@@ -9,6 +9,7 @@ from discord.ui import LayoutView
 from cogs.casino.permissions import GAME_LABELS
 from cogs.utility.wizard import (
     AdminRoleWizardView,
+    AISettingsWizardView,
     GameChannelWizardView,
     LogChannelWizardView,
     SetupWizard,
@@ -54,6 +55,7 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(buttons), 5)
         self.assertIn("wizard_manager_roles", {button.custom_id for button in buttons})
         self.assertIn("wizard_game_channels", {button.custom_id for button in buttons})
+        self.assertIn("wizard_ai_settings", {button.custom_id for button in buttons})
 
     def test_staff_role_page_contains_role_picker_and_safe_clear_action(self):
         with patch("cogs.utility.wizard.bank.get_setting", side_effect=self._get_setting):
@@ -118,6 +120,33 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         for game_name in GAME_LABELS.values():
             self.assertIn(game_name, content)
         self.assertIn("<@&300>", content)
+
+    def test_ai_settings_page_exposes_toggle_and_role_allowlist(self):
+        with (
+            patch("cogs.utility.wizard._configured_ai_enabled", return_value=True),
+            patch("cogs.utility.wizard.configured_ai_role_ids", return_value={400}),
+        ):
+            view = AISettingsWizardView(self.guild, self.owner)
+
+        self.assertIsInstance(view, LayoutView)
+        self.assertTrue(
+            any(isinstance(item, discord.ui.RoleSelect) for item in view.walk_children())
+        )
+        content = "\\n".join(
+            item.content
+            for item in view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("مفتاح API", content)
+        self.assertIn("<@&400>", content)
+        button_ids = {
+            item.custom_id
+            for item in view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        }
+        self.assertIn("wizard_ai_toggle", button_ids)
+        self.assertIn("wizard_ai_clear_roles", button_ids)
+        self.assertIn("wizard_ai_back", button_ids)
 
     def test_log_wizard_has_per_type_channel_select_and_disable_action(self):
         with patch("cogs.utility.wizard._configured_log_channel", return_value=0):
