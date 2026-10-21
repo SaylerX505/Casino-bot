@@ -145,6 +145,11 @@ class ChairActionView(LayoutView):
                         view=StatusPanel("اختيار محسوب", "أنت خرجت بالفعل بسبب ضغط كرسي مكسور.", "warning"),
                         ephemeral=True,
                     )
+                if button.disabled:
+                    return await interaction.response.send_message(
+                        view=StatusPanel("الكرسي اتحسب", "الكرسي ده اتضغط عليه بالفعل؛ اختار كرسي آخر.", "warning"),
+                        ephemeral=True,
+                    )
                 self.eliminated_fools.add(user)
                 button.disabled = True
                 button.label = "💥"
