@@ -24,7 +24,14 @@ bot = commands.Bot(
 bot.remove_command('help')
 
 # --- EVENT HANDLERS ---
-ERROR_LOG_CHANNEL_ID = 1486822134109180049
+ERROR_LOG_CHANNEL_ID = config.LOG_CHANNELS.get("command_errors", 0)
+
+
+async def _send_command_error(ctx, message):
+    """Use ephemeral responses only for interaction contexts, never prefix messages."""
+    kwargs = {"ephemeral": True} if getattr(ctx, "interaction", None) is not None else {}
+    await ctx.send(message, **kwargs)
+
 
 @bot.event
 async def on_ready():
@@ -48,50 +55,62 @@ async def on_command_error(ctx, error):
         return
     if isinstance(error, commands.CheckFailure):
         try:
-            await ctx.send("❌ الأمر ده مش متاح لصلاحيات حسابك.", ephemeral=ctx.interaction is not None)
+            await _send_command_error(ctx, "❌ الأمر ده مش متاح لصلاحيات حسابك.")
         except discord.HTTPException:
             pass
         return
     if isinstance(error, commands.CommandOnCooldown):
         try:
-            await ctx.send(
+            await _send_command_error(
+                ctx,
                 f"⏳ اهدى يا معلم! جرب تاني بعد **{error.retry_after:.0f}** ثانية.",
-                ephemeral=ctx.interaction is not None,
             )
         except discord.HTTPException:
             pass
         return
 
-    err_text = f"{type(error).__name__}: {error}"[:1500]
+    original_error = getattr(error, "original", error)
     command_text = ctx.command.qualified_name if ctx.command else "unknown"
-    message_text = ctx.message.content if ctx.message else f"/{command_text}"
-    print(f"❌ Command error in {command_text}: {err_text}")
+    guild_id = getattr(ctx, "guild", None)
+    guild_id = getattr(guild_id, "id", None)
+    channel_id = getattr(getattr(ctx, "channel", None), "id", None)
+    logger = logging.getLogger("casino.commands")
+    logger.error(
+        "Command failed: command=%s user_id=%s guild_id=%s channel_id=%s",
+        command_text,
+        getattr(getattr(ctx, "author", None), "id", None),
+        guild_id,
+        channel_id,
+        exc_info=(type(original_error), original_error, original_error.__traceback__),
+    )
+    # Keep remote diagnostics in the same guild as the failing command. Never
+    # send raw user input or exception messages to a cross-guild log channel.
     try:
-        channel = bot.get_channel(ERROR_LOG_CHANNEL_ID)
-        if channel is not None:
+        channel = bot.get_channel(ERROR_LOG_CHANNEL_ID) if ERROR_LOG_CHANNEL_ID else None
+        channel_guild_id = getattr(getattr(channel, "guild", None), "id", None)
+        if channel is not None and guild_id is not None and channel_guild_id == guild_id:
             embed = discord.Embed(
                 title="🚨 Bot Error",
                 description=(
-                    f"<@{config.NEGLAWY_ID}> فيه ايرور يا مطور!\n\n"
                     f"**الأمر:** `{command_text}`\n"
-                    f"**اليوزر:** {ctx.author.mention} (`{ctx.author.id}`)\n"
-                    f"**الروم:** {ctx.channel.mention}\n"
-                    f"**الرسالة:** {message_text[:300]}\n\n"
-                    f"```{err_text}```"
+                    f"**معرّف المستخدم:** `{getattr(getattr(ctx, 'author', None), 'id', 'unknown')}`\n"
+                    f"**معرّف السيرفر:** `{guild_id}`\n"
+                    f"**معرّف الروم:** `{channel_id}`\n"
+                    f"**نوع الخطأ:** `{type(original_error).__name__}`"
                 ),
                 color=0x8B1E1E,
             )
             await channel.send(content=f"<@{config.NEGLAWY_ID}>", embed=embed)
-    except Exception as log_error:
-        print(f"⚠️ Failed to log error: {log_error}")
+    except Exception:
+        logger.exception("Failed to forward command error to the configured log channel")
 
     try:
-        await ctx.send(
-            "❌ حصلت مشكلة! نجلاوي اتبلغ وهيظبطها. جرب تاني كمان شوية.",
-            ephemeral=ctx.interaction is not None,
+        await _send_command_error(
+            ctx,
+            "❌ حصلت مشكلة! تم تسجيل الخطأ؛ جرب تاني كمان شوية.",
         )
     except discord.HTTPException:
-        pass
+        logger.exception("Could not send the command error acknowledgement")
 @bot.tree.error
 async def on_app_command_error(interaction, error):
     """Acknowledge slash-command failures safely without exposing internals."""
