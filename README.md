@@ -28,6 +28,10 @@ An advanced casino and social-games Discord bot for the Çukur server.
 
 The bot uses the configured prefix `+`. See the in-bot help menu for the available commands and game rules.
 
+## Setup wizard
+
+Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose the game-staff roles, set a separate allowed-channel list for each game, restore a game to all channels, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.
+
 ## Single-server configuration
 
 This bot is designed to run in one Discord server. `HOME_GUILD_ID` is required: the process refuses to start when it is missing. When configured, prefix commands and slash commands are restricted to that guild, slash commands are registered as guild commands, and the bot leaves other guilds. `AI_GUILD_ID` can override the AI guild separately. Configure `CURRENCY_LOG_CHANNEL_ID` and, when needed, `AI_ALLOWED_ROLE_IDS` as comma-separated Discord IDs.
