@@ -460,13 +460,25 @@ class RouletteLobby(LayoutView):
                 else:
                     round_notes.append("🛡️ كل اللاعبين المستهدفين نجوا بالتأمين. مفيش حد اتطرد في الجولة دي.")
                 view._panel_text.content = (
-                    f"# نتيجة الجولة {round_num}\n"
-                    + ("\n\n".join(round_notes) if round_notes else "مفيش أحداث إضافية في الجولة دي.")
-                )[:4000]
+                    f"# انتهى اختيار الجولة {round_num}\n"
+                    "تم إغلاق الاختيار. نتيجة الجولة في الرسالة التالية."
+                )
                 try:
                     await msg.edit(view=view)
                 except discord.HTTPException:
-                    logger.debug("Could not update roulette V2 round summary", exc_info=True)
+                    logger.debug("Could not finalize roulette V2 targeting panel", exc_info=True)
+
+                outcome = (
+                    "warning" if (not view.kicked_ids or kicked_players)
+                    else "success"
+                )
+                await self.ctx.send(
+                    view=StatusPanel(
+                        f"نتيجة الجولة {round_num}",
+                        "\n\n".join(round_notes) if round_notes else "مفيش أحداث إضافية في الجولة دي.",
+                        outcome,
+                    )
+                )
 
                 round_num += 1
                 await asyncio.sleep(2)
@@ -481,14 +493,12 @@ class RouletteLobby(LayoutView):
                         final_description += "\n\n💰 تم إضافة 20 عملة كمكافأة فوز."
                     else:
                         final_description += "\n\n⚠️ الفوز مؤكد، لكن المكافأة لم تُصرف لأن الرصيد وصل للحد الأقصى."
-                await msg.edit(
-                    view=StatusPanel("🏆 بطل الروليت!", final_description, "success"),
-                    attachments=[],
+                await self.ctx.send(
+                    view=StatusPanel("🏆 بطل الروليت!", final_description, "success")
                 )
             else:
-                await msg.edit(
-                    view=StatusPanel("انتهت الروليت", "الكل خرج من اللعبة؛ مفيش فائز في الجولة دي.", "warning"),
-                    attachments=[],
+                await self.ctx.send(
+                    view=StatusPanel("انتهت الروليت", "الكل خرج من اللعبة؛ مفيش فائز في الجولة دي.", "warning")
                 )
 
         except asyncio.CancelledError:
