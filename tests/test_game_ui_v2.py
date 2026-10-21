@@ -10,7 +10,7 @@ from discord.ui import LayoutView
 from cogs.casino.chairs import ChairActionView, ChairPrepView, ChairsLobby
 from cogs.casino.geoguessr import GuessGameMenu
 from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
-from cogs.casino.mafia import DayVoteView, MafiaLobbyView
+from cogs.casino.mafia import DayVoteView, EphemeralActionView, MafiaLobbyView, SecretButtonView
 from cogs.casino.roulette import KickView, RouletteLobby
 from cogs.casino.wheel import WheelLobby
 
@@ -55,6 +55,49 @@ class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+
+class MafiaSecretActionV2Tests(unittest.TestCase):
+    def test_ephemeral_target_picker_is_v2_and_private_ready(self):
+        targets = [_FakeMember(5101), _FakeMember(5102)]
+        view = EphemeralActionView(targets)
+        self.assertIsInstance(view, LayoutView)
+        selects = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Select)
+        ]
+        self.assertEqual(len(selects), 1)
+        self.assertIn("اختيار سري", view._panel_text.content)
+        self.assertEqual(len(selects[0].options), 2)
+        view.disable_controls()
+        self.assertTrue(selects[0].disabled)
+        view.stop()
+
+    def test_secret_action_panel_keeps_role_image_and_secondary_button(self):
+        active_user = _FakeMember(5201)
+        role_users = [active_user, _FakeMember(5202)]
+        targets = [_FakeMember(5203), _FakeMember(5204)]
+        for role_name, image_name in (
+            ("mafia", "mafia_looking.jpg"),
+            ("doctor", "doctor_looking.jpg"),
+        ):
+            view = SecretButtonView(active_user, role_users, targets, role_name)
+            self.assertIsInstance(view, LayoutView)
+            buttons = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            galleries = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.MediaGallery)
+            ]
+            self.assertEqual(len(buttons), 1)
+            self.assertIs(buttons[0].style, discord.ButtonStyle.secondary)
+            self.assertEqual(len(galleries), 1)
+            self.assertIn(image_name, str(galleries[0].items[0].media.url))
+            view.disable_controls()
+            self.assertTrue(buttons[0].disabled)
+            view.stop()
 
 
 class MafiaVoteV2Tests(unittest.TestCase):
