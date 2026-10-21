@@ -97,6 +97,24 @@ class AdminSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.cog.bot.get_cog.assert_not_called()
         interaction.response.send_message.assert_awaited_once()
 
+    async def test_global_status_is_not_visible_to_server_admins(self):
+        interaction = fake_interaction()
+        self.cog.bot.is_owner = AsyncMock(return_value=False)
+
+        with (
+            patch.object(self.cog, "_require_admin", new=AsyncMock(return_value=True)),
+            patch.object(bank, "list_guild_admins") as list_admins,
+        ):
+            await self.cog.admin_status.callback(self.cog, interaction)
+
+        list_admins.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+        view = interaction.response.send_message.await_args.kwargs["view"]
+        self.assertEqual(
+            view.children[0].children[0].content.split("\n", 1)[0],
+            "# الإعداد ده مش متاح لأدمن السيرفر",
+        )
+
     async def test_bank_reset_is_blocked_without_deleting_shared_economy(self):
         interaction = fake_interaction()
 
