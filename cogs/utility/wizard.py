@@ -160,11 +160,15 @@ class WizardHomeView(WizardLayout):
         super().__init__(guild, owner, notice=notice)
         roles = _configured_roles(guild.id)
         manager_roles = _configured_manager_roles(guild.id)
-        restricted = [
-            GAME_LABELS[key]
-            for key in GAME_ORDER
-            if not _channel_policy(guild.id, key)[0]
-        ]
+        restricted = []
+        for key in GAME_ORDER:
+            unrestricted, allowed_channel_ids = _channel_policy(guild.id, key)
+            if unrestricted:
+                continue
+            if not allowed_channel_ids:
+                restricted.append(f"{GAME_LABELS[key]} (متوقفة)")
+            else:
+                restricted.append(GAME_LABELS[key])
         role_summary = ", ".join(f"<@&{role_id}>" for role_id in roles) or (
             "لا توجد رولات ستاف مخصصة؛ Administrator يقدر يشغل الألعاب."
         )
@@ -474,6 +478,39 @@ class StaffRoleWizardView(WizardLayout):
             )
         )
 
+    async def disable_game(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        try:
+            bank.set_setting(
+                game_channel_setting_key(self.guild_id, self.selected_game),
+                "[]",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to disable game guild=%s game=%s",
+                self.guild_id,
+                self.selected_game,
+            )
+            return await interaction.response.send_message(
+                "تعذر حفظ إعداد تعطيل اللعبة. مفيش تغيير اتأكد حفظه.",
+                ephemeral=True,
+            )
+        logger.info(
+            "Wizard disabled game guild=%s game=%s actor=%s",
+            self.guild_id,
+            self.selected_game,
+            interaction.user.id,
+        )
+        await interaction.response.edit_message(
+            view=GameChannelWizardView(
+                interaction.guild,
+                interaction.user,
+                selected_game=self.selected_game,
+                notice=f"تم تعطيل {GAME_LABELS[self.selected_game]}. تقدر تعيد تفعيلها من زر كل القنوات أو بتحديد قنوات.",
+            )
+        )
+
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
@@ -527,9 +564,14 @@ class GameChannelWizardView(WizardLayout):
                 ActionRow(self.channel_select),
                 ActionRow(
                     self._button(
-                        "السماح في كل القنوات",
+                        "كل القنوات",
                         f"wizard_channels_all_{self.selected_game}",
                         self.allow_all_channels,
+                    ),
+                    self._button(
+                        "تعطيل اللعبة",
+                        f"wizard_channels_disable_{self.selected_game}",
+                        self.disable_game,
                     ),
                     self._button("رجوع", "wizard_channels_back", self.go_home),
                 ),
@@ -645,8 +687,10 @@ class WizardReviewView(WizardLayout):
         ]
         for key in GAME_ORDER:
             unrestricted, channel_ids = _channel_policy(guild.id, key)
-            channels = "كل القنوات" if unrestricted else (
-                ", ".join(f"<#{channel_id}>" for channel_id in channel_ids) or "لا توجد قنوات مسموحة"
+            channels = (
+                "كل القنوات"
+                if unrestricted
+                else (", ".join(f"<#{channel_id}>" for channel_id in channel_ids) or "اللعبة متوقفة")
             )
             lines.append(f"• **{GAME_LABELS[key]}:** {channels}")
         self.add_item(
