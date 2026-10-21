@@ -25,7 +25,7 @@ jobs:
 
           while IFS= read -r path; do
             case "$path" in
-              data/ai_data.json|data/state.json|data/used_images.json|data/currency.json|archive-wrapper-files/data/*|archive-wrapper-files/bot_logs.txt|bot_logs.txt|*.db|*.db-*|*.sqlite|*.sqlite-*|*.sqlite3|*.sqlite3-*)
+              data/ai_data.json|data/state.json|data/used_images.json|data/used_images.json.tmp|data/currency.json|archive-wrapper-files/data/*|archive-wrapper-files/bot_logs.txt|bot_logs.txt|*.db|*.db-*|*.sqlite|*.sqlite-*|*.sqlite3|*.sqlite3-*)
                 echo "::error::Runtime database, generated state or log must not be tracked: $path"
                 exit 1
                 ;;
@@ -56,7 +56,7 @@ jobs:
         shell: bash
         run: |
           test -f .dockerignore
-          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/used_images.json" "data/currency.json" "data/backups/" "archive-wrapper-files/" "bot_logs.txt"; do
+          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/used_images.json" "data/used_images.json.tmp" "data/currency.json" "data/backups/" "archive-wrapper-files/" "bot_logs.txt"; do
             if ! grep -Fxq "$pattern" .dockerignore; then
               echo "::error::Missing Docker ignore rule: $pattern"
               exit 1
@@ -83,6 +83,7 @@ jobs:
             test ! -e /app/data/ai_data.json
             test ! -e /app/data/state.json
             test ! -e /app/data/used_images.json
+            test ! -e /app/data/used_images.json.tmp
             test ! -e /app/data/bank.db
             test ! -e /app/.env
             test ! -e /app/data/currency.json
