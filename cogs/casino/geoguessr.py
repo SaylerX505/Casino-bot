@@ -34,6 +34,9 @@ from cogs.utility.theme import (
     result_embed,
 )
 
+logger = logging.getLogger(__name__)
+
+
 class WatermarkView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
@@ -47,25 +50,60 @@ SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/
 geolocator = Nominatim(user_agent="discord_geoguess_cogs_bot")
 
 def load_database():
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.dirname(DATABASE_FILE) or ".", exist_ok=True)
     try:
-        with open(DATABASE_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with open(DATABASE_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
     except FileNotFoundError:
+        logger.error("GeoGuessr static database is missing path=%s", DATABASE_FILE)
+        return {}
+    except (OSError, json.JSONDecodeError):
+        logger.exception("Could not load GeoGuessr static database path=%s", DATABASE_FILE)
         return {}
 
+    if not isinstance(payload, (dict, list)):
+        logger.error("GeoGuessr database has an unsupported top-level type path=%s", DATABASE_FILE)
+        return {}
+    return payload
+
+
 def load_used_images():
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.dirname(USED_TRACKER_FILE) or ".", exist_ok=True)
     try:
-        with open(USED_TRACKER_FILE, 'r', encoding='utf-8') as f:
-            return set(json.load(f))
+        with open(USED_TRACKER_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
     except FileNotFoundError:
         return set()
+    except (OSError, json.JSONDecodeError):
+        logger.exception("Could not load GeoGuessr used-image tracker; starting with an empty tracker")
+        return set()
+
+    if not isinstance(payload, list):
+        logger.error("GeoGuessr used-image tracker is not a list; starting with an empty tracker")
+        return set()
+    return {item for item in payload if isinstance(item, str)}
+
 
 def save_used_images(used_set):
-    os.makedirs("data", exist_ok=True)
-    with open(USED_TRACKER_FILE, 'w', encoding='utf-8') as f:
-        json.dump(list(used_set), f)
+    """Atomically replace the generated image tracker so crashes cannot truncate it."""
+    tracker_path = os.path.abspath(USED_TRACKER_FILE)
+    parent_dir = os.path.dirname(tracker_path)
+    os.makedirs(parent_dir, exist_ok=True)
+    temporary_path = f"{tracker_path}.tmp"
+    try:
+        with open(temporary_path, "w", encoding="utf-8") as handle:
+            json.dump(sorted({item for item in used_set if isinstance(item, str)}), handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, tracker_path)
+    except OSError:
+        logger.exception("Could not persist GeoGuessr used-image tracker path=%s", tracker_path)
+        try:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
+        except OSError:
+            logger.debug("Could not remove incomplete GeoGuessr tracker temp file", exc_info=True)
+        raise
 
 game_db = load_database()
 
