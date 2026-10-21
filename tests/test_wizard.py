@@ -1,7 +1,7 @@
 """Tests for the private interactive setup wizard."""
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import discord
 from discord.ui import LayoutView
@@ -14,11 +14,12 @@ from cogs.utility.wizard import (
     SetupWizard,
     StaffRoleWizardView,
     WizardHomeView,
+    WizardLayout,
     WizardReviewView,
 )
 
 
-class WizardViewTests(unittest.TestCase):
+class WizardViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.guild = SimpleNamespace(id=123456, owner_id=101)
         self.owner = SimpleNamespace(id=101)
@@ -158,6 +159,18 @@ class WizardViewTests(unittest.TestCase):
         self.assertIn("<#900>", content)
         self.assertIn("<#901>", content)
         self.assertIn("قنوات السجلات", content)
+
+    async def test_transition_binds_the_new_view_to_the_original_message(self):
+        message = SimpleNamespace(id=456)
+        response = SimpleNamespace(edit_message=AsyncMock())
+        interaction = SimpleNamespace(message=message, response=response)
+        source_view = WizardLayout(self.guild, self.owner)
+        target_view = WizardLayout(self.guild, self.owner)
+
+        await source_view._edit_message(interaction, view=target_view)
+
+        self.assertIs(target_view.message, message)
+        response.edit_message.assert_awaited_once_with(view=target_view)
 
     def test_wizard_is_a_guild_slash_command(self):
         self.assertEqual(SetupWizard.wizard.name, "wizard")
