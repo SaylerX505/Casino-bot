@@ -10,7 +10,12 @@ from discord.ui import LayoutView
 from cogs.casino.chairs import ChairActionView, ChairPrepView, ChairsLobby
 from cogs.casino.geoguessr import GuessGameMenu
 from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
-from cogs.casino.mafia import DayVoteView, EphemeralActionView, MafiaLobbyView, SecretButtonView
+from cogs.casino.mafia import (
+    DayVoteView,
+    EphemeralActionView,
+    MafiaLobbyView,
+    SecretButtonView,
+)
 from cogs.casino.roulette import KickView, RouletteLobby
 from cogs.casino.wheel import WheelLobby, WheelResultPanel
 
