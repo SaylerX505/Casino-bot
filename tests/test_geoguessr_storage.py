@@ -37,6 +37,49 @@ class GeoGuessrStorageTests(unittest.TestCase):
         with patch.object(geoguessr, "DATABASE_FILE", self.database_path):
             self.assertEqual(geoguessr.load_database(), {})
 
+    def test_round_selection_excludes_invalid_records_and_missing_images(self):
+        image_dir = os.path.join(self.temp_dir.name, "images")
+        os.makedirs(image_dir, exist_ok=True)
+        records = {}
+        for index in range(6):
+            filename = f"{index + 1}.jpg"
+            with open(os.path.join(image_dir, filename), "wb") as handle:
+                handle.write(b"image")
+            records[f"valid-{index}"] = {
+                "country_code": "us",
+                "country_ar": "الولايات المتحدة",
+                "coords": [40.0, -73.0],
+                "filename": filename,
+            }
+
+        records["missing-file"] = {
+            "country_code": "fr",
+            "country_ar": "فرنسا",
+            "coords": [48.8, 2.3],
+            "filename": "missing.jpg",
+        }
+        records["unsafe-path"] = {
+            "country_code": "gb",
+            "country_ar": "بريطانيا",
+            "coords": [51.5, -0.1],
+            "filename": "../secret.jpg",
+        }
+        records["invalid-coordinates"] = {
+            "country_code": "de",
+            "country_ar": "ألمانيا",
+            "coords": [120, 13],
+            "filename": "1.jpg",
+        }
+
+        with (
+            patch.object(geoguessr, "game_db", records),
+            patch.object(geoguessr, "IMAGES_DIR", image_dir),
+        ):
+            self.assertEqual(
+                geoguessr.valid_geo_round_keys(),
+                [f"valid-{index}" for index in range(6)],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
