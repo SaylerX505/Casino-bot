@@ -10,7 +10,7 @@ import aiohttp
 import config
 
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import StatusPanel, lobby_embed, result_embed
+from cogs.utility.theme import StatusPanel, lobby_embed, report_game_failure, result_embed
 
 logger = logging.getLogger(__name__)
 
@@ -731,6 +731,13 @@ async def run_mafia_game(ctx, players):
             
     except asyncio.CancelledError:
         raise
+    except Exception:
+        logger.exception("Mafia game loop failed")
+        await report_game_failure(
+            ctx,
+            "توقفت المافيا بسبب خطأ",
+            "حصل عطل غير متوقع أثناء اللعبة. تم تسجيل الخطأ، وتم إيقاف الجولة بدل ما تستمر بحالة غير مضمونة.",
+        )
     finally:
         for reminder in reminder_tasks:
             reminder.cancel()
