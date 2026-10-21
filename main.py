@@ -16,6 +16,7 @@ from cogs.casino.permissions import (
     game_key_from_interaction,
     is_game_channel_allowed,
 )
+from cogs.utility.theme import embed_to_v2
 
 logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
@@ -152,6 +153,72 @@ async def on_ready():
         except Exception:
             logging.getLogger("casino.startup").exception("Failed to sync slash commands")
 
+async def _forward_error_to_guild_log(
+    command_name: str,
+    user_id: int | str,
+    guild_id: int | None,
+    channel_id: int | None,
+    error_type: str,
+) -> None:
+    """Send redacted diagnostics to a configured log channel in the same guild only."""
+    if guild_id is None:
+        return
+
+    log_channel_id = configured_log_channel_id(
+        guild_id,
+        "command_errors",
+        ERROR_LOG_CHANNEL_ID,
+    )
+    if not log_channel_id:
+        return
+
+    logger = logging.getLogger("casino.error_forwarding")
+    channel = bot.get_channel(log_channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(log_channel_id)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            logger.warning(
+                "Could not resolve command-error channel guild=%s channel=%s",
+                guild_id,
+                log_channel_id,
+            )
+            return
+
+    channel_guild_id = getattr(getattr(channel, "guild", None), "id", None)
+    if channel_guild_id != guild_id:
+        logger.error(
+            "Skipped command-error log because destination guild=%s does not match source guild=%s",
+            channel_guild_id,
+            guild_id,
+        )
+        return
+
+    embed = discord.Embed(
+        title="Bot Error",
+        description=(
+            f"**الأمر:** `{command_name}`\n"
+            f"**معرّف المستخدم:** `{user_id}`\n"
+            f"**معرّف السيرفر:** `{guild_id}`\n"
+            f"**معرّف الروم:** `{channel_id}`\n"
+            f"**نوع الخطأ:** `{error_type}`"
+        ),
+        color=0x8B1E1E,
+    )
+    try:
+        await channel.send(
+            view=embed_to_v2(embed),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except discord.HTTPException:
+        logger.warning(
+            "Could not send command-error log guild=%s channel=%s",
+            guild_id,
+            log_channel_id,
+            exc_info=True,
+        )
+
+
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
@@ -197,41 +264,14 @@ async def on_command_error(ctx, error):
         channel_id,
         exc_info=(type(original_error), original_error, original_error.__traceback__),
     )
-    # Keep remote diagnostics in the same guild as the failing command. Never
-    # send raw user input or exception messages to a cross-guild log channel.
     try:
-        log_channel_id = configured_log_channel_id(
+        await _forward_error_to_guild_log(
+            command_text,
+            getattr(getattr(ctx, "author", None), "id", "unknown"),
             guild_id,
-            "command_errors",
-            ERROR_LOG_CHANNEL_ID,
+            channel_id,
+            type(original_error).__name__,
         )
-        channel = bot.get_channel(log_channel_id) if log_channel_id else None
-        if channel is None and log_channel_id:
-            try:
-                channel = await bot.fetch_channel(log_channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                logger.warning(
-                    "Could not resolve configured command-error channel guild=%s channel=%s",
-                    guild_id,
-                    log_channel_id,
-                )
-        channel_guild_id = getattr(getattr(channel, "guild", None), "id", None)
-        if channel is not None and guild_id is not None and channel_guild_id == guild_id:
-            embed = discord.Embed(
-                title="🚨 Bot Error",
-                description=(
-                    f"**الأمر:** `{command_text}`\n"
-                    f"**معرّف المستخدم:** `{getattr(getattr(ctx, 'author', None), 'id', 'unknown')}`\n"
-                    f"**معرّف السيرفر:** `{guild_id}`\n"
-                    f"**معرّف الروم:** `{channel_id}`\n"
-                    f"**نوع الخطأ:** `{type(original_error).__name__}`"
-                ),
-                color=0x8B1E1E,
-            )
-            await channel.send(
-                embed=embed,
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
     except Exception:
         logger.exception("Failed to forward command error to the configured log channel")
 
@@ -271,6 +311,16 @@ async def on_app_command_error(interaction, error):
             guild_id,
             exc_info=(type(original), original, original.__traceback__),
         )
+        try:
+            await _forward_error_to_guild_log(
+                command_name,
+                user_id,
+                guild_id,
+                getattr(getattr(interaction, "channel", None), "id", None),
+                type(original).__name__,
+            )
+        except Exception:
+            logger.exception("Failed to forward app-command error to the configured log channel")
         message = "حصل عطل أثناء تنفيذ الأمر. تم تسجيل الخطأ من غير عرض تفاصيله للمستخدم."
 
     try:
