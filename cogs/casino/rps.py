@@ -337,14 +337,14 @@ class RPS(commands.Cog):
                     view=embed_to_v2(base_embed(
                         description=f"❌ رصيدك **{player_balance:,}**، محتاج **{amount:,}**.",
                         color=THEME["red_dark"],
-                    )
+                    ))
                 )
             if opponent_balance < amount:
                 return await ctx.send(
                     view=embed_to_v2(base_embed(
                         description=f"❌ {opponent.mention} رصيده مش كفاية للرهان.",
                         color=THEME["red_dark"],
-                    )
+                    ))
                 )
             return await ctx.send(
                 view=embed_to_v2(base_embed(
