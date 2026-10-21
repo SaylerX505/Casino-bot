@@ -644,7 +644,7 @@ class ActiveGameView(discord.ui.View):
             description=f"احلي 10 ثواني عليك يا عم {interaction.user.mention}!",
             color=discord.Color.green()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # --- COG COMMANDS ---
