@@ -2,7 +2,9 @@
 import asyncio
 import contextlib
 import unittest
+from io import BytesIO
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import discord
 from discord.ui import LayoutView
@@ -403,6 +405,54 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             any(isinstance(item, discord.ui.MediaGallery) for item in panel.walk_children())
         )
+
+    async def test_wheel_keeps_each_player_spin_and_final_summary_as_separate_messages(self):
+        loop = asyncio.get_running_loop()
+        bot = SimpleNamespace(loop=loop, active_games={})
+        channel = SimpleNamespace(id=777)
+        ctx = SimpleNamespace(
+            bot=bot,
+            channel=channel,
+            author=_FakeMember(7000),
+            send=AsyncMock(),
+        )
+        players = [_FakeMember(7001), _FakeMember(7002)]
+        view = WheelLobby(ctx)
+        view.players = players
+
+        currency = SimpleNamespace(
+            get_balance=lambda user_id: 100,
+            settle_wheel=lambda user_id, payout, target_loss: {
+                "played": True,
+                "reason": "settled",
+                "after": 150,
+                "net": 50,
+                "refund": 0,
+            },
+        )
+        try:
+            with (
+                patch("cogs.casino.wheel.get_currency", return_value=currency),
+                patch("cogs.casino.wheel.random.randrange", return_value=0),
+                patch("cogs.casino.wheel.render_wheel", return_value=BytesIO(b"png")),
+                patch("cogs.casino.wheel.asyncio.sleep", new=AsyncMock()),
+            ):
+                await view.play_rounds()
+
+            self.assertEqual(ctx.send.await_count, 3)
+            posted_views = [call.kwargs["view"] for call in ctx.send.await_args_list]
+            self.assertTrue(all(isinstance(item, WheelResultPanel) for item in posted_views))
+            self.assertIn("نتيجة اللفة 1/2", posted_views[0]._panel_text.content)
+            self.assertIn("نتيجة اللفة 2/2", posted_views[1]._panel_text.content)
+            self.assertIn("خلصت جولات العجلة", posted_views[2]._panel_text.content)
+            self.assertIn("attachment://wheel.png", str(next(
+                item for item in posted_views[0].walk_children()
+                if isinstance(item, discord.ui.MediaGallery)
+            ).items[0].media.url))
+        finally:
+            view.lobby_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await view.lobby_task
 
     async def test_mafia_lobby_uses_v2_components_and_keeps_cover_gallery(self):
         loop = asyncio.get_running_loop()
