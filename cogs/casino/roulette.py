@@ -22,7 +22,7 @@ SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/
 from cogs.casino.permissions import is_staff_or_admin
 
 logger = logging.getLogger(__name__)
-from cogs.utility.theme import THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
 
 
 async def fetch_avatar(session, user, size=(80, 80)):
