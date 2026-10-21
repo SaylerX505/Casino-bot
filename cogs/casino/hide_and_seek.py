@@ -220,7 +220,8 @@ class LobbyView(LayoutView):
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
                 try:
-                    self._refresh_panel()\n                    await self.message.edit(view=self)
+                    self._refresh_panel()
+                    await self.message.edit(view=self)
                 except discord.HTTPException:
                     logger.debug("Could not refresh hide-and-seek lobby", exc_info=True)
 
@@ -263,7 +264,8 @@ class LobbyView(LayoutView):
             await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         else:
             self.players.append(interaction.user)
-            self._refresh_panel()\n            await interaction.response.edit_message(view=self)
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
 
     async def leave_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
@@ -274,7 +276,8 @@ class LobbyView(LayoutView):
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             self.players.remove(interaction.user)
-            self._refresh_panel()\n            await interaction.response.edit_message(view=self)
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
                 description="أنت مش في اللعبة!",
@@ -301,7 +304,8 @@ class LobbyView(LayoutView):
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         self.time_left += 10
-        self._refresh_panel()\n            await interaction.response.edit_message(view=self)
+        self._refresh_panel()
+            await interaction.response.edit_message(view=self)
 
 
 # --- GAME LOOP ---
