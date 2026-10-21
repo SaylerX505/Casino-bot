@@ -23,12 +23,14 @@ jobs:
             esac
           done < <(git ls-files)
 
-          for path in data/ai_data.json data/state.json data/used_images.json; do
-            if git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
-              echo "::error::Generated runtime state must not be tracked: $path"
-              exit 1
-            fi
-          done
+          while IFS= read -r path; do
+            case "$path" in
+              data/ai_data.json|data/state.json|data/used_images.json|data/currency.json|archive-wrapper-files/data/*|archive-wrapper-files/bot_logs.txt|bot_logs.txt|*.db|*.db-*|*.sqlite|*.sqlite-*|*.sqlite3|*.sqlite3-*)
+                echo "::error::Runtime database, generated state or log must not be tracked: $path"
+                exit 1
+                ;;
+            esac
+          done < <(git ls-files)
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -49,7 +51,7 @@ jobs:
         shell: bash
         run: |
           test -f .dockerignore
-          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/used_images.json" "data/backups/"; do
+          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/used_images.json" "data/currency.json" "data/backups/" "archive-wrapper-files/" "bot_logs.txt"; do
             if ! grep -Fxq "$pattern" .dockerignore; then
               echo "::error::Missing Docker ignore rule: $pattern"
               exit 1
@@ -78,6 +80,9 @@ jobs:
             test ! -e /app/data/used_images.json
             test ! -e /app/data/bank.db
             test ! -e /app/.env
+            test ! -e /app/data/currency.json
+            test ! -e /app/archive-wrapper-files
+            test ! -e /app/bot_logs.txt
           '
       - name: Smoke-test startup without a token
         run: |
