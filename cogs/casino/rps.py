@@ -14,7 +14,7 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
-from cogs.utility.theme import THEME, base_embed, embed_to_v2, get_currency
+from cogs.utility.theme import base_embed, embed_to_v2, get_currency, THEME
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
@@ -294,10 +294,10 @@ class RPS(commands.Cog):
     async def rps(self, ctx, bet: str | None = None, opponent: discord.Member | None = None):
         if is_active_game(self.bot, ctx.channel.id):
             return await ctx.send(
-                embed=base_embed(
+                view=embed_to_v2(base_embed(
                     description="❌ فيه لعبة شغالة في الروم؛ استنوا لما تخلص.",
                     color=THEME["red_dark"],
-                )
+                ))
             )
 
         raw_bet = (bet or "").strip().replace(",", "")
@@ -306,17 +306,17 @@ class RPS(commands.Cog):
         usage = "/حومص" if ctx.interaction is not None else f"{ctx.prefix}حومص"
         if amount < MIN_BET:
             return await ctx.send(
-                embed=base_embed(
+                view=embed_to_v2(base_embed(
                     description=f"❌ مثال: `{usage} 100 @صاحبك` (أقل رهان {MIN_BET}).",
                     color=THEME["red_dark"],
-                )
+                ))
             )
         if amount > MAX_BET:
             return await ctx.send(
-                embed=base_embed(
+                view=embed_to_v2(base_embed(
                     description=f"❌ أقصى رهان **{MAX_BET:,}**.",
                     color=THEME["red_dark"],
-                )
+                ))
             )
         if opponent is None:
             return await ctx.send(view=embed_to_v2(base_embed(description="❌ منشن خصمك!", color=THEME["red_dark"])))
@@ -334,23 +334,23 @@ class RPS(commands.Cog):
             opponent_balance = bank.get_balance(opponent.id)
             if player_balance < amount:
                 return await ctx.send(
-                    embed=base_embed(
+                    view=embed_to_v2(base_embed(
                         description=f"❌ رصيدك **{player_balance:,}**، محتاج **{amount:,}**.",
                         color=THEME["red_dark"],
                     )
                 )
             if opponent_balance < amount:
                 return await ctx.send(
-                    embed=base_embed(
+                    view=embed_to_v2(base_embed(
                         description=f"❌ {opponent.mention} رصيده مش كفاية للرهان.",
                         color=THEME["red_dark"],
                     )
                 )
             return await ctx.send(
-                embed=base_embed(
+                view=embed_to_v2(base_embed(
                     description="❌ تعذر تسجيل الرهان بأمان. مفيش مبلغ اتخصم؛ راجع الرصيد وحاول تاني.",
                     color=THEME["red_dark"],
-                )
+                ))
             )
 
         view = RPSView(ctx, ctx.author, opponent, amount, game_id)
@@ -370,10 +370,10 @@ class RPS(commands.Cog):
                 else "❌ فيه لعبة شغالة في الروم. الرهان محفوظ في سجل البنك؛ راجعوا حالة البوت قبل أي محاولة جديدة."
             )
             return await ctx.send(
-                embed=base_embed(
+                view=embed_to_v2(base_embed(
                     description=message,
                     color=THEME["red_dark"],
-                )
+                ))
             )
 
         try:
