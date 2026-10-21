@@ -28,14 +28,19 @@ An advanced casino and social-games Discord bot for the Çukur server.
 
 The bot uses the configured prefix `+`. See the in-bot help menu for the available commands and game rules.
 
+## Single-server configuration
+
+This bot is designed to run in one Discord server. Set `HOME_GUILD_ID` in the host environment before production use. When set, prefix commands and slash commands are restricted to that guild, slash commands are registered as guild commands, and the bot leaves other guilds. If it is empty, this safety restriction is disabled. `AI_GUILD_ID` can override the AI guild separately. Configure `CURRENCY_LOG_CHANNEL_ID` and, when needed, `AI_ALLOWED_ROLE_IDS` as comma-separated Discord IDs.
+
 ## Data and persistence
 
-The economy's SQLite database defaults to the project-root `data/bank.db` path (independent of the process working directory). Set `BANK_DB_FILE` only when the host requires a custom location. Ensure the host keeps the data directory on persistent storage between restarts and deployments.
+The economy and small application settings are stored in SQLite at the project-root `data/bank.db` by default. Set `BANK_DB_FILE` only if the host requires a custom path. Mount persistent storage at `/app/data` when using Docker. Keep only one bot process connected to a given SQLite file.
 
-Do not delete, replace, or recreate the live database as part of an ordinary code update. Before a deployment that could affect persistence, take a backup of the active database while the bot is stopped or through a consistent SQLite backup method. The files under `data/` and `archive-wrapper-files/` may represent different snapshots; do not assume an archived database is the currently active one.
+Never commit the live database, SQLite journal files, user histories, activity snapshots, runtime logs, backups, or real environment secrets. Archived source snapshots are excluded from Docker images. Static game content such as `data/database.json` and `data/fazoora.json` remains in the repository because the games need it.
 
-AI conversation history is initialized at runtime when `data/ai_data.json` is absent; it must remain untracked. The old `data/state.json` activity snapshot was not referenced by the active Python runtime and has been removed from the current source tree because it contained server/member identifiers and activity statistics. The generated `data/used_images.json` GeoGuessr history tracker is also initialized at runtime and is no longer tracked; the static `data/database.json` GeoGuessr dataset remains included. Generated state, live databases, logs, and backups must stay out of Git. Use the persistent `/app/data` volume in Docker if runtime state needs to survive redeployments. Treat stored user data and backups as sensitive and restrict access to them. Removing a file from the current tree does not purge earlier copies from Git history.
+AI conversation history is kept **in memory only**, scoped by guild, channel, and user; it is not written to a JSON file and is cleared on restart. The bot no longer reads recent channel history to add other members' messages to an AI request. Only the invoking user's prompt and their own recent AI conversation are sent to the configured DeepSeek API. The `/ai-forget` or `+ai-forget` command clears that user's context in the current channel. Configure AI access roles explicitly and provide the required API key only on the host.
 
+The small AI-enabled setting is stored in the SQLite database. The Git repository's earlier commits may still contain deleted data files; deleting files from current branch snapshots does not remove historical Git objects. A coordinated history rewrite and post-rewrite verification are still needed before claiming the historical copies have been purged.
 ## Docker deployment
 
 The `Dockerfile` builds a Python 3.11 slim image, installs dependencies in a cache-friendly layer, and runs the bot as an unprivileged user. The image starts the bot with `python -u main.py`; it does not expose a web port because this is a Discord gateway bot.
