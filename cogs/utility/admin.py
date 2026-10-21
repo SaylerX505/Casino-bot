@@ -246,13 +246,11 @@ class AdminCommands(commands.Cog):
                 view=AdminResult("محسن غير متاح", "إضافة الذكاء الاصطناعي مش محملة حاليًا.", False),
                 ephemeral=True,
             )
-        from cogs.utility.ai import save_ai_data
-
         cog.data["ai_enabled"] = enabled
-        save_ai_data(cog.data)
+        bank.set_setting("ai_enabled", "true" if enabled else "false")
         state = "شغال" if enabled else "متوقف"
         await interaction.response.send_message(
-            view=AdminResult("إعدادات محسن", f"محسن دلوقتي **{state}**. الإعداد الحالي مشترك على مستوى البوت."),
+            view=AdminResult("إعدادات محسن", f"محسن دلوقتي **{state}**. الحالة محفوظة في قاعدة بيانات البوت."),
             ephemeral=True,
         )
 
@@ -263,7 +261,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.send_message(
             view=AdminResult(
                 "التصفير موقوف لحماية البيانات",
-                "قاعدة الاقتصاد الحالية بتخزن الأرصدة حسب Discord user ID فقط، مش حسب السيرفر. تنفيذ التصفير هنا هيمسح اقتصاد البوت كله، لذلك الأمر متوقف لحد ما نفصل الاقتصاد لكل سيرفر بترحيل بيانات آمن.",
+                "التصفير من داخل Discord متوقف لتجنب مسح الأرصدة بالخطأ. أي تصفير لازم يتم كإجراء صيانة منفصل بعد نسخة احتياطية مؤكدة ومراجعة قاعدة البيانات.",
                 False,
             ),
             ephemeral=True,
