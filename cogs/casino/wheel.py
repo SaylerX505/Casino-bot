@@ -3,8 +3,10 @@ import io
 import logging
 import math
 import random
+from functools import partial
 
 import discord
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
 
@@ -17,6 +19,7 @@ from cogs.casino.game_registry import (
 from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
     THEME,
+    StatusPanel,
     WatermarkView,
     base_embed,
     get_currency,
@@ -122,7 +125,7 @@ def render_wheel(highlight=None):
 
 
 # --- LOBBY VIEW ---
-class WheelLobby(discord.ui.View):
+class WheelLobby(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=45)
         self.ctx = ctx
@@ -130,6 +133,29 @@ class WheelLobby(discord.ui.View):
         self.started = False
         self.time_left = 35
         self.message = None
+        self._panel_text = TextDisplay(self._panel_content())
+        self._buttons = []
+        for label, custom_id, callback_name, emoji in (
+            ("انضمام", "wheel_join", "join_button", "🎡"),
+            ("مغادرة", "wheel_leave", "leave_button", None),
+            ("ابدأ الآن", "wheel_start", "start_button", None),
+        ):
+            button = discord.ui.Button(
+                label=label,
+                custom_id=custom_id,
+                style=discord.ButtonStyle.secondary,
+                emoji=emoji,
+            )
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(*self._buttons),
+                accent_color=THEME["teal"],
+            )
+        )
         self.lobby_task = ctx.bot.loop.create_task(self.run_timer())
 
     def make_embed(self):
@@ -146,6 +172,24 @@ class WheelLobby(discord.ui.View):
             max_players=MAX_PLAYERS,
         )
 
+    def _panel_content(self, embed=None):
+        embed = embed or self.make_embed()
+        title = f"# {embed.title}\n" if embed.title else ""
+        return (title + f"{embed.description or ''}\n\n-# كازينو الحفرة • {config.BRAND}")[:4000]
+
+    def _refresh_panel(self, embed=None):
+        self._panel_text.content = self._panel_content(embed)
+
+    def _disable_buttons(self):
+        for button in self._buttons:
+            button.disabled = True
+
+    async def _private_notice(self, interaction, message):
+        await interaction.response.send_message(
+            view=StatusPanel("تنبيه", message, "warning"),
+            ephemeral=True,
+        )
+
     async def run_timer(self):
         try:
             while self.time_left > 0 and not self.started:
@@ -156,7 +200,8 @@ class WheelLobby(discord.ui.View):
                 if self.time_left == 0:
                     await self.start_game()
                 elif self.message:
-                    await self.message.edit(embed=self.make_embed())
+                    self._refresh_panel()
+                    await self.message.edit(view=self)
         except asyncio.CancelledError:
             raise
 
@@ -166,24 +211,17 @@ class WheelLobby(discord.ui.View):
 
         if not self.players:
             self.started = True
-            for item in self.children:
-                item.disabled = True
+            self._panel_text.content = "# انتهى التسجيل\nمحدش انضم للجولة دي. افتح لوبي جديد عشان تلعبوا."
+            self._disable_buttons()
             if self.message:
-                await self.message.edit(
-                    embed=base_embed(
-                        title="🎡 انتهى التسجيل",
-                        description="محدش انضم للجولة دي. افتح لوبي جديد عشان تلعبوا.",
-                        color=THEME["orange"],
-                    ),
-                    view=self,
-                )
+                await self.message.edit(view=self)
             release_game_task(self.ctx.bot, self.ctx.channel.id, self.lobby_task)
             self.stop()
             return
 
         self.started = True
-        for item in self.children:
-            item.disabled = True
+        self._panel_text.content = "# الجولة بدأت\nاللوبي اتقفل. بنجهز نتائج العجلة."
+        self._disable_buttons()
         if self.message:
             await self.message.edit(view=self)
 
@@ -202,32 +240,31 @@ class WheelLobby(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if self.started:
-            await interaction.response.send_message("الجولة بدأت بالفعل.", ephemeral=True)
+            await self._private_notice(interaction, "الجولة بدأت بالفعل.")
             return False
         return True
 
-    @discord.ui.button(label="انضمام", emoji="🎡", style=discord.ButtonStyle.secondary)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user in self.players:
-            return await interaction.response.send_message("أنت مسجل بالفعل.", ephemeral=True)
+            return await self._private_notice(interaction, "أنت مسجل بالفعل.")
         if len(self.players) >= MAX_PLAYERS:
-            return await interaction.response.send_message("اللوبي اكتمل.", ephemeral=True)
+            return await self._private_notice(interaction, "اللوبي اكتمل.")
 
         self.players.append(interaction.user)
-        await interaction.response.edit_message(embed=self.make_embed(), view=self)
+        self._refresh_panel()
+        await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="مغادرة", style=discord.ButtonStyle.secondary)
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in self.players:
-            return await interaction.response.send_message("أنت مش مسجل في الجولة.", ephemeral=True)
+            return await self._private_notice(interaction, "أنت مش مسجل في الجولة.")
 
         self.players.remove(interaction.user)
-        await interaction.response.edit_message(embed=self.make_embed(), view=self)
+        self._refresh_panel()
+        await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.ctx.author.id:
-            return await interaction.response.send_message("الهوست بس يقدر يبدأ الجولة.", ephemeral=True)
+            return await self._private_notice(interaction, "الهوست بس يقدر يبدأ الجولة.")
 
         await interaction.response.defer()
         self.time_left = 0
@@ -405,15 +442,14 @@ class Wheel(commands.Cog):
             return await ctx.send(embed=base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"]))
 
         try:
-            view.message = await ctx.send(embed=view.make_embed(), view=view)
+            view.message = await ctx.send(view=view)
         except Exception:
             release_game_task(self.bot, ctx.channel.id, view.lobby_task)
             view.lobby_task.cancel()
             raise
 
         if not owns_game_task(self.bot, ctx.channel.id, view.lobby_task):
-            for item in view.children:
-                item.disabled = True
+            view._disable_buttons()
             await view.message.edit(view=view)
 
 
