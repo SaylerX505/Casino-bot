@@ -31,7 +31,7 @@ async def fetch_avatar(session, user, size=(80, 80)):
             data = await resp.read()
             img = Image.open(io.BytesIO(data)).convert("RGBA").resize(size)
             return img
-    except: 
+    except Exception: 
         return Image.new("RGBA", size, (50, 50, 50, 255))
 
 async def generate_sniper_image(player):
@@ -71,9 +71,9 @@ async def generate_sniper_image(player):
             draw.rectangle((40, height - 120, 120, height - 40), outline=(0, 255, 0, 200), width=3)
             
             try: font = ImageFont.truetype("tahoma.ttf", 20)
-            except: font = ImageFont.load_default()
+            except Exception: font = ImageFont.load_default()
             draw.text((40, height - 35), "SNIPER ACTIVE", fill=(0, 255, 0, 200), font=font)
-        except: pass
+        except Exception: pass
             
     out_bytes = io.BytesIO()
     base.save(out_bytes, format='PNG')
