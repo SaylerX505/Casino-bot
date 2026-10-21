@@ -398,12 +398,31 @@ class RPSView(LayoutView):
 class RPS(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._escrow_ready = False
 
     async def cog_load(self):
-        refunded = bank.refund_orphaned_rps_wagers()
+        logger = logging.getLogger(__name__)
+        try:
+            refunded = bank.refund_orphaned_rps_wagers()
+            pending_wagers = bank.active_rps_wager_ids()
+        except Exception:
+            self._escrow_ready = False
+            logger.exception(
+                "RPS escrow recovery could not be verified; disabling new RPS wagers until restart/reload"
+            )
+            return
+
+        self._escrow_ready = True
         if refunded:
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "Refunded %s interrupted RPS wager(s) during startup", refunded
+            )
+        for game_id in pending_wagers:
+            _schedule_wager_recovery(game_id)
+        if pending_wagers:
+            logger.warning(
+                "Scheduled background recovery for %s unresolved RPS wager(s)",
+                len(pending_wagers),
             )
 
     @commands.hybrid_command(
@@ -412,6 +431,21 @@ class RPS(commands.Cog):
         description="تحدَّ عضوًا في حجرة ورقة مقص برهان",
     )
     async def rps(self, ctx, bet: str | None = None, opponent: discord.Member | None = None):
+        if not self._escrow_ready:
+            return await ctx.send(
+                view=embed_to_v2(
+                    base_embed(
+                        title="الرهان غير متاح مؤقتًا",
+                        description=(
+                            "سجل رهانات البنك لم يكتمل التحقق منه بعد. "
+                            "مش هنبدأ رهان جديد لحد ما قاعدة البيانات تبقى آمنة."
+                        ),
+                        color=THEME["orange"],
+                    )
+                ),
+                **({"ephemeral": True} if ctx.interaction is not None else {}),
+            )
+
         if is_active_game(self.bot, ctx.channel.id):
             return await ctx.send(
                 view=embed_to_v2(base_embed(
