@@ -11,7 +11,7 @@ from functools import partial
 import aiohttp
 import discord
 from discord.ext import commands
-from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
+from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 from geopy.distance import geodesic
 from geopy.geocoders import Nominatim
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -258,33 +258,37 @@ async def run_game_loop(ctx, players):
         unused_keys = list(available_keys - used_images)
 
         if len(unused_keys) < total_rounds:
-            embed = discord.Embed(
-                description="🔄 **تنبيه:** تم لعب جميع الصور! جاري إعادة تعيين الصور...",
-                color=discord.Color.orange()
+            await ctx.send(
+                view=StatusPanel(
+                    "إعادة تعيين الصور",
+                    "تم لعب كل الصور المتاحة؛ هنبدأ دورة جديدة.",
+                    "warning",
+                )
             )
-            await ctx.send(embed=embed)
             used_images = set()
             unused_keys = list(available_keys)
 
         if len(unused_keys) < total_rounds:
-            embed = discord.Embed(
-                description="🚨 قاعدة البيانات لا تحتوي على صور كافية!",
-                color=discord.Color.red()
+            return await ctx.send(
+                view=StatusPanel(
+                    "صور غير كافية",
+                    "قاعدة البيانات لا تحتوي على صور كافية لبدء جولة كاملة.",
+                    "warning",
+                )
             )
-            return await ctx.send(embed=embed)
 
         selected_rounds = random.sample(unused_keys, total_rounds)
         used_images.update(selected_rounds)
         save_used_images(used_images)
 
         for round_num, db_key in enumerate(selected_rounds, 1):
-            loading_embed = discord.Embed(
-                title=f"🌍 الجولة {round_num} من {total_rounds}",
-                description="بدور علي مكان رايق اتقل.....",
-                color=discord.Color.dark_grey()
+            round_msg = await ctx.send(
+                view=StatusPanel(
+                    f"الجولة {round_num} من {total_rounds}",
+                    "بنجهز صورة الجولة وبيانات الدولة...",
+                    "neutral",
+                )
             )
-            loading_embed.set_thumbnail(url=SERVER_LOGO_URL)
-            round_msg = await ctx.send(embed=loading_embed)
 
             round_data = game_db[db_key]
             actual_country_code = round_data['country_code']
@@ -302,25 +306,20 @@ async def run_game_loop(ctx, players):
             try:
                 file = discord.File(fp=image_file_path, filename="streetview.png")
             except FileNotFoundError:
-                embed = discord.Embed(
-                    description=f"🚨 الصورة غير موجودة في مجلد {IMAGES_DIR}. سيتم تخطي الجولة.",
-                    color=discord.Color.red()
+                await round_msg.edit(
+                    view=StatusPanel(
+                        "الصورة غير موجودة",
+                        f"الصورة المطلوبة مش موجودة في مجلد {IMAGES_DIR}. هنعدّي الجولة.",
+                        "warning",
+                    ),
+                    attachments=[],
                 )
-                await ctx.send(embed=embed)
                 continue
 
-            game_embed = discord.Embed(
-                title=f"🌍 الجولة {round_num} - أين نحن في هذا العالم؟",
-                description="اكتب اسم الدولة (بالعربية أو الإنجليزية) في الشات!\nالوقت المتبقي: **30** ثواني.",
-                color=discord.Color.blue()
-            )
-            game_embed.set_image(url="attachment://streetview.png")
-            game_embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=SERVER_LOGO_URL)
-            
             timer_state = {"end_time": time.time() + 30.0}
-            active_view = ActiveGameView(ctx.author, timer_state)
-            
-            msg = await ctx.send(embed=game_embed, file=file, view=active_view)
+            active_view = ActiveGameView(ctx.author, timer_state, round_num, total_rounds)
+            msg = round_msg
+            await msg.edit(view=active_view, attachments=[file])
             active_view.message = msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), active_view)
 
@@ -362,11 +361,11 @@ async def run_game_loop(ctx, players):
                     break
                     
                 if remaining % 5 == 0 and remaining != last_update:
-                    game_embed.description = f"اكتب اسم الدولة (بالعربية أو الإنجليزية) في الشات!\nالوقت المتبقي: **{remaining}** ثواني."
+                    active_view.update_timer(remaining)
                     try:
-                        await msg.edit(embed=game_embed)
+                        await msg.edit(view=active_view)
                     except discord.HTTPException:
-                        logger.debug("Could not refresh GeoGuessr timer panel", exc_info=True)
+                        logger.debug("Could not refresh GeoGuessr V2 timer panel", exc_info=True)
                     last_update = remaining
 
                 try:
@@ -390,8 +389,10 @@ async def run_game_loop(ctx, players):
                 if waiting:
                     await asyncio.gather(*waiting, return_exceptions=True)
 
-            for child in active_view.children:
-                child.disabled = True
+            active_view.disable_controls()
+            active_view._panel_text.content = (
+                f"# انتهت الجولة {round_num}\nتم إغلاق التخمينات. بنحسب النتائج..."
+            )
             try:
                 await msg.edit(view=active_view)
             except discord.HTTPException:
@@ -453,34 +454,40 @@ async def run_game_loop(ctx, players):
                     'avatar_url': player.display_avatar.url, 'coords': guess_data_cache.get(player, {}).get('coords'), 'correct': is_correct
                 })
 
-            summary_embed = discord.Embed(
-                title="📊 ملخص الجولة",
-                description=summary_text,
-                color=discord.Color.light_grey()
+            await msg.edit(
+                view=GeoGuessrResultPanel(
+                    "📊 ملخص الجولة",
+                    summary_text,
+                    outcome="neutral",
+                ),
+                attachments=[],
             )
-            summary_embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=SERVER_LOGO_URL)
-            await ctx.send(embed=summary_embed)
             await asyncio.sleep(2) 
 
             map_bytes = await generate_result_map(actual_country_center_coords, player_results)
             map_file = discord.File(fp=map_bytes, filename="result_map.png")
-            map_embed = discord.Embed(
-                title="ادي خريطه شوفو بقي كل واحد اجابتو كانت فين..",
-                color=discord.Color.dark_theme()
+            await msg.edit(
+                view=GeoGuessrResultPanel(
+                    "خريطة نتائج الجولة",
+                    "أماكن التخمينات بالنسبة للدولة الصحيحة.",
+                    outcome="neutral",
+                    image_name="result_map.png",
+                ),
+                attachments=[map_file],
             )
-            map_embed.set_image(url="attachment://result_map.png")
-            await ctx.send(embed=map_embed, file=map_file)
             await asyncio.sleep(3)
 
             board_bytes = await generate_dashboard_image(player_results, round_num, total_rounds)
             board_file = discord.File(fp=board_bytes, filename="dashboard.png")
-            board_embed = result_embed(
-                title="🏆 لوحة النتائج",
-                description="ملخص ترتيب اللاعبين بعد الجولة.",
-                outcome="neutral",
+            await msg.edit(
+                view=GeoGuessrResultPanel(
+                    "🏆 لوحة النتائج",
+                    "ملخص ترتيب اللاعبين بعد الجولة.",
+                    outcome="neutral",
+                    image_name="dashboard.png",
+                ),
+                attachments=[board_file],
             )
-            board_embed.set_image(url="attachment://dashboard.png")
-            await ctx.send(embed=board_embed, file=board_file)
             await asyncio.sleep(4) 
 
         # --- TIE BREAKER ANNOUNCEMENT ---
@@ -498,13 +505,14 @@ async def run_game_loop(ctx, players):
             desc = f"🏆 **{winner.mention}** هو الفائز برصيد `{top_score} نقطة`!"
             thumb = winner.display_avatar.url
             
-        final_embed = result_embed(
-            title="🏁 انتهت اللعبة! 🏁",
-            description=desc,
-            outcome="win" if winners else "neutral",
-            thumbnail_url=thumb,
+        await msg.edit(
+            view=StatusPanel(
+                "🏁 انتهت اللعبة!",
+                desc,
+                "success" if len(winners) == 1 else "neutral",
+            ),
+            attachments=[],
         )
-        await ctx.send(embed=final_embed, view=WatermarkView())
 
     except asyncio.CancelledError:
         raise
@@ -681,26 +689,94 @@ class GuessGameMenu(LayoutView):
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
 
-class ActiveGameView(discord.ui.View):
-    def __init__(self, executor, timer_state):
+class GeoGuessrResultPanel(LayoutView):
+    def __init__(self, title, description, outcome="neutral", image_name=None):
+        super().__init__(timeout=120)
+        accents = {
+            "success": THEME["green"],
+            "win": THEME["gold"],
+            "warning": THEME["orange"],
+            "neutral": THEME["grey"],
+        }
+        children = [TextDisplay(f"# {title}\n{description}"[:4000])]
+        if image_name:
+            children.extend([
+                Separator(),
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{image_name}",
+                        description="صورة من نتائج جولة GeoGuessr",
+                    )
+                ),
+            ])
+        self.add_item(Container(*children, accent_color=accents.get(outcome, THEME["grey"])))
+
+
+class ActiveGameView(LayoutView):
+    def __init__(self, executor, timer_state, round_num=1, total_rounds=6):
         super().__init__(timeout=120)
         self.executor = executor
         self.timer_state = timer_state
-
-    @discord.ui.button(label="+10 ثواني للحل", style=discord.ButtonStyle.secondary, emoji="⏱️")
-    async def add_time(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user != self.executor:
-            embed = discord.Embed(
-                description="هش يلا بقي",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        self.timer_state["end_time"] += 10
-        embed = discord.Embed(
-            description=f"احلي 10 ثواني عليك يا عم {interaction.user.mention}!",
-            color=discord.Color.green()
+        self.round_num = round_num
+        self.total_rounds = total_rounds
+        self.message = None
+        self._panel_text = TextDisplay(self._content())
+        self.button = discord.ui.Button(
+            label="+10 ثواني للحل",
+            style=discord.ButtonStyle.secondary,
+            emoji="⏱️",
+            custom_id=f"geoguessr_add_time_{round_num}",
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        self.button.callback = self.add_time
+        self.add_item(
+            Container(
+                self._panel_text,
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media="attachment://streetview.png",
+                        description="صورة الجولة",
+                    )
+                ),
+                Separator(),
+                ActionRow(self.button),
+                accent_color=THEME["teal"],
+            )
+        )
+
+    def _content(self, remaining=None):
+        if remaining is None:
+            remaining = max(0, int(self.timer_state["end_time"] - time.time()))
+        return (
+            f"# 🌍 الجولة {self.round_num} من {self.total_rounds} — أين نحن؟\n"
+            "اكتب اسم الدولة بالعربية أو الإنجليزية في الشات.\n"
+            f"الوقت المتبقي: **{remaining}** ثانية.\n\n"
+            f"-# كازينو الحفرة • {config.BRAND}"
+        )
+
+    def update_timer(self, remaining):
+        self._panel_text.content = self._content(remaining)
+
+    def disable_controls(self):
+        self.button.disabled = True
+
+    async def add_time(self, interaction: discord.Interaction):
+        if interaction.user != self.executor:
+            return await interaction.response.send_message(
+                view=StatusPanel("التحكم مش متاح", "مضيف اللعبة فقط يقدر يمدد الوقت.", "warning"),
+                ephemeral=True,
+            )
+        self.timer_state["end_time"] += 10
+        remaining = max(0, int(self.timer_state["end_time"] - time.time()))
+        self.update_timer(remaining)
+        await interaction.response.send_message(
+            view=StatusPanel("تم تمديد الوقت", "أضفنا 10 ثواني للجولة الحالية.", "success"),
+            ephemeral=True,
+        )
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                logger.debug("Could not refresh GeoGuessr V2 panel after time extension", exc_info=True)
 
 
 # --- COG COMMANDS ---
