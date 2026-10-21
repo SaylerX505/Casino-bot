@@ -18,7 +18,7 @@ This checklist is a release gate, not a claim that every item is already complet
 - [ ] Keep one active bot process per shared SQLite database. Multiple replicas sharing the same database are not a supported topology.
 - [x] Runtime AI history, activity snapshots, used-image trackers, legacy currency JSON, SQLite database/journal files, and bot logs are removed from current snapshots of the active branches and excluded from Docker build contexts. Static game content remains tracked.
 - [ ] Older Git-history copies may still be retrievable by commit SHA. Coordinate a history rewrite and verify the result before claiming historical copies are purged.
-- [ ] The bot is designed for one Discord server. Set `HOME_GUILD_ID` on the host before production so prefix/app commands and registration are server-scoped; do not treat an empty value as enforced single-server mode.
+- [ ] The bot is designed for one Discord server. `HOME_GUILD_ID` is required; startup refuses to proceed without it. Configure and verify the intended server ID on the production host.
 - [ ] Wallet rows use Discord user IDs within the one-server deployment; economy reset remains disabled through Discord and requires a manual, backed-up maintenance procedure.
 
 ## Staging Discord validation
