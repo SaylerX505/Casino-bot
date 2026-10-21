@@ -45,14 +45,276 @@ def get_balance(user_id):
         return int(row["balance"]) if row else 0
 
 def update_balance(user_id, amount):
-    uid = str(user_id)
+    """Apply a safe adjustment without allowing overdrafts or integer overflow."""
+    uid, amount = str(user_id), int(amount)
+    if amount > 0:
+        credited, balance = credit_balance(uid, amount)
+        if not credited:
+            raise OverflowError("balance would exceed SQLite's signed integer range")
+        return balance
+    if amount < 0:
+        debited, balance = debit_balance(uid, -amount)
+        if not debited:
+            raise ValueError("insufficient balance for debit")
+        return balance
+    return get_balance(uid)
+
+
+def debit_balance(user_id, amount):
+    """Debit only when the account can cover the full amount."""
+    uid, amount = str(user_id), int(amount)
+    if amount <= 0 or amount > (1 << 63) - 1:
+        return False, get_balance(uid)
     with _lock:
-        _ensure(uid)
         c = _connect()
-        c.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (int(amount), uid))
-        c.commit()
-        row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
-        return int(row["balance"]) if row else 0
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            changed = c.execute(
+                "UPDATE users SET balance=balance-? WHERE user_id=? AND balance>=?",
+                (amount, uid, amount),
+            ).rowcount
+            if changed != 1:
+                row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+                balance = int(row["balance"]) if row else 0
+                c.rollback()
+                return False, balance
+            c.commit()
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            return True, int(row["balance"]) if row else 0
+        except Exception:
+            c.rollback()
+            raise
+
+
+def credit_balance(user_id, amount):
+    """Credit coins atomically without exceeding SQLite's signed integer range."""
+    uid, amount = str(user_id), int(amount)
+    sqlite_max_int = (1 << 63) - 1
+    if amount <= 0 or amount > sqlite_max_int:
+        return False, get_balance(uid)
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            changed = c.execute(
+                "UPDATE users SET balance=balance+? "
+                "WHERE user_id=? AND balance<=?",
+                (amount, uid, sqlite_max_int - amount),
+            ).rowcount
+            if changed != 1:
+                row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+                balance = int(row["balance"]) if row else 0
+                c.rollback()
+                return False, balance
+            c.commit()
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            return True, int(row["balance"]) if row else 0
+        except Exception:
+            c.rollback()
+            raise
+
+
+def remove_balance(user_id, amount):
+    """Admin-facing removal that cannot make an account balance negative."""
+    return debit_balance(user_id, amount)
+
+
+def transfer_balance(sender_id, recipient_id, amount):
+    """Transfer coins atomically; return (success, sender_balance_after)."""
+    sender, recipient, amount = str(sender_id), str(recipient_id), int(amount)
+    sqlite_max_int = (1 << 63) - 1
+    if amount <= 0 or amount > sqlite_max_int or sender == recipient:
+        return False, get_balance(sender)
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (sender,))
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (recipient,))
+            changed = c.execute(
+                "UPDATE users SET balance=balance-? WHERE user_id=? AND balance>=?",
+                (amount, sender, amount),
+            ).rowcount
+            if changed != 1:
+                row = c.execute("SELECT balance FROM users WHERE user_id=?", (sender,)).fetchone()
+                balance = int(row["balance"]) if row else 0
+                c.rollback()
+                return False, balance
+            credited = c.execute(
+                "UPDATE users SET balance=balance+? WHERE user_id=? AND balance<=?",
+                (amount, recipient, sqlite_max_int - amount),
+            ).rowcount
+            if credited != 1:
+                c.rollback()
+                row = c.execute("SELECT balance FROM users WHERE user_id=?", (sender,)).fetchone()
+                return False, int(row["balance"]) if row else 0
+            c.commit()
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (sender,)).fetchone()
+            return True, int(row["balance"]) if row else 0
+        except Exception:
+            c.rollback()
+            raise
+
+
+def purchase_item(user_id, item, quantity, unit_price):
+    """Charge coins and add inventory in one transaction."""
+    uid, quantity, unit_price = str(user_id), int(quantity), int(unit_price)
+    sqlite_max_int = (1 << 63) - 1
+    if (
+        quantity <= 0
+        or unit_price < 0
+        or quantity > sqlite_max_int
+        or unit_price > sqlite_max_int
+        or (unit_price and quantity > sqlite_max_int // unit_price)
+    ):
+        return False, get_balance(uid)
+    total = quantity * unit_price
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            changed = c.execute(
+                "UPDATE users SET balance=balance-? WHERE user_id=? AND balance>=?",
+                (total, uid, total),
+            ).rowcount
+            if changed != 1:
+                row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+                balance = int(row["balance"]) if row else 0
+                c.rollback()
+                return False, balance
+            c.execute(
+                "INSERT INTO inventory (user_id,item,qty) VALUES (?,?,?) "
+                "ON CONFLICT(user_id,item) DO UPDATE SET qty=qty+excluded.qty",
+                (uid, str(item), quantity),
+            )
+            c.commit()
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            return True, int(row["balance"]) if row else 0
+        except Exception:
+            c.rollback()
+            raise
+
+
+def claim_daily(user_id, now_ts, base_reward):
+    """Atomically enforce cooldown, update streak, and grant the daily reward."""
+    uid, now_ts, base_reward = str(user_id), float(now_ts), int(base_reward)
+    if base_reward < 0:
+        raise ValueError("base_reward must not be negative")
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute(
+                "SELECT balance,last_daily,streak FROM users WHERE user_id=?", (uid,)
+            ).fetchone()
+            balance, last, streak = int(row["balance"]), float(row["last_daily"]), int(row["streak"])
+            if now_ts - last < 86400:
+                c.rollback()
+                return {"claimed": False, "last_daily": last, "streak": streak,
+                        "amount": 0, "balance": balance}
+            if last and (now_ts - last) > 86400 * 2:
+                streak = 0
+            reward = base_reward + min(streak, 7) * 10
+            if balance > ((1 << 63) - 1) - reward:
+                c.rollback()
+                return {"claimed": False, "reason": "balance_limit", "last_daily": last,
+                        "streak": streak, "amount": 0, "balance": balance}
+            new_streak = streak + 1
+            c.execute(
+                "UPDATE users SET balance=balance+?,last_daily=?,streak=? WHERE user_id=?",
+                (reward, now_ts, new_streak, uid),
+            )
+            c.commit()
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            return {"claimed": True, "last_daily": now_ts, "streak": new_streak,
+                    "amount": reward, "balance": int(row["balance"]) if row else 0}
+        except Exception:
+            c.rollback()
+            raise
+
+
+def redeem_item(user_id, item, reward):
+    """Consume one inventory item and grant its reward atomically."""
+    uid, item, reward = str(user_id), str(item), int(reward)
+    if reward < 0:
+        raise ValueError("reward must not be negative")
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            balance_row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            balance = int(balance_row["balance"]) if balance_row else 0
+            if balance > ((1 << 63) - 1) - reward:
+                c.rollback()
+                return False, balance
+            changed = c.execute(
+                "UPDATE inventory SET qty=qty-1 WHERE user_id=? AND item=? AND qty>0",
+                (uid, item),
+            ).rowcount
+            if changed != 1:
+                c.rollback()
+                return False, balance
+            c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (reward, uid))
+            c.commit()
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            return True, int(row["balance"]) if row else 0
+        except Exception:
+            c.rollback()
+            raise
+
+
+def place_bet(player_a, player_b, amount):
+    """Collect both stakes atomically; neither player is charged on failure."""
+    a, b, amount = str(player_a), str(player_b), int(amount)
+    if amount <= 0 or amount > (1 << 63) - 1 or a == b:
+        return False
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (a,))
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (b,))
+            row_a = c.execute("SELECT balance FROM users WHERE user_id=?", (a,)).fetchone()
+            row_b = c.execute("SELECT balance FROM users WHERE user_id=?", (b,)).fetchone()
+            if not row_a or int(row_a["balance"]) < amount:
+                c.rollback()
+                return False
+            if not row_b or int(row_b["balance"]) < amount:
+                c.rollback()
+                return False
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
+            c.commit()
+            return True
+        except Exception:
+            c.rollback()
+            raise
+
+
+def charge_up_to(user_id, amount):
+    """Charge at most the available balance; return (charged, new_balance)."""
+    uid, amount = str(user_id), int(amount)
+    if amount <= 0 or amount > (1 << 63) - 1:
+        return 0, get_balance(uid)
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            balance = max(0, int(row["balance"])) if row else 0
+            charged = min(balance, amount)
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (charged, uid))
+            c.commit()
+            return charged, balance - charged
+        except Exception:
+            c.rollback()
+            raise
 
 def set_balance(user_id, amount):
     uid = str(user_id)
@@ -102,14 +364,27 @@ def add_item(user_id, item, amount=1):
         _connect().commit()
 
 def remove_item(user_id, item, amount=1):
-    uid = str(user_id)
+    """Atomically consume inventory only when sufficient quantity exists."""
+    uid, amount = str(user_id), int(amount)
+    if amount <= 0 or amount > (1 << 63) - 1:
+        return False
     with _lock:
-        row = _connect().execute("SELECT qty FROM inventory WHERE user_id=? AND item=?", (uid, item)).fetchone()
-        if not row or int(row["qty"]) < int(amount):
-            return False
-        _connect().execute("UPDATE inventory SET qty = qty - ? WHERE user_id=? AND item=?", (int(amount), uid, item))
-        _connect().commit()
-        return True
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            changed = c.execute(
+                "UPDATE inventory SET qty = qty - ? "
+                "WHERE user_id = ? AND item = ? AND qty >= ?",
+                (amount, uid, item, amount),
+            ).rowcount
+            if changed != 1:
+                c.rollback()
+                return False
+            c.commit()
+            return True
+        except Exception:
+            c.rollback()
+            raise
 
 def get_whitelist():
     with _lock:

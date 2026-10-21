@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task
 import asyncio
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
@@ -15,28 +16,8 @@ class WatermarkView(discord.ui.View):
         self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
-OWNER_IDS = [1446557924834017441, 1135291623840948375, 853670651428077609, 798280308071596063, 1159601661392715906, 1028268695887282187]
+from cogs.casino.permissions import is_staff_or_owner
 
-def is_staff_or_owner():
-    async def predicate(ctx):
-        # Allow Bot Owners
-        if ctx.author.id in config.OWNER_IDS:
-            return True
-        # Allow Staff Roles defined in config.py
-        user_role_ids = [r.id for r in getattr(ctx.author, 'roles', [])]
-        if any(role_id in config.STAFF_ROLE_IDS for role_id in user_role_ids):
-            return True
-        # Allow Administrators
-        if getattr(ctx.author, 'guild_permissions', None) and ctx.author.guild_permissions.administrator:
-            return True
-
-        embed = discord.Embed(
-            description="❌ الألعاب دي مخصصة للستاف والأونرز بس!",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed, ephemeral=True)
-        return False
-    return commands.check(predicate)
 
 async def fetch_avatar(session, user, size=(80, 80)):
     try:
@@ -239,8 +220,8 @@ class RouletteLobby(discord.ui.View):
         if self.message: await self.message.edit(view=self)
         
         task = self.ctx.bot.loop.create_task(self.run_game_loop())
-        if not hasattr(self.ctx.bot, 'active_games'): self.ctx.bot.active_games = {}
-        self.ctx.bot.active_games[self.ctx.channel.id] = {'task': task, 'host_id': self.ctx.author.id, 'name': 'Roulette'}
+        if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Roulette", replace_task=self.timer_task):
+            task.cancel()
 
     @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.success)
     async def join_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -387,11 +368,18 @@ class RouletteLobby(discord.ui.View):
                     for p in kicked_players:
                         if p in active_players:
                             active_players.remove(p)
-                else:
-                    active_players.remove(chosen_player)
+                elif not view.kicked_ids:
+                    if chosen_player in active_players:
+                        active_players.remove(chosen_player)
                     embed = discord.Embed(
                         description=f"⏰ تم طرد {chosen_player.mention} برا الحفرة بسبب الخمول!",
                         color=discord.Color.red()
+                    )
+                    await self.ctx.send(embed=embed)
+                else:
+                    embed = discord.Embed(
+                        description="🛡️ كل اللاعبين المستهدفين نجوا بالتأمين. مفيش حد اتطرد في الجولة دي.",
+                        color=discord.Color.gold()
                     )
                     await self.ctx.send(embed=embed)
                 
@@ -423,8 +411,7 @@ class RouletteLobby(discord.ui.View):
         except asyncio.CancelledError:
             pass
         finally:
-            if hasattr(self.ctx.bot, 'active_games') and self.ctx.channel.id in self.ctx.bot.active_games:
-                del self.ctx.bot.active_games[self.ctx.channel.id]
+            release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
 
 # --- THE COG CLASS ---
@@ -433,10 +420,25 @@ class Roulette(commands.Cog):
         self.bot = bot
 
     @commands.command(name='روليت')
+    @is_staff_or_owner()
     async def start_roulette(self, ctx):
         """يبدأ لعبة الروليت"""
+        if is_active_game(self.bot, ctx.channel.id):
+            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
         view = RouletteLobby(ctx)
-        view.message = await ctx.send(embed=view.get_embed(), view=view)
+        if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "Roulette lobby", view=view):
+            view.timer_task.cancel()
+            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+        try:
+            view.message = await ctx.send(embed=view.get_embed(), view=view)
+        except Exception:
+            release_game_task(self.bot, ctx.channel.id, view.timer_task)
+            view.timer_task.cancel()
+            raise
+        if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
+            for child in view.children:
+                child.disabled = True
+            await view.message.edit(view=view)
 
 async def setup(bot):
     await bot.add_cog(Roulette(bot))

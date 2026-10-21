@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord.ui import View, Select
 import random
 import config
+from cogs.casino.game_registry import release_game_task
 
 def t(text: str) -> str:
     return f".ᐟ {text} .ᐟ"
@@ -95,7 +96,17 @@ class HelpCommand(commands.Cog):
             return await ctx.send("❌ للأدمنز أو صاحب اللعبة فقط تقدر توقفها!")
             
         game_info['task'].cancel()
-        del self.bot.active_games[ctx.channel.id]
+        view = game_info.get("view")
+        if view is not None:
+            for child in view.children:
+                child.disabled = True
+            message = getattr(view, "message", None)
+            if message is not None:
+                try:
+                    await message.edit(view=view)
+                except discord.HTTPException:
+                    pass
+        release_game_task(self.bot, ctx.channel.id, game_info['task'])
         
         embed = discord.Embed(
             title="🛑 إيقاف إضطراري", 

@@ -83,10 +83,11 @@ async def load_cogs():
             folder_path.mkdir(parents=True, exist_ok=True)
             continue
 
-        for filename in os.listdir(folder_path):
+        for filename in sorted(os.listdir(folder_path)):
             if filename.endswith('.py') and not filename.startswith('__'):
                 if directory == 'cogs.casino':
-                    allowed = True
+                    # These files are imported helpers, not loadable Cogs.
+                    allowed = filename not in {'bank.py', 'permissions.py', 'game_registry.py'}
                 elif directory == 'cogs.utility':
                     allowed = filename in utility_allow
                 else:

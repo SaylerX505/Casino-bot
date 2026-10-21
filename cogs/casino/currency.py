@@ -79,17 +79,19 @@ class BuyForm(discord.ui.Modal, title="Purchase Item"):
             return await interaction.response.send_message(embed=embed, ephemeral=True)
             
         total_cost = quantity * self.price
-        bal = self.cog.get_balance(interaction.user.id)
-        
-        if bal < total_cost:
+        purchased, balance_after = bank.purchase_item(
+            interaction.user.id, self.item_id, quantity, self.price
+        )
+        if not purchased:
             embed = discord.Embed(
-                description=f"❌ Insufficient balance! You need {total_cost} coins for {quantity}x {self.item_name}.",
+                description=(
+                    f"❌ Insufficient balance! Your balance is {fmt(balance_after)} "
+                    f"{COIN_EMOJI}; you need {fmt(total_cost)} for "
+                    f"{quantity}x {self.item_name}."
+                ),
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-        self.cog.update_balance(interaction.user.id, -total_cost)
-        self.cog.add_item(interaction.user.id, self.item_id, quantity)
         embed = discord.Embed(
             description=f"✅ Success! You bought **{quantity}x {self.item_name}** for {fmt(total_cost)} {COIN_EMOJI}.\n\nYour new balance is **{fmt(self.cog.get_balance(interaction.user.id))} {COIN_EMOJI}**.",
             color=discord.Color.green()
@@ -161,16 +163,13 @@ class TransferModal(discord.ui.Modal, title="💸 Transfer Coins"):
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
             
-        bal = self.cog.get_balance(interaction.user.id)
-        if bal < amt:
+        transferred, balance_after = bank.transfer_balance(interaction.user.id, target_id, amt)
+        if not transferred:
             embed = discord.Embed(
-                description=f"❌ Insufficient balance! Your balance is {fmt(bal)} {COIN_EMOJI}.",
+                description=f"❌ Insufficient balance! Your balance is {fmt(balance_after)} {COIN_EMOJI}.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-        self.cog.update_balance(interaction.user.id, -amt)
-        self.cog.update_balance(target_id, amt)
         embed = discord.Embed(
             description=f"✅ Successfully transferred **{fmt(amt)}** {COIN_EMOJI} to <@{target_id}>!",
             color=discord.Color.green()
@@ -216,15 +215,34 @@ class AdminActionModal(discord.ui.Modal):
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
             
-        if self.action == "add":
-            self.cog.update_balance(target_id, amt)
+        if amt <= 0:
             embed = discord.Embed(
-                description=f"✅ Added {fmt(amt)} to <@{target_id}>",
+                description="❌ Amount must be greater than zero!",
+                color=discord.Color.red()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        if self.action == "add":
+            credited, balance_after = bank.credit_balance(target_id, amt)
+            if not credited:
+                embed = discord.Embed(
+                    description="❌ The amount would exceed the supported account balance range.",
+                    color=discord.Color.red()
+                )
+                return await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed = discord.Embed(
+                description=f"✅ Added {fmt(amt)} to <@{target_id}>. New balance: {fmt(balance_after)} {COIN_EMOJI}.",
                 color=discord.Color.green()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
         elif self.action == "remove":
-            self.cog.update_balance(target_id, -amt)
+            removed, balance_after = bank.remove_balance(target_id, amt)
+            if not removed:
+                embed = discord.Embed(
+                    description=f"❌ Cannot remove {fmt(amt)}; the account only has {fmt(balance_after)} {COIN_EMOJI}.",
+                    color=discord.Color.red()
+                )
+                return await interaction.response.send_message(embed=embed, ephemeral=True)
             embed = discord.Embed(
                 description=f"✅ Removed {fmt(amt)} from <@{target_id}>",
                 color=discord.Color.green()
@@ -250,26 +268,25 @@ class CurrencyHubView(discord.ui.View):
         
     @discord.ui.button(label="Daily", style=discord.ButtonStyle.success, emoji="🎁", custom_id="hub_daily")
     async def daily_btn(self, interaction, button):
-        uid = str(interaction.user.id)
         now = bank.now()
-        last, streak = bank.get_daily(uid)
-
-        if now - last < 86400:
-            next_available_time = int(last + 86400)
+        claim = bank.claim_daily(interaction.user.id, now, random.randint(20, 45))
+        if not claim["claimed"]:
+            if claim.get("reason") == "balance_limit":
+                return await interaction.response.send_message(
+                    "❌ رصيدك وصل للحد الأقصى المدعوم؛ المكافأة لم تُصرف ولم تُستهلك مطالبتك اليومية.",
+                    ephemeral=True,
+                )
+            next_available_time = int(claim["last_daily"] + 86400)
             embed = discord.Embed(
                 description=f"❌ You already claimed it! Come back <t:{next_available_time}:R>",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        if last and (now - last) > 86400 * 2:
-            streak = 0
-        bonus = min(streak, 7) * 10
-        amt = random.randint(20, 45) + bonus
-        self.cog.update_balance(interaction.user.id, amt)
-        bank.set_daily(uid, now, streak + 1)
+        amt = claim["amount"]
+        streak = claim["streak"]
         embed = discord.Embed(
-            description=f"✅ Claimed {fmt(amt)} {COIN_EMOJI} daily reward!\n🔥 ستريك **{streak + 1}** يوم (بونص +{fmt(min(streak + 1, 7) * 10)} بكرة)",
+            description=f"✅ Claimed {fmt(amt)} {COIN_EMOJI} daily reward!\n🔥 ستريك **{streak}** يوم (بونص +{fmt(min(streak, 7) * 10)} بكرة)",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -321,6 +338,15 @@ class Currency(commands.Cog):
 
     def update_balance(self, user_id: int, amount: int):
         return bank.update_balance(user_id, amount)
+
+    def debit_balance(self, user_id: int, amount: int):
+        return bank.debit_balance(user_id, amount)
+
+    def charge_up_to(self, user_id: int, amount: int):
+        return bank.charge_up_to(user_id, amount)
+
+    def place_bet(self, player_a: int, player_b: int, amount: int) -> bool:
+        return bank.place_bet(player_a, player_b, amount)
 
     def get_balance(self, user_id: int) -> int: return bank.get_balance(user_id)
 
@@ -428,17 +454,25 @@ class Currency(commands.Cog):
             key = "luck_ticket"
         else:
             return await ctx.send("❌ الصنف ده مابيستخدمش كده! الصناديق والتذاكر بس (`+استخدم صندوق`). الكشف بـ `+اكشف` في جيم المافيا، والفيتو والتأمين بيشتغلوا تلقائي.")
-        if self.get_item_count(ctx.author.id, key) <= 0:
-            return await ctx.send(f"❌ معكش **{key}**! اشتريه من الشوب (`+رصيد` > Shop).")
-        self.remove_item(ctx.author.id, key, 1)
         if key == "loot_box":
             reward = random.choice([30, 50, 80, 100, 150, 250, 400])
-            self.update_balance(ctx.author.id, reward)
-            desc = f"🎁 {ctx.author.mention} فتح صندوق الحظ وطلعله **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(self.get_balance(ctx.author.id))}**"
         else:
             reward = random.choice([20, 40, 60, 100, 150])
-            self.update_balance(ctx.author.id, reward)
-            desc = f"🎟️ {ctx.author.mention} استخدم تذكرة الحظ وكسب **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(self.get_balance(ctx.author.id))}**"
+
+        redeemed, balance_after = bank.redeem_item(ctx.author.id, key, reward)
+        if not redeemed:
+            if self.get_item_count(ctx.author.id, key) > 0:
+                return await ctx.send(
+                    "❌ رصيدك وصل للحد الأقصى المدعوم؛ احتفظنا بالصنف في شنطتك ولم نستهلكه."
+                )
+            return await ctx.send(
+                f"❌ معكش **{key}**! اشتريه من الشوب (`+رصيد` > Shop)."
+            )
+
+        if key == "loot_box":
+            desc = f"🎁 {ctx.author.mention} فتح صندوق الحظ وطلعله **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(balance_after)}**"
+        else:
+            desc = f"🎟️ {ctx.author.mention} استخدم تذكرة الحظ وكسب **{fmt(reward)}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{fmt(balance_after)}**"
         await ctx.send(embed=discord.Embed(title="🍀 حظك!", description=desc, color=discord.Color.gold()))
 
     @commands.command(name='whitelist')

@@ -2,6 +2,8 @@ import discord, asyncio, random, io, math
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
 from cogs.utility.theme import THEME, WatermarkView, lobby_embed, base_embed, get_currency
+from cogs.casino.permissions import is_staff_or_owner
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task
 FEE = 50
 COIN = "<:ckrcoin:1513743032124575784>"
 SEG = [("+100",100),("-50",-50),("x2","x2"),("BOX","box"),("0",0),("+150",150),("-30",-30),("+70",70)]
@@ -46,31 +48,35 @@ class WL(discord.ui.View):
    try:await s.msg.edit(view=s)
    except:pass
   t=s.ctx.bot.loop.create_task(s.run())
-  if not hasattr(s.ctx.bot,"active_games"):s.ctx.bot.active_games={}
-  s.ctx.bot.active_games[s.ctx.channel.id]={"task":t,"host_id":s.ctx.author.id,"name":"Wheel"}
+  if not register_game_task(s.ctx.bot,s.ctx.channel.id,t,s.ctx.author.id,"Wheel",replace_task=s.tt):
+   t.cancel()
  async def run(s):
   try:
    cur=get_currency(s.ctx.bot)
    for p in list(s.pl):
     if cur:
-     if cur.get_balance(p.id)<FEE:
+     fee_paid,_balance_after_fee=cur.debit_balance(p.id,FEE)
+     if not fee_paid:
       await s.ctx.send(embed=base_embed(description=f"❌ {p.mention} فلوسك ناقصة!",color=THEME["red_dark"]));s.pl.remove(p);continue
-     cur.update_balance(p.id,-FEE)
     idx=random.randrange(len(SEG));lb,v=SEG[idx];buf=pic(idx);f=discord.File(fp=buf,filename="w.png");g=0;ex=""
     if isinstance(v,int):g=v
     elif v=="x2":g=FEE*2
     else:g=random.choice([20,50,80,120,200]);ex=f"\n🎁 صندوق **{g:,}** {COIN}!"
-    if cur and g:cur.update_balance(p.id,g)
+    if cur and g > 0:
+     cur.update_balance(p.id,g)
+    elif cur and isinstance(v,int) and v < 0:
+     actual_loss,_balance_after_loss=cur.charge_up_to(p.id,-g)
+     g=-actual_loss
     b=cur.get_balance(p.id) if cur else 0
     if g>0:tx=f"🎉 {p.mention} **{lb}**!\n💰 **{g:,}**{ex}\n🏦 **{b:,}**";co=THEME["gold"]
-    elif g<0:tx=f"😅 {p.mention} **{lb}**!\n💸 **{abs(g):,}**\n🏦 **{b:,}**";co=THEME["red_dark"]
+    elif isinstance(v,int) and v<0:tx=f"😅 {p.mention} **{lb}**!\n💸 خسر **{abs(g):,}**\n🏦 **{b:,}**";co=THEME["red_dark"]
     else:tx=f"😶‍🌫️ {p.mention} **{lb}**!";co=THEME["grey"]
     e=base_embed(title="🎡 لفة",description=tx,color=co);e.set_image(url="attachment://w.png")
     await s.ctx.send(embed=e,file=f,view=WatermarkView());await asyncio.sleep(2)
    await s.ctx.send(embed=base_embed(title="🏁 خلصت!",description="تسلم ايديكم!",color=THEME["green"]),view=WatermarkView())
   except asyncio.CancelledError:pass
   finally:
-   if hasattr(s.ctx.bot,"active_games") and s.ctx.channel.id in s.ctx.bot.active_games:del s.ctx.bot.active_games[s.ctx.channel.id]
+   release_game_task(s.ctx.bot,s.ctx.channel.id,asyncio.current_task())
  @discord.ui.button(label="انضمام 🎡",style=discord.ButtonStyle.success)
  async def j(s,i,b):
   if s.st:return await i.response.send_message(embed=base_embed(description="بدأت!",color=THEME["red_dark"]),ephemeral=True)
@@ -87,8 +93,20 @@ class WL(discord.ui.View):
 class Wheel(commands.Cog):
  def __init__(s,b):s.bot=b
  @commands.command(name="عجلة",aliases=["عجله","wheel"])
+ @is_staff_or_owner()
  async def w(s,ctx):
-  if hasattr(s.bot,"active_games") and ctx.channel.id in s.bot.active_games:return await ctx.send(embed=base_embed(description="❌ فيه لعبة!",color=THEME["red_dark"]))
-  v=WL(ctx);v.message=await ctx.send(embed=v.emb(),view=v)
+  if is_active_game(s.bot,ctx.channel.id):return await ctx.send(embed=base_embed(description="❌ فيه لعبة أو لوبي!",color=THEME["red_dark"]))
+  v=WL(ctx)
+  if not register_game_task(s.bot,ctx.channel.id,v.tt,ctx.author.id,"Wheel lobby",view=v):
+   v.tt.cancel()
+   return await ctx.send(embed=base_embed(description="❌ فيه لعبة أو لوبي!",color=THEME["red_dark"]))
+  try:
+   v.msg=await ctx.send(embed=v.emb(),view=v)
+   v.message=v.msg
+  except Exception:
+   release_game_task(s.bot,ctx.channel.id,v.tt);v.tt.cancel();raise
+  if not owns_game_task(s.bot,ctx.channel.id,v.tt):
+   for child in v.children:child.disabled=True
+   await v.message.edit(view=v)
 async def setup(b):await b.add_cog(Wheel(b))
 

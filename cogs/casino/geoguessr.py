@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task
 import asyncio
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
@@ -13,28 +14,8 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import config
 
-OWNER_IDS = [1446557924834017441, 1135291623840948375, 853670651428077609, 798280308071596063, 1159601661392715906, 1028268695887282187]
+from cogs.casino.permissions import is_staff_or_owner
 
-def is_staff_or_owner():
-    async def predicate(ctx):
-        # Allow Bot Owners
-        if ctx.author.id in config.OWNER_IDS:
-            return True
-        # Allow Staff Roles defined in config.py
-        user_role_ids = [r.id for r in getattr(ctx.author, 'roles', [])]
-        if any(role_id in config.STAFF_ROLE_IDS for role_id in user_role_ids):
-            return True
-        # Allow Administrators
-        if getattr(ctx.author, 'guild_permissions', None) and ctx.author.guild_permissions.administrator:
-            return True
-
-        embed = discord.Embed(
-            description="❌ الألعاب دي مخصصة للستاف والأونرز بس!",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed, ephemeral=True)
-        return False
-    return commands.check(predicate)
 
 class WatermarkView(discord.ui.View):
     def __init__(self):
@@ -481,8 +462,7 @@ async def run_game_loop(ctx, players):
     except asyncio.CancelledError:
         pass
     finally:
-        if hasattr(ctx.bot, 'active_games') and ctx.channel.id in ctx.bot.active_games:
-            del ctx.bot.active_games[ctx.channel.id]
+        release_game_task(ctx.bot, ctx.channel.id, asyncio.current_task())
 
 
 # --- MENUS AND VIEWS ---
@@ -542,8 +522,8 @@ class GuessGameMenu(discord.ui.View):
         if self.message: await self.message.edit(view=self)
         
         task = self.ctx.bot.loop.create_task(run_game_loop(self.ctx, list(self.players)))
-        if not hasattr(self.ctx.bot, 'active_games'): self.ctx.bot.active_games = {}
-        self.ctx.bot.active_games[self.ctx.channel.id] = {'task': task, 'host_id': self.ctx.author.id, 'name': 'GeoGuessr'}
+        if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "GeoGuessr", replace_task=self.timer_task):
+            task.cancel()
 
     @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.success)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -638,10 +618,25 @@ class GeoGuessr(commands.Cog):
         self.bot = bot
 
     @commands.command(name='جيو', aliases=["geo", "geoguessr", "خمن"])
+    @is_staff_or_owner()
     async def start_geo(self, ctx):
         """يبدأ لعبة جيوغيسر"""
+        if is_active_game(self.bot, ctx.channel.id):
+            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
         view = GuessGameMenu(ctx)
-        view.message = await ctx.send(embed=view.get_embed(), view=view)
+        if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "GeoGuessr lobby", view=view):
+            view.timer_task.cancel()
+            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+        try:
+            view.message = await ctx.send(embed=view.get_embed(), view=view)
+        except Exception:
+            release_game_task(self.bot, ctx.channel.id, view.timer_task)
+            view.timer_task.cancel()
+            raise
+        if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
+            for child in view.children:
+                child.disabled = True
+            await view.message.edit(view=view)
 
 async def setup(bot):
     await bot.add_cog(GeoGuessr(bot))
