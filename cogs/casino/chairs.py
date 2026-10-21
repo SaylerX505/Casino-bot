@@ -1,15 +1,30 @@
-import discord
-from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
 import logging
 import random
-import config
+from functools import partial
 
+import discord
+from discord.ext import commands
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
+
+import config
+from cogs.casino.game_registry import (
+    is_active_game,
+    owns_game_task,
+    register_game_task,
+    release_game_task,
+    set_game_view,
+)
 from cogs.casino.permissions import is_staff_or_admin
+from cogs.utility.theme import (
+    THEME,
+    StatusPanel,
+    lobby_embed,
+    report_game_failure,
+    result_embed,
+)
 
 logger = logging.getLogger(__name__)
-from cogs.utility.theme import lobby_embed, report_game_failure, result_embed
 
 
 # --- UI VIEWS ---
@@ -96,7 +111,7 @@ class ChairActionView(discord.ui.View):
         return callback
 
 
-class ChairsLobby(discord.ui.View):
+class ChairsLobby(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
@@ -106,6 +121,30 @@ class ChairsLobby(discord.ui.View):
         self.message = None
         
         self.logo_url = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
+        self._panel_text = TextDisplay(self._panel_content())
+        self._buttons = []
+        for label, custom_id, callback_name, emoji in (
+            ("انضمام (Join)", "chairs_join", "join_btn", None),
+            ("مغادرة (Leave)", "chairs_leave", "leave_btn", None),
+            ("ابدأ الآن", "chairs_start", "start_btn", None),
+            ("+10 ثواني", "chairs_add_time", "add_time_btn", "⏱️"),
+        ):
+            button = discord.ui.Button(
+                label=label,
+                custom_id=custom_id,
+                style=discord.ButtonStyle.secondary,
+                emoji=emoji,
+            )
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(*self._buttons),
+                accent_color=THEME["teal"],
+            )
+        )
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
@@ -127,6 +166,18 @@ class ChairsLobby(discord.ui.View):
         embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=self.logo_url)
         return embed
 
+    def _panel_content(self):
+        embed = self.get_embed()
+        description = embed.description or ""
+        return f"# {embed.title or 'لعبة الكراسي الموسيقية'}\\n{description}\\n\\n-# كازينو الحفرة • {config.BRAND}"
+
+    def _refresh_panel(self):
+        self._panel_text.content = self._panel_content()[:4000]
+
+    def _disable_buttons(self):
+        for button in self._buttons:
+            button.disabled = True
+
     async def run_timer(self):
         while self.time_left > 0 and not self.game_started:
             await asyncio.sleep(5)
@@ -135,7 +186,8 @@ class ChairsLobby(discord.ui.View):
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
                 try:
-                    await self.message.edit(embed=self.get_embed())
+                    self._refresh_panel()
+                    await self.message.edit(view=self)
                 except discord.HTTPException:
                     logger.debug("Could not refresh musical chairs lobby", exc_info=True)
 
@@ -143,83 +195,67 @@ class ChairsLobby(discord.ui.View):
         if self.game_started: return
         if len(self.players) < 2:
             self.game_started = True
-            embed = discord.Embed(
-                description="❌ العدد غير كافي لبدء اللعبة. (تحتاج لاعبين على الأقل)",
-                color=discord.Color.red()
-            )
-            await self.ctx.send(embed=embed)
-            for child in self.children: child.disabled = True
+            self._panel_text.content = "# العدد غير كافي\\nمحتاجين لاعبين على الأقل عشان الجولة تبدأ."
+            self._disable_buttons()
             if self.message: await self.message.edit(view=self)
             return
 
         self.game_started = True
-        embed = discord.Embed(
-            description="🚀 جاري تجهيز الكراسي الموسيقية...",
-            color=discord.Color.blue()
-        )
-        await self.ctx.send(embed=embed, delete_after=3)
-        for child in self.children: child.disabled = True
+        self._panel_text.content = "# جاري تجهيز الكراسي الموسيقية\\nهنبدأ الجولة دلوقتي. جهّز نفسك."
+        self._disable_buttons()
         if self.message: await self.message.edit(view=self)
         
         task = self.ctx.bot.loop.create_task(self.run_game_loop())
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Chairs", replace_task=self.timer_task):
             task.cancel()
 
-    @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.secondary)
     async def join_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
-            embed = discord.Embed(
-                description="اللعبة بدأت ياعم!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("اللعبة بدأت", "مش هنقدر نضيف لاعبين بعد بداية الجولة.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if len(self.players) >= 25:
-            embed = discord.Embed(
-                description="اكتمل العدد (25 لاعب)!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("اللوبي اكتمل", "وصلنا للحد الأقصى: 25 لاعب.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if interaction.user in self.players:
-            embed = discord.Embed(
-                description="أنت مسجل بالفعل!",
-                color=discord.Color.red()
+            await interaction.response.send_message(
+                view=StatusPanel("أنت موجود", "أنت مسجل بالفعل في اللوبي.", "warning"),
+                ephemeral=True,
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             self.players.append(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.secondary)
     async def leave_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
-            embed = discord.Embed(
-                description="اللعبة بدأت!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("اللعبة بدأت", "اللوبي اتقفل ومبقاش متاح تغيير اللاعبين.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if interaction.user in self.players:
             self.players.remove(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
         else:
-            embed = discord.Embed(
-                description="أنت لست في اللعبة أصلاً!",
-                color=discord.Color.red()
+            await interaction.response.send_message(
+                view=StatusPanel("مش في اللوبي", "انضم الأول قبل ما تحاول تغادر.", "warning"),
+                ephemeral=True,
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
-            embed = discord.Embed(
-                description="للأدمن فقط!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("مش مسموح", "صاحب اللوبي فقط يقدر يبدأ الجولة أو يمدد الوقت.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         await interaction.response.defer()
         self.time_left = 0
         await self.auto_start()
 
-    @discord.ui.button(label="+10 ثواني", style=discord.ButtonStyle.secondary, emoji="⏱️")
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
@@ -228,7 +264,8 @@ class ChairsLobby(discord.ui.View):
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         self.time_left += 10
-        await interaction.response.edit_message(embed=self.get_embed())
+        self._refresh_panel()
+        await interaction.response.edit_message(view=self)
 
     # --- MUSICAL CHAIRS LOOP ---
     async def run_game_loop(self):
@@ -357,7 +394,7 @@ class Chairs(commands.Cog):
             view.timer_task.cancel()
             return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
         try:
-            view.message = await ctx.send(embed=view.get_embed(), view=view)
+            view.message = await ctx.send(view=view)
         except Exception:
             release_game_task(self.bot, ctx.channel.id, view.timer_task)
             view.timer_task.cancel()
