@@ -157,6 +157,18 @@ class WizardHomeView(WizardLayout):
             )
         )
 
+    async def open_manager_roles(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        if not _is_discord_admin(interaction):
+            return await interaction.response.send_message(
+                "تغيير رولات إدارة البوت متاح للمالك أو Administrator فقط.",
+                ephemeral=True,
+            )
+        await interaction.response.edit_message(
+            view=AdminRoleWizardView(interaction.guild, interaction.user)
+        )
+
     async def open_roles(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
@@ -181,6 +193,117 @@ class WizardHomeView(WizardLayout):
                 "اتقفلت جلسة الإعداد. الإعدادات اللي تم حفظها بالفعل فضلت محفوظة.",
                 "success",
             )
+        )
+
+
+class AdminRoleWizardView(WizardLayout):
+    def __init__(self, guild, owner, *, notice=None):
+        super().__init__(guild, owner, notice=notice)
+        current_roles = _configured_manager_roles(guild.id)
+        role_text = ", ".join(f"<@&{role_id}>" for role_id in current_roles)
+        if not role_text:
+            role_text = "مفيش رولات إدارة مخصصة؛ الإعدادات للمالك وAdministrator فقط."
+        self.role_select = RoleSelect(
+            placeholder="اختار الرولات الموثوقة لإدارة إعدادات البوت",
+            min_values=1,
+            max_values=25,
+        )
+        self.role_select.callback = self.save_roles
+        self.add_item(
+            Container(
+                TextDisplay(
+                    "# رولات إدارة البوت\n"
+                    "الأعضاء اللي معاهم الرولات دي يقدروا يفتحوا /wizard ويعدلوا إعدادات تشغيل الألعاب والقنوات. "
+                    "تغيير رولات الإدارة نفسها يفضل للمالك أو Administrator فقط.\n\n"
+                    f"**الرولات الحالية:** {role_text}\n\n"
+                    "الرولات دي لا تكتسب Administrator أو أي صلاحية Discord أخرى."
+                    + self._notice_text()
+                ),
+                Separator(),
+                ActionRow(self.role_select),
+                ActionRow(
+                    self._button("مسح رولات الإدارة", "wizard_clear_manager_roles", self.clear_roles),
+                    self._button("رجوع", "wizard_manager_back", self.go_home),
+                ),
+                accent_color=0x8B1E1E,
+            )
+        )
+
+    async def save_roles(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        if not _is_discord_admin(interaction):
+            return await interaction.response.send_message(
+                "تغيير رولات إدارة البوت متاح للمالك أو Administrator فقط.",
+                ephemeral=True,
+            )
+        role_ids = sorted({
+            role.id
+            for role in self.role_select.values
+            if role.id != self.guild_id
+            and getattr(role, "guild", None) is not None
+            and role.guild.id == self.guild_id
+        })
+        if not role_ids:
+            return await interaction.response.send_message(
+                "اختار رول واحدة على الأقل، أو استخدم زر مسح رولات الإدارة.",
+                ephemeral=True,
+            )
+        try:
+            bank.set_setting(
+                manager_role_setting_key(self.guild_id),
+                json.dumps(role_ids),
+            )
+        except Exception:
+            logger.exception("Failed to persist manager roles for guild=%s", self.guild_id)
+            return await interaction.response.send_message(
+                "تعذر حفظ الرولات. مفيش تغيير اتأكد حفظه.",
+                ephemeral=True,
+            )
+        logger.info(
+            "Wizard updated manager roles guild=%s actor=%s role_count=%s",
+            self.guild_id,
+            interaction.user.id,
+            len(role_ids),
+        )
+        await interaction.response.edit_message(
+            view=AdminRoleWizardView(
+                interaction.guild,
+                interaction.user,
+                notice=f"اتحفظت {len(role_ids)} رول إدارة. تقدر تفتح المعالج بيها من غير Administrator.",
+            )
+        )
+
+    async def clear_roles(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        if not _is_discord_admin(interaction):
+            return await interaction.response.send_message(
+                "مسح رولات إدارة البوت متاح للمالك أو Administrator فقط.",
+                ephemeral=True,
+            )
+        try:
+            bank.set_setting(manager_role_setting_key(self.guild_id), "[]")
+        except Exception:
+            logger.exception("Failed to clear manager roles for guild=%s", self.guild_id)
+            return await interaction.response.send_message(
+                "تعذر حفظ التغيير. جرّب تاني بعد إصلاح قاعدة البيانات.",
+                ephemeral=True,
+            )
+        logger.info("Wizard cleared manager roles guild=%s actor=%s", self.guild_id, interaction.user.id)
+        await interaction.response.edit_message(
+            view=AdminRoleWizardView(
+                interaction.guild,
+                interaction.user,
+                notice="اتمسحت رولات الإدارة المخصصة. المعالج للمالك وAdministrator فقط دلوقتي.",
+            )
+        )
+
+    async def go_home(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        await interaction.response.edit_message(
+            view=WizardHomeView(interaction.guild, interaction.user)
         )
 
 
@@ -437,8 +560,15 @@ class WizardReviewView(WizardLayout):
     def __init__(self, guild, owner, *, notice=None):
         super().__init__(guild, owner, notice=notice)
         roles = _configured_roles(guild.id)
+        manager_roles = _configured_manager_roles(guild.id)
         role_summary = ", ".join(f"<@&{role_id}>" for role_id in roles) or "لا توجد رولات ستاف مخصصة."
-        lines = [f"**رولات الستاف:** {role_summary}", "", "**قنوات الألعاب:**"]
+        manager_summary = ", ".join(f"<@&{role_id}>" for role_id in manager_roles) or "المالك وAdministrator فقط."
+        lines = [
+            f"**رولات إدارة البوت:** {manager_summary}",
+            f"**رولات الستاف:** {role_summary}",
+            "",
+            "**قنوات الألعاب:**",
+        ]
         for key in GAME_ORDER:
             unrestricted, channel_ids = _channel_policy(guild.id, key)
             channels = "كل القنوات" if unrestricted else (
@@ -456,8 +586,11 @@ class WizardReviewView(WizardLayout):
                 ),
                 Separator(),
                 ActionRow(
-                    self._button("تعديل الرولات", "wizard_review_roles", self.open_roles),
-                    self._button("تعديل القنوات", "wizard_review_channels", self.open_channels),
+                    self._button("رولات الإدارة", "wizard_review_managers", self.open_manager_roles),
+                    self._button("رولات الستاف", "wizard_review_roles", self.open_roles),
+                    self._button("قنوات الألعاب", "wizard_review_channels", self.open_channels),
+                ),
+                ActionRow(
                     self._button("الرئيسية", "wizard_review_home", self.go_home),
                 ),
                 accent_color=0x393A41,
@@ -489,12 +622,9 @@ class SetupWizard(commands.Cog):
         description="إعداد رولات الستاف وقنوات كل لعبة خطوة بخطوة",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def wizard(self, interaction: discord.Interaction):
         guild = interaction.guild
-        if guild is None or not (
-            interaction.user.id == guild.owner_id or has_admin_access(interaction.user)
-        ):
+        if guild is None or not _can_manage_wizard(interaction):
             return await interaction.response.send_message(
                 "فتح وتعديل معالج الإعداد متاح لمالك السيرفر أو حساب يمتلك Administrator.",
                 ephemeral=True,
