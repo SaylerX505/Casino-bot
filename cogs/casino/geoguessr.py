@@ -81,7 +81,7 @@ def get_guess_data(guess_text):
         if location and 'address' in location.raw:
             code = location.raw['address'].get('country_code', '').lower()
             return (location.latitude, location.longitude), code
-    except: pass
+    except Exception: pass
     return None, None
 
 def draw_dashed_line(draw, pt1, pt2, fill, width, dash_length=15):
@@ -151,7 +151,7 @@ async def generate_result_map(actual_coords, player_data_list):
                         ImageDraw.Draw(mask).ellipse((0, 0, 40, 40), fill=255)
                         base_map.paste(avatar_img, (int(px-20), int(py-20)), mask)
                         draw.arc([px-22, py-22, px+22, py+22], 0, 360, fill=line_color, width=3)
-            except: pass
+            except Exception: pass
 
     margin = 150
     min_x = max(0, min(all_x) - margin)
@@ -192,14 +192,14 @@ async def generate_dashboard_image(players_data, round_num, total_rounds):
         a = a.point(lambda p: p * 0.15)
         bg_img = Image.merge('RGBA', (r, g, b, a))
         board.paste(bg_img, (0, 0), bg_img)
-    except: pass
+    except Exception: pass
 
     draw = ImageDraw.Draw(board)
     try:
         font_large = ImageFont.truetype("arial.ttf", 40)
         font_medium = ImageFont.truetype("arial.ttf", 24)
         font_small = ImageFont.truetype("arial.ttf", 20)
-    except:
+    except Exception:
         font_large = font_medium = font_small = ImageFont.load_default()
 
     draw.text((width//2, 40), f"Round {round_num} / {total_rounds}", fill="white", font=font_large, anchor="mm")
@@ -241,7 +241,7 @@ async def generate_dashboard_image(players_data, round_num, total_rounds):
                         mask = Image.new("L", (80, 80), 0)
                         ImageDraw.Draw(mask).ellipse((0, 0, 80, 80), fill=255)
                         board.paste(av_img, (x+box_w//2-40, y+15), mask)
-            except: pass
+            except Exception: pass
 
     out_bytes = io.BytesIO()
     board.save(out_bytes, format='PNG')
