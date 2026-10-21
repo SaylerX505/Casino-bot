@@ -491,6 +491,10 @@ class Currency(commands.Cog):
     def update_balance(self, user_id: int, amount: int):
         return bank.update_balance(user_id, amount)
 
+    def credit_balance(self, user_id: int, amount: int):
+        """Safely credit coins without raising on a SQLite balance limit."""
+        return bank.credit_balance(user_id, amount)
+
     def debit_balance(self, user_id: int, amount: int):
         return bank.debit_balance(user_id, amount)
 
