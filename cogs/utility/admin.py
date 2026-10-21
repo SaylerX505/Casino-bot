@@ -1,10 +1,15 @@
 """Discord Administrator-gated controls for the bot's server-specific tools."""
+import logging
+import sqlite3
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
+
+logger = logging.getLogger(__name__)
 
 
 class AdminResult(LayoutView):
@@ -64,8 +69,8 @@ class AdminCommands(commands.Cog):
         if require_bot_admin:
             try:
                 allowed = bank.is_guild_admin(interaction.guild_id, interaction.user.id)
-            except Exception:
-                print("Failed to read the server bot-admin allowlist.")
+            except (sqlite3.Error, OSError, ValueError):
+                logger.exception("Failed to read the server bot-admin allowlist")
                 await interaction.response.send_message(
                     view=AdminResult(
                         "تعذر التحقق من الصلاحيات",
@@ -95,9 +100,9 @@ class AdminCommands(commands.Cog):
         """Protect bot-wide controls while economy/AI settings are globally scoped."""
         try:
             is_owner = await self.bot.is_owner(interaction.user)
-        except Exception:
+        except (discord.DiscordException, RuntimeError):
             is_owner = False
-            print("Failed to verify the bot application owner for a global setting.")
+            logger.exception("Failed to verify the bot application owner for a global setting")
 
         if not is_owner:
             await interaction.response.send_message(
