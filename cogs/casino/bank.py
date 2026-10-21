@@ -7,6 +7,8 @@ import threading
 import time
 from pathlib import Path
 
+SQLITE_MAX_INTEGER = (1 << 63) - 1
+
 # Resolve storage from the project root, not the process working directory.
 DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
 _lock = threading.RLock()
@@ -608,6 +610,8 @@ def charge_up_to(user_id, amount):
             raise
 
 def set_balance(user_id, amount):
+    if isinstance(balance, bool) or not isinstance(balance, int) or not 0 <= balance <= SQLITE_MAX_INTEGER:
+        raise ValueError("Balance must be a non-negative SQLite 64-bit integer")
     """Set a wallet balance to a valid SQLite integer; negative balances are forbidden."""
     uid, amount = str(user_id), int(amount)
     if amount < 0 or amount > SQLITE_MAX_INT:
@@ -631,6 +635,14 @@ def get_daily(uid):
         return float(row["last_daily"]), int(row["streak"])
 
 def set_daily(uid, last, streak):
+    try:
+        last_daily = float(last_daily)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("Daily timestamp must be finite and non-negative") from None
+    if not math.isfinite(last_daily) or last_daily < 0:
+        raise ValueError("Daily timestamp must be finite and non-negative")
+    if isinstance(streak, bool) or not isinstance(streak, int) or streak < 0:
+        raise ValueError("Daily streak must be a non-negative integer")
     uid, last, streak = str(uid), float(last), int(streak)
     if not math.isfinite(last) or last < 0:
         raise ValueError("last daily timestamp must be finite and non-negative")
@@ -666,6 +678,8 @@ def top_balances(limit=10):
         return [(r["user_id"], int(r["balance"])) for r in rows]
 
 def add_item(user_id, item, amount=1):
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INTEGER:
+        raise ValueError("Item amount must be a positive SQLite-safe integer")
     """Add a strictly positive quantity without overflowing SQLite's integer range."""
     uid, amount = str(user_id), int(amount)
     if not str(item).strip() or amount <= 0 or amount > SQLITE_MAX_INT:
@@ -697,6 +711,8 @@ def add_item(user_id, item, amount=1):
             raise
 
 def remove_item(user_id, item, amount=1):
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INTEGER:
+        return False
     """Atomically consume inventory only when sufficient quantity exists."""
     uid, amount = str(user_id), int(amount)
     if amount <= 0 or amount > (1 << 63) - 1:
