@@ -89,6 +89,30 @@ class AdminCommands(commands.Cog):
 
     @access.command(name="add", description="السماح لأدمن Discord باستخدام أدوات إدارة البوت")
     @app_commands.describe(member="عضو يمتلك بالفعل صلاحية Administrator في Discord")
+    async def _require_global_owner(
+        self,
+        interaction: discord.Interaction,
+        setting_name: str,
+    ) -> bool:
+        """Protect bot-wide controls while economy/AI settings are globally scoped."""
+        try:
+            is_owner = await self.bot.is_owner(interaction.user)
+        except Exception:
+            is_owner = False
+            print("Failed to verify the bot application owner for a global setting.")
+
+        if not is_owner:
+            await interaction.response.send_message(
+                view=AdminResult(
+                    "الإعداد ده مش متاح لأدمن السيرفر",
+                    f"إعداد **{setting_name}** بيأثر على بيانات أو سلوك البوت كله، مش السيرفر ده بس. هنقفل التغيير على مالك التطبيق لحد ما يبقى لكل سيرفر إعداد مستقل.",
+                    success=False,
+                ),
+                ephemeral=True,
+            )
+            return False
+        return True
+
     async def access_add(self, interaction: discord.Interaction, member: discord.Member):
         if not await self._require_admin(interaction):
             return
@@ -163,6 +187,8 @@ class AdminCommands(commands.Cog):
     ):
         if not await self._require_admin(interaction, require_bot_admin=True):
             return
+        if not await self._require_global_owner(interaction, "الاقتصاد"):
+            return
         credited, balance = bank.credit_balance(member.id, amount)
         if not credited:
             return await interaction.response.send_message(
@@ -187,6 +213,8 @@ class AdminCommands(commands.Cog):
     ):
         if not await self._require_admin(interaction, require_bot_admin=True):
             return
+        if not await self._require_global_owner(interaction, "الاقتصاد"):
+            return
         removed, balance = bank.remove_balance(member.id, amount)
         if not removed:
             return await interaction.response.send_message(
@@ -209,6 +237,8 @@ class AdminCommands(commands.Cog):
     @app_commands.describe(enabled="فعّل محسن أو أوقفه")
     async def ai_toggle(self, interaction: discord.Interaction, enabled: bool):
         if not await self._require_admin(interaction, require_bot_admin=True):
+            return
+        if not await self._require_global_owner(interaction, "محسن"):
             return
         cog = self.bot.get_cog("AI")
         if cog is None:
