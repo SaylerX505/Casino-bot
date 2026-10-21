@@ -47,6 +47,8 @@ Thumbs.db
 data/ai_data.json
 data/state.json
 data/used_images.json
+data/used_images.json.tmp
+**/used_images.json.tmp
 **/ai_data.json
 **/state.json
 **/used_images.json
