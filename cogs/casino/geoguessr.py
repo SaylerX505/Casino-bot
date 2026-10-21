@@ -583,7 +583,8 @@ class GuessGameMenu(LayoutView):
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
                 try:
-                    self._refresh_panel()\n                    await self.message.edit(view=self)
+                    self._refresh_panel()
+                    await self.message.edit(view=self)
                 except discord.HTTPException:
                     logger.debug("Could not refresh GeoGuessr lobby", exc_info=True)
 
@@ -637,7 +638,8 @@ class GuessGameMenu(LayoutView):
             await self._send_private_embed(interaction, embed)
         else:
             self.players.add(interaction.user)
-            self._refresh_panel()\n            await interaction.response.edit_message(view=self)
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
 
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
@@ -648,7 +650,8 @@ class GuessGameMenu(LayoutView):
             return await self._send_private_embed(interaction, embed)
         if interaction.user in self.players:
             self.players.discard(interaction.user)
-            self._refresh_panel()\n            await interaction.response.edit_message(view=self)
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
                 description="ولا انتا مش ف اللعبه يلا بطل استعباط",
@@ -675,7 +678,8 @@ class GuessGameMenu(LayoutView):
             )
             return await self._send_private_embed(interaction, embed)
         self.time_left += 10
-        self._refresh_panel()\n            await interaction.response.edit_message(view=self)
+        self._refresh_panel()
+            await interaction.response.edit_message(view=self)
 
 class ActiveGameView(discord.ui.View):
     def __init__(self, executor, timer_state):
