@@ -107,7 +107,6 @@ class AI(commands.Cog):
             {"role": "assistant", "content": assistant_content},
         ))
         del history[:-MAX_HISTORY_MESSAGES]
-        self._history.move_to_end(key) if hasattr(self._history, "move_to_end") else None
         while len(self._history) > MAX_CONVERSATIONS:
             self._history.pop(next(iter(self._history)))
 
