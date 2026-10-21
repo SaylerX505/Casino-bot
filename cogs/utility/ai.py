@@ -12,6 +12,7 @@ from discord.ext import commands
 
 import config
 from cogs.casino import bank
+from cogs.casino.permissions import configured_ai_role_ids
 
 logger = logging.getLogger(__name__)
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
@@ -98,8 +99,11 @@ class AI(commands.Cog):
             return False
         if author.id == guild.owner_id or getattr(author, "premium_since", None) is not None:
             return True
-        allowed_roles = getattr(config, "AI_ALLOWED_ROLE_IDS", set())
-        return any(getattr(role, "id", None) in allowed_roles for role in getattr(author, "roles", ()))
+        allowed_roles = configured_ai_role_ids(guild.id)
+        return any(
+            getattr(role, "id", None) in allowed_roles
+            for role in getattr(author, "roles", ())
+        )
 
     def _remember_exchange(self, key, user_content, assistant_content):
         history = self._history.setdefault(key, [])
