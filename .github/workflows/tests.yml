@@ -10,6 +10,15 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+      - name: Reject tracked runtime state and secret files
+        shell: bash
+        run: |
+          for path in .env data/ai_data.json data/state.json; do
+            if git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
+              echo "::error::Sensitive runtime file must not be tracked: $path"
+              exit 1
+            fi
+          done
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
