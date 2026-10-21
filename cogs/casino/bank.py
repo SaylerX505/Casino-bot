@@ -537,7 +537,10 @@ def settle_rps_wager(game_id, winner_id=None):
 
 
 def refund_orphaned_rps_wagers():
-    """Refund active RPS wagers left behind by a process restart."""
+    """Refund interrupted RPS wagers, isolating errors so one record cannot block recovery."""
+    import logging
+
+    logger = logging.getLogger(__name__)
     with _lock:
         rows = _connect().execute(
             "SELECT game_id FROM rps_wagers WHERE status='active' ORDER BY created_at"
@@ -547,18 +550,41 @@ def refund_orphaned_rps_wagers():
     refunded = 0
     pending = 0
     for game_id in game_ids:
-        result = settle_rps_wager(game_id)
-        if result.get("settled") and result.get("status") == "refunded":
-            refunded += 1
-        else:
+        try:
+            result = settle_rps_wager(game_id)
+        except Exception:
             pending += 1
+            logger.exception(
+                "Could not recover orphaned RPS wager game_id=%s; escrow remains recorded",
+                game_id,
+            )
+            continue
+
+        if not result.get("settled"):
+            pending += 1
+            logger.error(
+                "Orphaned RPS wager remains active game_id=%s reason=%s",
+                game_id,
+                result.get("reason", "unknown"),
+            )
+        elif result.get("status") == "refunded":
+            refunded += 1
+
     if pending:
-        import logging
-        logging.getLogger(__name__).error(
-            "%s orphaned RPS wager(s) remain escrowed because an account is at its balance limit",
+        logger.error(
+            "%s orphaned RPS wager(s) remain active and require retry or operator reconciliation",
             pending,
         )
     return refunded
+
+
+def active_rps_wager_ids():
+    """Return active escrow IDs in stable order for startup recovery workers."""
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id FROM rps_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        return [str(row["game_id"]) for row in rows]
 
 
 def charge_up_to(user_id, amount):
