@@ -14,7 +14,7 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
-from cogs.utility.theme import THEME, base_embed, get_currency
+from cogs.utility.theme import THEME, base_embed, embed_to_v2, get_currency
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
@@ -319,15 +319,15 @@ class RPS(commands.Cog):
                 )
             )
         if opponent is None:
-            return await ctx.send(embed=base_embed(description="❌ منشن خصمك!", color=THEME["red_dark"]))
+            return await ctx.send(view=embed_to_v2(base_embed(description="❌ منشن خصمك!", color=THEME["red_dark"])))
         if opponent.id == ctx.author.id:
-            return await ctx.send(embed=base_embed(description="❌ مش هتلاعب نفسك!", color=THEME["red_dark"]))
+            return await ctx.send(view=embed_to_v2(base_embed(description="❌ مش هتلاعب نفسك!", color=THEME["red_dark"])))
         if opponent.bot:
-            return await ctx.send(embed=base_embed(description="❌ البوتات مابتلعبش!", color=THEME["red_dark"]))
+            return await ctx.send(view=embed_to_v2(base_embed(description="❌ البوتات مابتلعبش!", color=THEME["red_dark"])))
 
         currency = get_currency(self.bot)
         if currency is None:
-            return await ctx.send(embed=base_embed(description="❌ الفلوس واقعة! كلم نجلاوي.", color=THEME["red_dark"]))
+            return await ctx.send(view=embed_to_v2(base_embed(description="❌ الفلوس واقعة! كلم نجلاوي.", color=THEME["red_dark"])))
         game_id = uuid.uuid4().hex
         if not bank.create_rps_wager(game_id, ctx.author.id, opponent.id, amount):
             player_balance = bank.get_balance(ctx.author.id)
