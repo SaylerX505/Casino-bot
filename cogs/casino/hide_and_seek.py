@@ -1,15 +1,24 @@
+import asyncio
+import io
+import logging
+import random
+from functools import partial
+
 import discord
 from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
-import asyncio
-import logging
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 from PIL import Image, ImageDraw
-import io
-import random
-import config
 
+import config
+from cogs.casino.game_registry import (
+    is_active_game,
+    owns_game_task,
+    register_game_task,
+    release_game_task,
+    set_game_view,
+)
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
 
 
 logger = logging.getLogger(__name__)
@@ -87,14 +96,14 @@ class HideDropdown(discord.ui.Select):
                 description="انت مش في اللعبة يا كابتن!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
             
         if interaction.user in self.view.hiding_spots:
             embed = discord.Embed(
                 description="انت استخبيت خلاص! خليك مكانك ومتتحركش.",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
             
         chosen_spot = int(self.values[0])
         self.view.hiding_spots[interaction.user] = chosen_spot
@@ -102,7 +111,7 @@ class HideDropdown(discord.ui.Select):
             description=f"✅ تمام! انت دلوقتي مستخبي في **{LOCATIONS[chosen_spot]['name']}**. خليك ساكت!",
             color=discord.Color.green()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         
         if len(self.view.hiding_spots) == len(self.view.players):
             self.view.stop()
@@ -131,7 +140,7 @@ class SeekDropdown(discord.ui.Select):
                 description="مش دورك تدور!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         
         self.view.choice = int(self.values[0])
         await interaction.response.send_message("✅ تم تسجيل اختيارك.", ephemeral=True)
@@ -145,7 +154,7 @@ class SeekerView(discord.ui.View):
         self.add_item(SeekDropdown(seeker, searched_locations))
 
 
-class LobbyView(discord.ui.View):
+class LobbyView(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
@@ -153,6 +162,23 @@ class LobbyView(discord.ui.View):
         self.game_started = False
         self.time_left = 30
         self.message = None
+        self._panel_text = TextDisplay(self._panel_content())
+        self._buttons = []
+        for label, custom_id, callback_name, emoji in (
+            ("استخبى (Join)", "hide_seek_join", "join_btn", None),
+            ("مغادرة (Leave)", "hide_seek_leave", "leave_btn", None),
+            ("ابدأ الآن", "hide_seek_start", "start_btn", None),
+            ("+10 ثواني", "hide_seek_add_time", "add_time_btn", "⏱️"),
+        ):
+            button = discord.ui.Button(
+                label=label, custom_id=custom_id,
+                style=discord.ButtonStyle.secondary, emoji=emoji,
+            )
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(
+            Container(self._panel_text, Separator(), ActionRow(*self._buttons), accent_color=THEME["grey"])
+        )
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
@@ -167,6 +193,25 @@ class LobbyView(discord.ui.View):
         embed.set_thumbnail(url=SERVER_LOGO_URL)
         return embed
 
+    def _panel_content(self):
+        embed = self.get_embed()
+        title = f"# {embed.title}\n" if embed.title else ""
+        description = f"{embed.description or ''}\n\n"
+        return (title + description + f"-# كازينو الحفرة • {config.BRAND}")[:4000]
+
+    def _refresh_panel(self):
+        self._panel_text.content = self._panel_content()
+
+    def _disable_buttons(self):
+        for button in self._buttons:
+            button.disabled = True
+
+    async def _private_notice(self, interaction, title, description):
+        await interaction.response.send_message(
+            view=StatusPanel(title, description, "warning"),
+            ephemeral=True,
+        )
+
     async def run_timer(self):
         while self.time_left > 0 and not self.game_started:
             await asyncio.sleep(5)
@@ -175,7 +220,7 @@ class LobbyView(discord.ui.View):
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
                 try:
-                    await self.message.edit(embed=self.get_embed())
+                    self._refresh_panel()\n                    await self.message.edit(view=self)
                 except discord.HTTPException:
                     logger.debug("Could not refresh hide-and-seek lobby", exc_info=True)
 
@@ -183,87 +228,80 @@ class LobbyView(discord.ui.View):
         if self.game_started: return
         if len(self.players) < 2:
             self.game_started = True
-            embed = discord.Embed(
-                description="❌ العدد غير كافي لبدء الغميضة. (تحتاج لاعبين على الأقل)",
-                color=discord.Color.red()
-            )
-            await self.ctx.send(embed=embed)
-            for child in self.children: child.disabled = True
+            self._panel_text.content = "# تم إلغاء اللوبي\nمحتاجين لاعبين على الأقل لبدء الغميضة."
+            self._disable_buttons()
             if self.message: await self.message.edit(view=self)
             return
 
         self.game_started = True
-        for child in self.children: child.disabled = True
+        self._panel_text.content = "# جاري بدء الغميضة\nاللوبي اتقفل. جهّز نفسك."
+        self._disable_buttons()
         if self.message: await self.message.edit(view=self)
         
         task = self.ctx.bot.loop.create_task(run_game_loop(self.ctx, self.players))
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "HideAndSeek", replace_task=self.timer_task):
             task.cancel()
 
-    @discord.ui.button(label="استخبى (Join)", style=discord.ButtonStyle.secondary)
     async def join_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
                 description="اللعبة بدأت خلاص!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if len(self.players) >= 25:
             embed = discord.Embed(
                 description="الخريطة اتملت (25 لاعب)!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             embed = discord.Embed(
                 description="أنت مسجل اسمك!",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         else:
             self.players.append(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()\n            await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.secondary)
     async def leave_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
                 description="اللعبة بدأت!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             self.players.remove(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()\n            await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
                 description="أنت مش في اللعبة!",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
                 description="للأدمن فقط!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         await interaction.response.defer()
         self.time_left = 0
         await self.auto_start()
 
-    @discord.ui.button(label="+10 ثواني", style=discord.ButtonStyle.secondary, emoji="⏱️")
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
                 description="للأدمن فقط!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         self.time_left += 10
-        await interaction.response.edit_message(embed=self.get_embed())
+        self._refresh_panel()\n            await interaction.response.edit_message(view=self)
 
 
 # --- GAME LOOP ---
@@ -454,7 +492,7 @@ class HideAndSeek(commands.Cog):
             view.timer_task.cancel()
             return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
         try:
-            view.message = await ctx.send(embed=view.get_embed(), view=view)
+            view.message = await ctx.send(view=view)
         except Exception as e:
             release_game_task(self.bot, ctx.channel.id, view.timer_task)
             view.timer_task.cancel()
