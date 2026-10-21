@@ -118,25 +118,49 @@ async def poke_reminder(user, role_name, view):
 class MafiaDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
         self.view_parent = view_parent
-        options = [discord.SelectOption(label=p.display_name, value=str(p.id)) for p in targets[:25]]
-        super().__init__(placeholder="اختار ضحيتك المرة دي...", min_values=1, max_values=1, options=options)
+        options = [
+            discord.SelectOption(label=player.display_name, value=str(player.id))
+            for player in targets[:25]
+        ]
+        super().__init__(
+            placeholder="اختار ضحيتك المرة دي...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction):
         self.view_parent.selected_id = int(self.values[0])
-        embed = discord.Embed(
-            description="🩸 الأوامر صدرت... ارجع للشات الأساسي.",
-            color=discord.Color.dark_red()
+        self.view_parent._panel_text.content = (
+            "# تم تسجيل الاختيار\nالأمر اتسجل بسرية. ارجع للشات الأساسي."
         )
-        await interaction.response.edit_message(embed=embed, view=None)
+        self.view_parent.disable_controls()
+        await interaction.response.edit_message(view=self.view_parent)
         self.view_parent.stop()
 
-class EphemeralActionView(discord.ui.View):
-    def __init__(self, targets):
-        super().__init__(timeout=20.0) 
-        self.selected_id = None
-        self.add_item(MafiaDropdown(targets, self))
 
-class SecretButtonView(discord.ui.View):
+class EphemeralActionView(LayoutView):
+    def __init__(self, targets):
+        super().__init__(timeout=20.0)
+        self.selected_id = None
+        self.dropdown = MafiaDropdown(targets, self)
+        self._panel_text = TextDisplay(
+            "# اختيار سري\nاختار هدفًا واحدًا من القائمة. اختيارك مش هيظهر في القناة."
+        )
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(self.dropdown),
+                accent_color=THEME["red_dark"],
+            )
+        )
+
+    def disable_controls(self):
+        self.dropdown.disabled = True
+
+
+class SecretButtonView(LayoutView):
     def __init__(self, active_user, role_users, targets, role_name):
         super().__init__(timeout=20.0)
         self.active_user = active_user
@@ -144,43 +168,85 @@ class SecretButtonView(discord.ui.View):
         self.targets = targets
         self.role_name = role_name
         self.selected_id = None
-        
-        btn_label = "🔪 افتح قايمة الاغتيال" if role_name == "mafia" else "💉 افتح شنطة الإسعافات"
-        btn_style = discord.ButtonStyle.secondary if role_name == "mafia" else discord.ButtonStyle.secondary
-        
-        btn = discord.ui.Button(label=btn_label, style=btn_style)
-        btn.callback = self.btn_callback
-        self.add_item(btn)
+        self.message = None
+
+        if role_name == "mafia":
+            button_label = "افتح قائمة الاغتيال"
+            image_name = "mafia_looking.jpg"
+            self._panel_text = TextDisplay(
+                "# حركة المافيا\nالاختيار متاح للقناص المحدد فقط. اختار ضحية بسرية."
+            )
+            accent = THEME["red_dark"]
+        else:
+            button_label = "افتح شنطة الإسعافات"
+            image_name = "doctor_looking.jpg"
+            self._panel_text = TextDisplay(
+                "# حركة الدكتور\nالاختيار متاح للدكتور فقط. اختار لاعبًا تحميه بسرية."
+            )
+            accent = THEME["teal"]
+
+        self.button = discord.ui.Button(
+            label=button_label,
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"mafia_secret_action_{role_name}",
+        )
+        self.button.callback = self.btn_callback
+        self.add_item(
+            Container(
+                self._panel_text,
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{image_name}",
+                        description="لوحة الحركة السرية",
+                    )
+                ),
+                Separator(),
+                ActionRow(self.button),
+                accent_color=accent,
+            )
+        )
+
+    def disable_controls(self):
+        self.button.disabled = True
 
     async def btn_callback(self, interaction: discord.Interaction):
         if interaction.user not in self.role_users:
             role_ar = "المافيا" if self.role_name == "mafia" else "الدكتور"
-            embed = discord.Embed(
-                description=f"انت مش من {role_ar}! العب بعيد.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("حركة سرية", f"الحركة دي متاحة لأفراد {role_ar} فقط.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
+
         if interaction.user != self.active_user:
             action_ar = "بالاغتيال" if self.role_name == "mafia" else "بالعلاج"
-            embed = discord.Embed(
-                description=f"القرعة اختارت {self.active_user.mention} عشان يقوم {action_ar} الليلة دي! استنى دورك.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "استنى دورك",
+                    f"القرعة اختارت {self.active_user.mention} عشان يقوم {action_ar} الليلة دي.",
+                    "warning",
+                ),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
+
         ephemeral_view = EphemeralActionView(self.targets)
-        await interaction.response.send_message("اختار بسرعة قبل الوقت ما يخلص:", view=ephemeral_view, ephemeral=True)
+        await interaction.response.send_message(
+            view=ephemeral_view,
+            ephemeral=True,
+        )
         await ephemeral_view.wait()
-        
+
         self.selected_id = ephemeral_view.selected_id
-        if self.selected_id:
-            for child in self.children: child.disabled = True
+        if self.selected_id is not None:
+            self.disable_controls()
+            self._panel_text.content = (
+                "# الحركة اتسجلت\nتم تسجيل الاختيار السري. النتيجة هتظهر بعد نهاية الليل."
+            )
             try:
                 await interaction.message.edit(view=self)
             except discord.HTTPException:
-                logger.debug("Could not disable Mafia dropdown controls", exc_info=True)
+                logger.debug("Could not disable Mafia secret-action V2 controls", exc_info=True)
             self.stop()
+
 
 class VoteDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
@@ -483,30 +549,51 @@ async def run_mafia_game(ctx, players):
         except Exception:
             logger.exception("Mafia game state registration failed")
 
-        class RoleRevealView(discord.ui.View):
-            def __init__(self): super().__init__(timeout=60)
-            @discord.ui.button(label="👀 اعرف دورك السري", style=discord.ButtonStyle.secondary)
-            async def reveal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user not in alive:
-                    embed = discord.Embed(
-                        description="أنت مش في الجيم!",
-                        color=discord.Color.red()
-                    )
-                    return await interaction.response.send_message(embed=embed, ephemeral=True)
-                r = game_roles[interaction.user]
-                ar_role = "🔪 مافيا" if r == 'mafia' else ("💉 دكتور" if r == 'doctor' else "👤 مواطن غلبان")
-                embed = discord.Embed(
-                    description=f"دورك في اللعبة هو: **{ar_role}**\nاحتفظ بالسر!",
-                    color=discord.Color.blurple()
+        class RoleRevealView(LayoutView):
+            def __init__(self):
+                super().__init__(timeout=60)
+                self._panel_text = TextDisplay(
+                    "# تم توزيع الأدوار\nاضغط على الزرار عشان تعرف دورك في السر. احتفظ بالسر."
                 )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                self.button = discord.ui.Button(
+                    label="اعرف دورك السري",
+                    emoji="👀",
+                    style=discord.ButtonStyle.secondary,
+                    custom_id="mafia_reveal_role",
+                )
+                self.button.callback = self.reveal_btn
+                self.add_item(
+                    Container(
+                        self._panel_text,
+                        Separator(),
+                        ActionRow(self.button),
+                        accent_color=THEME["red_dark"],
+                    )
+                )
 
-        embed = discord.Embed(
-            description="🎲 **تم توزيع الأدوار!** اضغط على الزرار عشان تعرف دورك ايه في السر.",
-            color=discord.Color.blurple()
-        )
+            async def reveal_btn(self, interaction: discord.Interaction):
+                if interaction.user not in alive:
+                    return await interaction.response.send_message(
+                        view=StatusPanel("مش في الجيم", "أنت مش مشارك في اللعبة دي.", "warning"),
+                        ephemeral=True,
+                    )
+                role = game_roles[interaction.user]
+                role_label = (
+                    "🔪 مافيا"
+                    if role == "mafia"
+                    else ("💉 دكتور" if role == "doctor" else "👤 مواطن")
+                )
+                await interaction.response.send_message(
+                    view=StatusPanel(
+                        "دورك السري",
+                        f"دورك في اللعبة هو **{role_label}**. احتفظ بالسر!",
+                        "success",
+                    ),
+                    ephemeral=True,
+                )
+
         reveal_view = RoleRevealView()
-        reveal_view.message = await ctx.send(embed=embed, view=reveal_view)
+        reveal_view.message = await ctx.send(view=reveal_view)
         set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), reveal_view)
         await asyncio.sleep(5) 
         
@@ -541,7 +628,7 @@ async def run_mafia_game(ctx, players):
                     )
                     m_embed.set_image(url="attachment://mafia_looking.jpg")
                     
-                    m_msg = await ctx.send(embed=m_embed, file=mafia_file, view=m_view)
+                    m_msg = await ctx.send(view=m_view, file=mafia_file)
                     m_view.message = m_msg
                     set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), m_view)
                     reminder = asyncio.create_task(poke_reminder(hitman, "mafia", m_view))
@@ -563,7 +650,7 @@ async def run_mafia_game(ctx, players):
                     else:
                         afk_tracker[hitman] = 0
 
-                    for c in m_view.children: c.disabled = True
+                    m_view.disable_controls()
                     try: await m_msg.edit(view=m_view)
                     except discord.HTTPException: pass
                 except asyncio.CancelledError:
@@ -598,7 +685,7 @@ async def run_mafia_game(ctx, players):
                     )
                     d_embed.set_image(url="attachment://doctor_looking.jpg")
                     
-                    d_msg = await ctx.send(embed=d_embed, file=doc_file, view=d_view)
+                    d_msg = await ctx.send(view=d_view, file=doc_file)
                     d_view.message = d_msg
                     set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), d_view)
                     reminder = asyncio.create_task(poke_reminder(doctor, "doctor", d_view))
@@ -620,7 +707,7 @@ async def run_mafia_game(ctx, players):
                     else:
                         afk_tracker[doctor] = 0
                     
-                    for c in d_view.children: c.disabled = True
+                    d_view.disable_controls()
                     try: await d_msg.edit(view=d_view)
                     except discord.HTTPException: pass
                 except asyncio.CancelledError:
