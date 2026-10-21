@@ -60,6 +60,35 @@ def game_channel_setting_key(guild_id: int, game_key: str) -> str:
     return f"guild:{int(guild_id)}:game_channels:{game_key}"
 
 
+def log_channel_setting_key(guild_id: int, log_type: str) -> str:
+    if log_type not in {"economy", "command_errors"}:
+        raise ValueError("Unsupported log-channel setting")
+    return f"guild:{int(guild_id)}:log_channels:{log_type}"
+
+
+def configured_log_channel_id(guild_id: int | None, log_type: str, fallback: int = 0) -> int:
+    """Resolve a same-guild logging destination. Database failures fail closed."""
+    if guild_id is None or log_type not in {"economy", "command_errors"}:
+        return 0
+    try:
+        raw = bank.get_setting(log_channel_setting_key(guild_id, log_type), str(fallback))
+    except Exception:
+        logger.exception(
+            "Could not read log-channel setting guild=%s type=%s",
+            guild_id,
+            log_type,
+        )
+        return 0
+    if raw is None or str(raw).strip().lower() in {"", "off", "none", "disabled", "0"}:
+        return 0
+    try:
+        channel_id = int(raw)
+    except (TypeError, ValueError):
+        logger.error("Malformed log-channel setting guild=%s type=%s", guild_id, log_type)
+        return 0
+    return channel_id if channel_id > 0 else 0
+
+
 def _parse_id_list(raw, *, fallback=None):
     if raw is None:
         return list(fallback or [])
