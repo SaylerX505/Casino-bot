@@ -150,6 +150,13 @@ class WizardLayout(LayoutView):
         self.message = None
         self.notice = notice
 
+    async def _edit_message(self, interaction: discord.Interaction, **kwargs):
+        """Keep the currently displayed message bound to every replacement wizard view."""
+        next_view = kwargs.get("view")
+        if isinstance(next_view, WizardLayout):
+            next_view.message = interaction.message
+        return await self._edit_message(interaction,**kwargs)
+
     async def on_timeout(self):
         if self.message is not None:
             try:
@@ -265,42 +272,42 @@ class WizardHomeView(WizardLayout):
                 "تغيير رولات إدارة البوت متاح للمالك أو Administrator فقط.",
                 ephemeral=True,
             )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=AdminRoleWizardView(interaction.guild, interaction.user)
         )
 
     async def open_roles(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=StaffRoleWizardView(interaction.guild, interaction.user)
         )
 
     async def open_channels(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=GameChannelWizardView(interaction.guild, interaction.user)
         )
 
     async def open_logs(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=LogChannelWizardView(interaction.guild, interaction.user)
         )
 
     async def open_review(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=WizardReviewView(interaction.guild, interaction.user)
         )
 
     async def close_wizard(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=StatusPanel(
                 "تم إغلاق المعالج",
                 "اتقفلت جلسة الإعداد. الإعدادات اللي تم حفظها بالفعل فضلت محفوظة.",
@@ -379,7 +386,7 @@ class AdminRoleWizardView(WizardLayout):
             interaction.user.id,
             len(role_ids),
         )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=AdminRoleWizardView(
                 interaction.guild,
                 interaction.user,
@@ -404,7 +411,7 @@ class AdminRoleWizardView(WizardLayout):
                 ephemeral=True,
             )
         logger.info("Wizard cleared manager roles guild=%s actor=%s", self.guild_id, interaction.user.id)
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=AdminRoleWizardView(
                 interaction.guild,
                 interaction.user,
@@ -415,7 +422,7 @@ class AdminRoleWizardView(WizardLayout):
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=WizardHomeView(interaction.guild, interaction.user)
         )
 
@@ -481,7 +488,7 @@ class StaffRoleWizardView(WizardLayout):
             interaction.user.id,
             len(role_ids),
         )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=StaffRoleWizardView(
                 interaction.guild,
                 interaction.user,
@@ -505,7 +512,7 @@ class StaffRoleWizardView(WizardLayout):
             self.guild_id,
             interaction.user.id,
         )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=StaffRoleWizardView(
                 interaction.guild,
                 interaction.user,
@@ -516,7 +523,7 @@ class StaffRoleWizardView(WizardLayout):
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(view=WizardHomeView(interaction.guild, interaction.user))
+        await self._edit_message(interaction,view=WizardHomeView(interaction.guild, interaction.user))
 
 
 class GameChannelWizardView(WizardLayout):
@@ -585,7 +592,7 @@ class GameChannelWizardView(WizardLayout):
         if not await _guard_interaction(interaction, self.owner_id):
             return
         selected_game = self.game_select.values[0]
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=GameChannelWizardView(
                 interaction.guild,
                 interaction.user,
@@ -629,7 +636,7 @@ class GameChannelWizardView(WizardLayout):
             interaction.user.id,
             len(channel_ids),
         )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=GameChannelWizardView(
                 interaction.guild,
                 interaction.user,
@@ -659,7 +666,7 @@ class GameChannelWizardView(WizardLayout):
             self.selected_game,
             interaction.user.id,
         )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=GameChannelWizardView(
                 interaction.guild,
                 interaction.user,
@@ -692,7 +699,7 @@ class GameChannelWizardView(WizardLayout):
             self.selected_game,
             interaction.user.id,
         )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=GameChannelWizardView(
                 interaction.guild,
                 interaction.user,
@@ -704,7 +711,7 @@ class GameChannelWizardView(WizardLayout):
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(view=WizardHomeView(interaction.guild, interaction.user))
+        await self._edit_message(interaction,view=WizardHomeView(interaction.guild, interaction.user))
 
 
 class LogChannelWizardView(WizardLayout):
@@ -764,7 +771,7 @@ class LogChannelWizardView(WizardLayout):
         if not await _guard_interaction(interaction, self.owner_id):
             return
         selected = self.type_select.values[0]
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=LogChannelWizardView(
                 interaction.guild,
                 interaction.user,
@@ -820,7 +827,7 @@ class LogChannelWizardView(WizardLayout):
             interaction.user.id,
             channel.id,
         )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=LogChannelWizardView(
                 interaction.guild,
                 interaction.user,
@@ -854,7 +861,7 @@ class LogChannelWizardView(WizardLayout):
             self.selected_type,
             interaction.user.id,
         )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=LogChannelWizardView(
                 interaction.guild,
                 interaction.user,
@@ -866,7 +873,7 @@ class LogChannelWizardView(WizardLayout):
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=WizardHomeView(interaction.guild, interaction.user)
         )
 
@@ -933,31 +940,31 @@ class WizardReviewView(WizardLayout):
                 "تغيير رولات إدارة البوت متاح للمالك أو Administrator فقط.",
                 ephemeral=True,
             )
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=AdminRoleWizardView(interaction.guild, interaction.user)
         )
 
     async def open_roles(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(view=StaffRoleWizardView(interaction.guild, interaction.user))
+        await self._edit_message(interaction,view=StaffRoleWizardView(interaction.guild, interaction.user))
 
     async def open_channels(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(view=GameChannelWizardView(interaction.guild, interaction.user))
+        await self._edit_message(interaction,view=GameChannelWizardView(interaction.guild, interaction.user))
 
     async def open_logs(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(
+        await self._edit_message(interaction,
             view=LogChannelWizardView(interaction.guild, interaction.user)
         )
 
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await interaction.response.edit_message(view=WizardHomeView(interaction.guild, interaction.user))
+        await self._edit_message(interaction,view=WizardHomeView(interaction.guild, interaction.user))
 
 
 class SetupWizard(commands.Cog):
