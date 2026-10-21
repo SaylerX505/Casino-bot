@@ -10,7 +10,7 @@ from discord.ui import LayoutView
 from cogs.casino.chairs import ChairActionView, ChairPrepView, ChairsLobby
 from cogs.casino.geoguessr import GuessGameMenu
 from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
-from cogs.casino.mafia import MafiaLobbyView
+from cogs.casino.mafia import DayVoteView, MafiaLobbyView
 from cogs.casino.roulette import KickView, RouletteLobby
 from cogs.casino.wheel import WheelLobby
 
@@ -55,6 +55,38 @@ class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+
+class MafiaVoteV2Tests(unittest.TestCase):
+    def test_day_vote_panel_uses_v2_select_and_secondary_skip(self):
+        players = [_FakeMember(4100 + index) for index in range(5)]
+        view = DayVoteView(players)
+        self.assertIsInstance(view, LayoutView)
+        selects = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Select)
+        ]
+        buttons = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        ]
+        self.assertEqual(len(selects), 1)
+        self.assertEqual(len(buttons), 1)
+        self.assertIs(buttons[0].style, discord.ButtonStyle.secondary)
+        self.assertEqual(selects[0].max_values, 1)
+        self.assertIn("في انتظار تصويت المواطنين", view._panel_text.content)
+
+        view.votes[players[0]] = players[1].id
+        view.votes[players[2]] = "SKIP"
+        view._panel_text.content = view._vote_summary()
+        self.assertIn(players[0].mention, view._panel_text.content)
+        self.assertIn(players[1].mention, view._panel_text.content)
+        self.assertIn("تفويت", view._panel_text.content)
+
+        view.disable_controls()
+        self.assertTrue(selects[0].disabled)
+        self.assertTrue(buttons[0].disabled)
+        view.stop()
 
 
 class HideAndSeekRoundV2Tests(unittest.TestCase):
