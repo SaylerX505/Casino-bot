@@ -11,7 +11,7 @@ import random
 import config
 
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
 
 
 logger = logging.getLogger(__name__)
@@ -395,7 +395,7 @@ async def run_game_loop(ctx, players):
                 description=f"⚠️ **النظام:** {afk_text} معرفوش يستخبوا في الوقت المحدد وانكشفوا! تم استبعادهم.",
                 color=discord.Color.red()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(view=embed_to_v2(embed))
 
         if len(alive) < 2:
             embed = discord.Embed(
@@ -403,14 +403,14 @@ async def run_game_loop(ctx, players):
                 description="مبقاش في عدد كافي عشان نكمل الغميضة!",
                 color=discord.Color.dark_grey()
             )
-            await ctx.send(embed=embed, view=WatermarkView())
+            await ctx.send(view=embed_to_v2(embed))
             return
 
         embed = discord.Embed(
             description="🤫 **خلاص! الكل استخبى... هنبدأ التدوير!**",
             color=discord.Color.blue()
         )
-        await ctx.send(embed=embed)
+        await ctx.send(view=embed_to_v2(embed))
         await asyncio.sleep(3)
 
         searched_locations = set()
@@ -445,7 +445,7 @@ async def run_game_loop(ctx, players):
                     description=f"⏰ تم طرد {seeker.display_name} بسبب الخمول.",
                     color=discord.Color.red()
                 )
-                await ctx.send(embed=embed)
+                await ctx.send(view=embed_to_v2(embed))
                 
             else:
                 spot_name = LOCATIONS[chosen_spot]['name']
@@ -456,7 +456,7 @@ async def run_game_loop(ctx, players):
                         description=f"🤡 **يا للغباء!** {seeker.mention} راح يفتش ونسى إنه مستخبي هناك أصلاً! فضح نفسه وتم استبعاده، لكن المكان لسه متغطى للناس التانية.",
                         color=discord.Color.dark_red()
                     )
-                    await ctx.send(embed=embed)
+                    await ctx.send(view=embed_to_v2(embed))
                     
                 else:
                     searched_locations.add(chosen_spot)
@@ -473,19 +473,19 @@ async def run_game_loop(ctx, players):
                                 description=f"🚨 **مـجـزرة!** {seeker.mention} فتش في **{spot_name}** ولقى {mentions} مستخبيين مع بعض هناك! كلهم طاروا بره الحفرة.",
                                 color=discord.Color.green()
                             )
-                            await ctx.send(embed=embed)
+                            await ctx.send(view=embed_to_v2(embed))
                         else:
                             embed = discord.Embed(
                                 description=f"🚨 **قـفـشـتـك!** {seeker.mention} فتش في **{spot_name}** ولقى {mentions} مستخبي هناك! طار بره الحفرة.",
                                 color=discord.Color.green()
                             )
-                            await ctx.send(embed=embed)
+                            await ctx.send(view=embed_to_v2(embed))
                     else:
                         embed = discord.Embed(
                             description=f"💨 {seeker.mention} فتش في **{spot_name}** وملقاش غير التراب... المكان فاضي!",
                             color=discord.Color.light_grey()
                         )
-                        await ctx.send(embed=embed)
+                        await ctx.send(view=embed_to_v2(embed))
 
             await asyncio.sleep(2)
             
@@ -502,14 +502,14 @@ async def run_game_loop(ctx, players):
                 outcome="win",
                 thumbnail_url=winner.display_avatar.url,
             )
-            await ctx.send(embed=win_embed, view=WatermarkView())
+            await ctx.send(view=embed_to_v2(win_embed))
         else:
             embed = result_embed(
                 title="انتهت الغميضة",
                 description="💀 الكل اتكشف! مفيش فايز النهاردة.",
                 outcome="loss",
             )
-            await ctx.send(embed=embed, view=WatermarkView())
+            await ctx.send(view=embed_to_v2(embed))
 
     except asyncio.CancelledError:
         raise
@@ -546,7 +546,7 @@ class HideAndSeek(commands.Cog):
                 description=f"⚠️ حدث خطأ: {e}",
                 color=discord.Color.red()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(view=embed_to_v2(embed))
             return
         if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
             view._disable_buttons()
