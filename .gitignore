@@ -3,11 +3,19 @@
 !.env.example
 __pycache__/
 *.py[cod]
-data/*.json
 data/backups/
 *.db
 *.db-*
 *.sqlite
 *.sqlite3
 *.sqlite-*
+bot_logs.txt
+
+# Runtime data, local databases, and diagnostic logs are never source files.
+data/ai_data.json
+data/state.json
+data/used_images.json
+data/currency.json
+archive-wrapper-files/data/
+archive-wrapper-files/bot_logs.txt
 bot_logs.txt
