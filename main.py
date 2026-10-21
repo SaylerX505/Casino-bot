@@ -15,11 +15,27 @@ intents.voice_states = True
 intents.reactions = True
 intents.guilds = True
 
+class HomeGuildCommandTree(app_commands.CommandTree):
+    """Reject app-command interactions outside the configured single home server."""
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        home_guild_id = getattr(config, "HOME_GUILD_ID", None)
+        if home_guild_id is None or interaction.guild_id == home_guild_id:
+            return True
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "البوت ده مخصص لسيرفر واحد ومش متاح خارج السيرفر الأساسي.",
+                ephemeral=True,
+            )
+        return False
+
+
 bot = commands.Bot(
-    command_prefix=config.PREFIX, 
-    intents=intents, 
+    command_prefix=config.PREFIX,
+    intents=intents,
     case_insensitive=True,
-    owner_ids=config.OWNER_IDS
+    owner_ids=config.OWNER_IDS,
+    tree_cls=HomeGuildCommandTree,
 )
 bot.remove_command('help')
 
@@ -33,8 +49,42 @@ async def _send_command_error(ctx, message):
     await ctx.send(message, **kwargs)
 
 
+@bot.check
+async def enforce_home_guild_for_prefix(ctx):
+    home_guild_id = getattr(config, "HOME_GUILD_ID", None)
+    return home_guild_id is None or getattr(ctx.guild, "id", None) == home_guild_id
+
+
+@bot.event
+async def on_guild_join(guild):
+    home_guild_id = getattr(config, "HOME_GUILD_ID", None)
+    if home_guild_id is not None and guild.id != home_guild_id:
+        logging.getLogger("casino.guilds").warning(
+            "Leaving unauthorized guild id=%s; this bot is configured for guild id=%s",
+            guild.id,
+            home_guild_id,
+        )
+        await guild.leave()
+
+
 @bot.event
 async def on_ready():
+    logger = logging.getLogger("casino.startup")
+    home_guild_id = getattr(config, "HOME_GUILD_ID", None)
+    if home_guild_id is not None:
+        for joined_guild in tuple(bot.guilds):
+            if joined_guild.id != home_guild_id:
+                logger.warning(
+                    "Leaving previously joined unauthorized guild id=%s",
+                    joined_guild.id,
+                )
+                try:
+                    await joined_guild.leave()
+                except discord.HTTPException:
+                    logger.exception("Could not leave unauthorized guild id=%s", joined_guild.id)
+    else:
+        logger.warning("HOME_GUILD_ID is not configured; single-server enforcement is disabled")
+
     print(f'🔥 Bot is online! Logged in as {bot.user}')
     try:
         await bot.change_presence(status=discord.Status.dnd, activity=discord.CustomActivity(name='مرحبا المانيا, انا الحفرة'))
@@ -43,11 +93,21 @@ async def on_ready():
     
     if not getattr(bot, "_slash_commands_synced", False):
         try:
-            synced = await bot.tree.sync()
+            if config.HOME_GUILD_ID:
+                guild = discord.Object(id=config.HOME_GUILD_ID)
+                bot.tree.copy_global_to(guild=guild)
+                synced = await bot.tree.sync(guild=guild)
+                # Remove the global command surface so new command registrations stay
+                # scoped to the one configured server.
+                bot.tree.clear_commands(guild=None)
+                await bot.tree.sync()
+                print(f"✅ Synced {len(synced)} server-only slash command(s)")
+            else:
+                synced = await bot.tree.sync()
+                print(f"✅ Synced {len(synced)} global slash command(s)")
             bot._slash_commands_synced = True
-            print(f"✅ Synced {len(synced)} slash command(s)")
-        except Exception as e:
-            print(f"❌ Failed to sync slash commands: {e}")
+        except Exception:
+            logging.getLogger("casino.startup").exception("Failed to sync slash commands")
 
 @bot.event
 async def on_command_error(ctx, error):
