@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 import math
 import random
 
@@ -20,7 +21,10 @@ from cogs.utility.theme import (
     base_embed,
     get_currency,
     lobby_embed,
+    report_game_failure,
 )
+
+logger = logging.getLogger(__name__)
 
 FEE = 50
 MAX_PLAYERS = 25
@@ -361,8 +365,7 @@ class WheelLobby(discord.ui.View):
                     pass
             raise
         except Exception:
-            import traceback
-            traceback.print_exc()
+            logger.exception("Wheel game loop failed")
             if result_message:
                 try:
                     await result_message.edit(
@@ -374,7 +377,13 @@ class WheelLobby(discord.ui.View):
                         view=None,
                     )
                 except discord.HTTPException:
-                    pass
+                    logger.exception("Could not replace the active wheel result message")
+            else:
+                await report_game_failure(
+                    self.ctx,
+                    "توقفت العجلة بسبب خطأ",
+                    "حصل عطل غير متوقع قبل عرض نتيجة الجولة. تم تسجيل الخطأ ولم يتم تكرار أي خصم تلقائيًا.",
+                )
         finally:
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
