@@ -65,13 +65,27 @@ class RPSView(discord.ui.View):
 
         try:
             if interaction is not None and not interaction.response.is_done():
-                await interaction.response.edit_message(embed=embed, view=self)
+                try:
+                    await interaction.response.edit_message(embed=embed, view=self)
+                except discord.NotFound:
+                    await self.ctx.send(embed=embed, view=WatermarkView())
+                except discord.HTTPException:
+                    logging.getLogger(__name__).exception(
+                        "Could not update the RPS result through its interaction"
+                    )
             elif self.message is not None:
-                await self.message.edit(embed=embed, view=self)
+                try:
+                    await self.message.edit(embed=embed, view=self)
+                except discord.NotFound:
+                    await self.ctx.send(embed=embed, view=WatermarkView())
+                except discord.HTTPException:
+                    logging.getLogger(__name__).exception(
+                        "Could not edit the existing RPS result message; not sending a duplicate"
+                    )
             else:
                 await self.ctx.send(embed=embed, view=self)
         except discord.HTTPException:
-            await self.ctx.send(embed=embed, view=WatermarkView())
+            logging.getLogger(__name__).exception("Could not publish the RPS result")
         finally:
             self.stop()
 
