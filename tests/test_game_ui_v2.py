@@ -11,7 +11,7 @@ from cogs.casino.chairs import ChairsLobby
 from cogs.casino.geoguessr import GuessGameMenu
 from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
 from cogs.casino.mafia import MafiaLobbyView
-from cogs.casino.roulette import RouletteLobby
+from cogs.casino.roulette import KickView, RouletteLobby
 from cogs.casino.wheel import WheelLobby
 
 
@@ -19,6 +19,7 @@ class _FakeMember:
     def __init__(self, user_id):
         self.id = user_id
         self.mention = f"<@{user_id}>"
+        self.display_name = f"user-{user_id}"
 
     def __hash__(self):
         return hash(self.id)
@@ -140,6 +141,41 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             RouletteLobby,
             {"roulette_join", "roulette_leave", "roulette_start", "roulette_add_time"},
         )
+
+    def test_roulette_targeting_view_preserves_image_and_safe_control_rows(self):
+        members = [_FakeMember(1000 + index) for index in range(31)]
+        view = KickView(
+            members[0],
+            members,
+            has_weapon=True,
+            currency_cog=SimpleNamespace(),
+            round_num=4,
+        )
+
+        self.assertIsInstance(view, LayoutView)
+        self.assertIn("الجولة 4", view._panel_text.content)
+        self.assertIn(members[0].mention, view._panel_text.content)
+        buttons = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        ]
+        selects = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Select)
+        ]
+        galleries = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.MediaGallery)
+        ]
+        self.assertEqual(len(buttons), 1)
+        self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+        self.assertEqual(len(selects), 2)
+        self.assertEqual(len(galleries), 1)
+        self.assertIn("attachment://sniper.png", str(galleries[0].items[0].media.url))
+
+        view.disable_controls()
+        self.assertTrue(buttons[0].disabled)
+        self.assertTrue(all(select.disabled for select in selects))
 
     async def test_wheel_lobby_uses_v2_components(self):
         await self._assert_v2_lobby(
