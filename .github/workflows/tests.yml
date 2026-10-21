@@ -37,6 +37,11 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+      - name: Install Ruff static analyzer
+        run: python -m pip install ruff
+      - name: Run Ruff static analysis on maintained core and regression tests
+        run: |
+          python -m ruff check --output-format=github main.py config.py cogs/casino/bank.py cogs/casino/currency.py cogs/casino/rps.py cogs/utility/admin.py cogs/utility/ai.py tests/test_app_settings.py tests/test_ai_privacy.py tests/test_currency_audit_logging.py tests/test_home_guild_policy.py tests/test_bank_validation.py
       - name: Compile Python files
         run: python -m compileall -q main.py config.py cogs tests
       - name: Run unit tests
@@ -86,6 +91,6 @@ jobs:
           '
       - name: Smoke-test startup without a token
         run: |
-          output="$(docker run --rm -e DISCORD_TOKEN= casino-bot:test)"
+          output="$(docker run --rm -e DISCORD_TOKEN= casino-bot:test 2>&1)"
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -F "DISCORD_TOKEN is missing"
