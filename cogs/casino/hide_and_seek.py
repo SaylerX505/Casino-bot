@@ -490,7 +490,16 @@ async def run_game_loop(ctx, players):
             await asyncio.sleep(2)
             
             updated_map = await generate_map_with_x(searched_locations)
-            await ctx.send(file=discord.File(fp=updated_map, filename="map_update.png"))
+            map_update_embed = discord.Embed(
+                title=f"خريطة التفتيش بعد الجولة",
+                description=f"تم تحديث الخريطة بعد بحث {seeker.mention}. الأماكن اللي اتفتشت عليها علامة واضحة.",
+                color=THEME["teal"],
+            )
+            map_update_embed.set_image(url="attachment://map_update.png")
+            await ctx.send(
+                view=embed_to_v2(map_update_embed),
+                file=discord.File(fp=updated_map, filename="map_update.png"),
+            )
             await asyncio.sleep(3)
 
         # --- WINNER ANNOUNCEMENT ---
