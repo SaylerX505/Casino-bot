@@ -66,7 +66,9 @@ async def report_game_failure(ctx, title: str, description: str, fallback_view=N
     panel = StatusPanel(title, description, "warning")
     active_games = getattr(ctx.bot, "active_games", {})
     entry = active_games.get(ctx.channel.id, {}) if isinstance(active_games, dict) else {}
-    active_view = entry.get("view") if isinstance(entry, dict) else None
+    if not isinstance(entry, dict):
+        entry = {}
+    active_view = entry.get("view")
     message = (
         getattr(active_view, "message", None)
         or getattr(fallback_view, "message", None)
