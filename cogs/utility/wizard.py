@@ -513,39 +513,6 @@ class StaffRoleWizardView(WizardLayout):
             )
         )
 
-    async def disable_game(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
-            return
-        try:
-            bank.set_setting(
-                game_channel_setting_key(self.guild_id, self.selected_game),
-                "[]",
-            )
-        except Exception:
-            logger.exception(
-                "Failed to disable game guild=%s game=%s",
-                self.guild_id,
-                self.selected_game,
-            )
-            return await interaction.response.send_message(
-                "تعذر حفظ إعداد تعطيل اللعبة. مفيش تغيير اتأكد حفظه.",
-                ephemeral=True,
-            )
-        logger.info(
-            "Wizard disabled game guild=%s game=%s actor=%s",
-            self.guild_id,
-            self.selected_game,
-            interaction.user.id,
-        )
-        await interaction.response.edit_message(
-            view=GameChannelWizardView(
-                interaction.guild,
-                interaction.user,
-                selected_game=self.selected_game,
-                notice=f"تم تعطيل {GAME_LABELS[self.selected_game]}. تقدر تعيد تفعيلها من زر كل القنوات أو بتحديد قنوات.",
-            )
-        )
-
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
@@ -698,6 +665,39 @@ class GameChannelWizardView(WizardLayout):
                 interaction.user,
                 selected_game=self.selected_game,
                 notice=f"اللعبة {GAME_LABELS[self.selected_game]} بقت متاحة في كل القنوات.",
+            )
+        )
+
+    async def disable_game(self, interaction: discord.Interaction):
+        if not await _guard_interaction(interaction, self.owner_id):
+            return
+        try:
+            bank.set_setting(
+                game_channel_setting_key(self.guild_id, self.selected_game),
+                "[]",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to disable game guild=%s game=%s",
+                self.guild_id,
+                self.selected_game,
+            )
+            return await interaction.response.send_message(
+                "تعذر حفظ إعداد تعطيل اللعبة. مفيش تغيير اتأكد حفظه.",
+                ephemeral=True,
+            )
+        logger.info(
+            "Wizard disabled game guild=%s game=%s actor=%s",
+            self.guild_id,
+            self.selected_game,
+            interaction.user.id,
+        )
+        await interaction.response.edit_message(
+            view=GameChannelWizardView(
+                interaction.guild,
+                interaction.user,
+                selected_game=self.selected_game,
+                notice=f"تم تعطيل {GAME_LABELS[self.selected_game]}. تقدر تعيد تفعيلها من زر كل القنوات أو بتحديد قنوات.",
             )
         )
 
