@@ -7,7 +7,7 @@ import config
 from functools import partial
 
 import discord
-from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
+from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
 
@@ -126,6 +126,33 @@ def render_wheel(highlight=None):
 
 
 # --- LOBBY VIEW ---
+class WheelResultPanel(LayoutView):
+    def __init__(self, title, description, outcome="neutral", image_name=None):
+        super().__init__(timeout=120)
+        accents = {
+            "success": THEME["green"],
+            "win": THEME["gold"],
+            "warning": THEME["orange"],
+            "loss": THEME["red_dark"],
+            "neutral": THEME["grey"],
+        }
+        self._panel_text = TextDisplay(
+            f"# {title}\n{description}\n\n-# عجلة الحفرة • {config.BRAND}"
+        )
+        content = [self._panel_text]
+        if image_name:
+            content.extend([
+                Separator(),
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{image_name}",
+                        description="نتيجة العجلة",
+                    )
+                ),
+            ])
+        self.add_item(Container(*content, accent_color=accents.get(outcome, THEME["grey"])))
+
+
 class WheelLobby(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=45)
@@ -276,17 +303,24 @@ class WheelLobby(LayoutView):
         results = []
         result_message = self.message
 
+        async def publish_panel(panel, file=None):
+            nonlocal result_message
+            attachments = [file] if file is not None else []
+            if result_message is not None:
+                await result_message.edit(view=panel, attachments=attachments)
+            else:
+                kwargs = {"file": file} if file is not None else {}
+                result_message = await self.ctx.send(view=panel, **kwargs)
+
         try:
             if currency is None:
-                if result_message:
-                    await result_message.edit(
-                        embed=base_embed(
-                            title="تعذر بدء العجلة",
-                            description="نظام الاقتصاد غير متاح حاليًا. حاول مرة تانية بعد إصلاحه.",
-                            color=THEME["red_dark"],
-                        ),
-                        view=None,
+                await publish_panel(
+                    StatusPanel(
+                        "تعذر بدء العجلة",
+                        "نظام الاقتصاد غير متاح حاليًا. حاول تاني بعد إصلاحه.",
+                        "warning",
                     )
+                )
                 return
 
             players = list(self.players)
@@ -334,15 +368,12 @@ class WheelLobby(LayoutView):
                             f"**اللاعب:** {player.mention}\n"
                             "رصيدك قريب من الحد الأقصى المدعوم؛ لم يتم خصم رسوم الدخول."
                         )
-                    skipped_embed = base_embed(
-                        title=f"🎡 نتيجة اللفة {index}/{len(players)} • {title}",
-                        description=description,
-                        color=THEME["orange"],
+                    panel = WheelResultPanel(
+                        f"🎡 نتيجة اللفة {index}/{len(players)} • {title}",
+                        description,
+                        outcome="warning",
                     )
-                    if result_message:
-                        await result_message.edit(embed=skipped_embed, attachments=[], view=None)
-                    else:
-                        result_message = await self.ctx.send(embed=skipped_embed)
+                    await publish_panel(panel)
                     await asyncio.sleep(0.8)
                     continue
 
@@ -350,25 +381,24 @@ class WheelLobby(LayoutView):
                 net_change = settlement["net"]
                 refund = settlement["refund"]
                 results.append((player, label, balance_before, balance_after))
-
-                result_embed = base_embed(
-                    title=f"🎡 نتيجة اللفة {index}/{len(players)}",
-                    description=(
-                        f"**اللاعب:** {player.mention}\n"
-                        f"**النتيجة:** {label}{outcome_note}\n"
-                        f"{format_wheel_breakdown(payout, target_loss, refund)}\n"
-                        f"**صافي الرصيد:** {net_change:+,} {COIN}\n"
-                        f"**الرصيد الحالي:** {balance_after:,} {COIN}"
-                    ),
-                    color=THEME["gold"] if net_change > 0 else THEME["red_dark"] if net_change < 0 else THEME["grey"],
+                description = (
+                    f"**اللاعب:** {player.mention}\n"
+                    f"**النتيجة:** {label}{outcome_note}\n"
+                    f"{format_wheel_breakdown(payout, target_loss, refund)}\n"
+                    f"**صافي الرصيد:** {net_change:+,} {COIN}\n"
+                    f"**الرصيد الحالي:** {balance_after:,} {COIN}"
                 )
-                result_embed.set_image(url="attachment://wheel.png")
+                outcome_color = "win" if net_change > 0 else "loss" if net_change < 0 else "neutral"
+                panel = WheelResultPanel(
+                    f"🎡 نتيجة اللفة {index}/{len(players)}",
+                    description,
+                    outcome=outcome_color,
+                    image_name="wheel.png",
+                )
                 image_file = discord.File(render_wheel(segment_index), filename="wheel.png")
-                if result_message:
-                    await result_message.edit(embed=result_embed, attachments=[image_file], view=None)
-                else:
-                    result_message = await self.ctx.send(embed=result_embed, file=image_file)
+                await publish_panel(panel, image_file)
                 await asyncio.sleep(1.5)
+
             lines = []
             for player, label, before, after in results:
                 if label is None:
@@ -377,51 +407,41 @@ class WheelLobby(LayoutView):
                     lines.append(f"⚠️ {player.mention} — ماقدرناش نصرف الجائزة بسبب حد الرصيد.")
                 else:
                     net = after - before
-                    lines.append(f"{'🟢' if net > 0 else '🔴' if net < 0 else '⚪'} {player.mention} — {net:+,} {COIN}")
+                    marker = "🟢" if net > 0 else "🔴" if net < 0 else "⚪"
+                    lines.append(f"{marker} {player.mention} — {net:+,} {COIN}")
 
-            final_embed = base_embed(
-                title="🏁 خلصت جولات العجلة",
-                description="\n".join(lines) or "مفيش نتائج للجولة.",
-                color=THEME["green"],
+            await publish_panel(
+                WheelResultPanel(
+                    "🏁 خلصت جولات العجلة",
+                    "\n".join(lines) or "مفيش نتائج للجولة.",
+                    outcome="success",
+                )
             )
-            if result_message:
-                await result_message.edit(embed=final_embed, attachments=[], view=WatermarkView())
-            else:
-                await self.ctx.send(embed=final_embed, view=WatermarkView())
         except asyncio.CancelledError:
-            if result_message:
-                try:
-                    await result_message.edit(
-                        embed=base_embed(
-                            title="🛑 العجلة اتوقفت",
-                            description="تم إيقاف الجولة بواسطة الستاف أو الهوست.",
-                            color=THEME["orange"],
-                        ),
-                        view=None,
+            try:
+                await publish_panel(
+                    StatusPanel(
+                        "العجلة اتوقفت",
+                        "تم إيقاف الجولة بواسطة الستاف أو الهوست.",
+                        "warning",
                     )
-                except discord.HTTPException:
-                    pass
+                )
+            except discord.HTTPException:
+                logger.debug("Could not update the cancelled wheel panel", exc_info=True)
             raise
         except Exception:
             logger.exception("Wheel game loop failed")
-            if result_message:
-                try:
-                    await result_message.edit(
-                        embed=base_embed(
-                            title="حصل خطأ في العجلة",
-                            description="الجولة اتوقفت بسبب خطأ غير متوقع. راجع سجل البوت.",
-                            color=THEME["red_dark"],
-                        ),
-                        view=None,
+            try:
+                await publish_panel(
+                    StatusPanel(
+                        "حصل خطأ في العجلة",
+                        "الجولة اتوقفت بسبب خطأ تقني. سجّلنا التفاصيل من غير تكرار رسائل جديدة.",
+                        "warning",
                     )
-                except discord.HTTPException:
-                    logger.exception("Could not replace the active wheel result message")
-            else:
-                await report_game_failure(
-                    self.ctx,
-                    "توقفت العجلة بسبب خطأ",
-                    "حصل عطل غير متوقع قبل عرض نتيجة الجولة. تم تسجيل الخطأ ولم يتم تكرار أي خصم تلقائيًا.",
                 )
+            except discord.HTTPException:
+                logger.exception("Could not publish the wheel failure panel")
+            return
         finally:
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
