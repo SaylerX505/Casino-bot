@@ -46,8 +46,10 @@ Thumbs.db
 # Runtime AI history and activity snapshots (GeoGuessr's data/database.json stays included)
 data/ai_data.json
 data/state.json
+data/used_images.json
 **/ai_data.json
 **/state.json
+**/used_images.json
 
 # SQLite WAL/SHM journals and runtime backups
 *.db-*
