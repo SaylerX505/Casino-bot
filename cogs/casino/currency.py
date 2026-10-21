@@ -1,8 +1,6 @@
 import discord
 from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
-import json
-import os
 import logging
 import random
 import time
@@ -15,8 +13,6 @@ COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
 LOG_CHANNEL_ID = config.CURRENCY_LOG_CHANNEL_ID
 logger = logging.getLogger(__name__)
 SERVER_LOGO = "https://media.discordapp.net/attachments/1509650275164749994/1513741255786627162/c51bafdd9c1feb13e22458c35067c718.webp"
-DATA_FILE = "data/currency.json"
-
 INVENTORY_ITEMS = (
     ("double_shot", "طلقة مزدوجة", "tools", 100, "تسمح باستهداف لاعب إضافي في الروليت.", "🔫"),
     ("shield", "درع الحفرة", "tools", 275, "يصد الاستهداف في الروليت ويردّه على المهاجم.", "🛡️"),
@@ -26,21 +22,6 @@ INVENTORY_ITEMS = (
     ("luck_ticket", "تذكرة حظ", "consumables", 120, "استخدمها لتحصل على مكافأة عشوائية حتى 150.", "🎟️"),
     ("loot_box", "صندوق حظ", "consumables", 250, "افتحه لتحصل على مكافأة عشوائية حتى 400.", "🎁"),
 )
-
-def load_data():
-    # --- LEGACY JSON DATA ---
-    os.makedirs("data", exist_ok=True)
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def save_data(data):
-    # --- LEGACY API COMPATIBILITY ---
-    return
 
 def fmt(n) -> str:
     return bank.fmt(n)
@@ -463,7 +444,6 @@ class CurrencyHubLayout(LayoutView):
 class Currency(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.data = load_data()
         self._persistent_hub_view = None
 
     async def cog_load(self):
