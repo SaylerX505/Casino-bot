@@ -273,6 +273,8 @@ class AdminCommands(commands.Cog):
     async def admin_status(self, interaction: discord.Interaction):
         if not await self._require_admin(interaction, require_bot_admin=True):
             return
+        if not await self._require_global_owner(interaction, "حالة البوت"):
+            return
         admins = bank.list_guild_admins(interaction.guild_id)
         ai_cog = self.bot.get_cog("AI")
         ai_state = "مش محمل" if ai_cog is None else ("شغال" if ai_cog.data.get("ai_enabled", True) else "متوقف")
