@@ -1,44 +1,18 @@
-# --- CONFIGURATION ---
+"""Environment-backed settings for the single-server Casino bot."""
 import os
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- CORE SETTINGS --- 
-# --- ENVIRONMENT SECRETS ---
-TOKEN = os.getenv("DISCORD_TOKEN", "")
-PREFIX = "+"
-OWNER_IDS = {1265049672024854559, 798280308071596063}
-NEGLAWY_ID = 798280308071596063  # المطور
-BRAND = "Çukur"
-REMBG_API_KEY = os.getenv("REMBG_API_KEY", "")
 
-# --- AI SETTINGS ---
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+def _read_int_setting(name: str, default: int = 0) -> int:
+    try:
+        value = int(os.getenv(name, str(default)).strip() or default)
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
 
-# --- STAFF GAME ACCESS ---
-STAFF_ROLE_IDS = [
-    1528494324805927114,  
-]
-
-# --- UI EMOJIS ---
-EMOJIS = {
-    "check": "<:check:1511996429630181458>",
-    "cross": "<:cross:1512824131232465076>",
-}
-
-# --- LOGGING CHANNELS ---
-LOG_CHANNELS = {
-    "command_errors": 1486822134109180049,
-}
-
-
-SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
-EMBED_COLOR = 0x393a41
-
-# --- SINGLE-SERVER OPERATIONS ---
-# Required for single-server enforcement.
 
 def _read_id_set(name: str, defaults: set[int]) -> set[int]:
     raw = os.getenv(name, "").strip()
@@ -55,6 +29,30 @@ def _read_id_set(name: str, defaults: set[int]) -> set[int]:
     return values
 
 
+TOKEN = os.getenv("DISCORD_TOKEN", "")
+PREFIX = "+"
+OWNER_IDS = {1265049672024854559, 798280308071596063}
+NEGLAWY_ID = 798280308071596063
+BRAND = "Çukur"
+REMBG_API_KEY = os.getenv("REMBG_API_KEY", "")
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+
+# Legacy role defaults apply only until the wizard persists a custom staff-role list.
+STAFF_ROLE_IDS = [1528494324805927114]
+
+EMOJIS = {
+    "check": "<:check:1511996429630181458>",
+    "cross": "<:cross:1512824131232465076>",
+}
+
+# Logging is disabled until configured in the wizard or explicitly set on the host.
+LOG_CHANNELS = {
+    "command_errors": _read_int_setting("COMMAND_ERROR_LOG_CHANNEL_ID", 0),
+}
+SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
+EMBED_COLOR = 0x393A41
+
 HOME_GUILD_ID = _read_int_setting("HOME_GUILD_ID") or None
 CURRENCY_LOG_CHANNEL_ID = _read_int_setting("CURRENCY_LOG_CHANNEL_ID", 0)
 AI_GUILD_ID = _read_int_setting("AI_GUILD_ID", HOME_GUILD_ID or 0) or None
@@ -68,4 +66,9 @@ AI_ALLOWED_ROLE_IDS = _read_id_set(
         1486759788078432517,
     },
 )
-AI_ENABLED = os.getenv("AI_ENABLED", "true").strip().lower() not in {"0", "false", "off", "no"}
+AI_ENABLED = os.getenv("AI_ENABLED", "true").strip().lower() not in {
+    "0",
+    "false",
+    "off",
+    "no",
+}
