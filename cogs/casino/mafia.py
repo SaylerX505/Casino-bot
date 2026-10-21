@@ -692,8 +692,7 @@ async def run_mafia_game(ctx, players):
                             cur_cog = ctx.bot.get_cog('Currency')
                         except Exception:
                             cur_cog = None
-                        if cur_cog and cur_cog.get_item_count(hanged_player.id, "veto") > 0:
-                            cur_cog.remove_item(hanged_player.id, "veto", 1)
+                        if cur_cog and cur_cog.remove_item(hanged_player.id, "veto", 1):
                             embed = discord.Embed(
                                 description=f"⛔ **{hanged_player.mention}** استخدم **فيتو**! الناس صوتت ضده بس الفيتو لغى الإعدام... عاش يا وحش!",
                                 color=discord.Color.gold()
