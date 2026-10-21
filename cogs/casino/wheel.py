@@ -19,6 +19,7 @@ from cogs.casino.game_registry import (
 )
 from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
+    embed_to_v2,
     THEME,
     StatusPanel,
     WatermarkView,
@@ -455,12 +456,12 @@ class Wheel(commands.Cog):
     @is_staff_or_admin()
     async def wheel(self, ctx):
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send(embed=base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"]))
+            return await ctx.send(view=embed_to_v2(base_embed)(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"]))
 
         view = WheelLobby(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.lobby_task, ctx.author.id, "Wheel lobby", view=view):
             view.lobby_task.cancel()
-            return await ctx.send(embed=base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"]))
+            return await ctx.send(view=embed_to_v2(base_embed)(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"]))
 
         try:
             view.message = await ctx.send(view=view)
