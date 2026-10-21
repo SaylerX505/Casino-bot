@@ -30,7 +30,7 @@ The bot uses the configured prefix `+`. See the in-bot help menu for the availab
 
 ## Setup wizard
 
-Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose the game-staff roles, set a separate allowed-channel list for each game, restore a game to all channels, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.
+Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set a separate allowed-channel list for each game, disable or reopen individual games, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.
 
 ## Single-server configuration
 
@@ -42,7 +42,7 @@ The economy and small application settings are stored in SQLite at the project-r
 
 Never commit the live database, SQLite journal files, user histories, activity snapshots, runtime logs, backups, or real environment secrets. Archived source snapshots are excluded from Docker images. Static game content such as `data/database.json` and `data/fazoora.json` remains in the repository because the games need it.
 
-AI conversation history is kept **in memory only**, scoped by guild, channel, and user; it is not written to a JSON file and is cleared on restart. The bot no longer reads recent channel history to add other members' messages to an AI request. Only the invoking user's prompt and their own recent AI conversation are sent to the configured DeepSeek API. The `/ai-forget` or `+ai-forget` command clears that user's context in the current channel. Configure AI access roles explicitly and provide the required API key only on the host.
+AI conversation history is kept **in memory only**, scoped by guild, channel, and user; it is not written to a JSON file and is cleared on restart. The bot no longer reads recent channel history to add other members' messages to an AI request. Only the invoking user's prompt and their own recent AI conversation are sent to the configured DeepSeek API. The `/ai-forget` or `+ai-forget` command clears that user's context in the current channel. Configure the AI role allowlist from `/wizard` (the host's `AI_ALLOWED_ROLE_IDS` is used until a server-specific override is saved) and provide the required API key only on the host. The wizard will not enable AI unless `DEEPSEEK_API_KEY` is present.
 
 The small AI-enabled setting is stored in the SQLite database. The Git repository's earlier commits may still contain deleted data files; deleting files from current branch snapshots does not remove historical Git objects. A coordinated history rewrite and post-rewrite verification are still needed before claiming the historical copies have been purged.
 
