@@ -1,5 +1,4 @@
 """Input validation tests for the economy's shared mutation API."""
-import math
 import unittest
 from unittest.mock import patch
 
