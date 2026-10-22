@@ -805,6 +805,9 @@ def create_casino_wager(
     result,
     won,
     win_payout,
+    *,
+    channel_id=None,
+    message_id=None,
 ):
     """Atomically debit one player's stake and persist the complete game outcome."""
     game_id = str(game_id).strip()
@@ -828,6 +831,13 @@ def create_casino_wager(
         raise ValueError("winning casino wager gross payout cannot be smaller than its stake")
     if not won and win_payout != 0:
         raise ValueError("losing casino wagers cannot carry a payout")
+    for field_name, field_value in (("channel_id", channel_id), ("message_id", message_id)):
+        if field_value is not None and (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, int)
+            or not 0 < field_value <= SQLITE_MAX_INT
+        ):
+            raise ValueError(f"{field_name} must be a positive integer when provided")
 
     with _lock:
         c = _connect()
@@ -867,9 +877,21 @@ def create_casino_wager(
             c.execute(
                 "INSERT INTO casino_wagers "
                 "(game_id,user_id,game_type,stake,choice,result,won,win_payout,"
-                "status,outcome,payout,created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,'active',NULL,0,?)",
-                (game_id, uid, game_type, amount, choice, result, int(won), win_payout, now()),
+                "status,outcome,payout,created_at,channel_id,message_id) "
+                "VALUES (?,?,?,?,?,?,?,?,'active',NULL,0,?,?,?)",
+                (
+                    game_id,
+                    uid,
+                    game_type,
+                    amount,
+                    choice,
+                    result,
+                    int(won),
+                    win_payout,
+                    now(),
+                    channel_id,
+                    message_id,
+                ),
             )
             c.commit()
             return {"created": True, "balance_after": balance_after}
@@ -1129,6 +1151,26 @@ def active_casino_wager_ids():
             "SELECT game_id FROM casino_wagers WHERE status='active' ORDER BY created_at"
         ).fetchall()
         return [str(row["game_id"]) for row in rows]
+
+
+def active_casino_wager_records():
+    """Return durable panel references for wagers that may need startup recovery."""
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id,user_id,game_type,stake,channel_id,message_id "
+            "FROM casino_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def casino_wager_status(game_id):
+    """Return the durable status and outcome needed to verify a recovery receipt."""
+    with _lock:
+        row = _connect().execute(
+            "SELECT status,outcome,stake,game_type FROM casino_wagers WHERE game_id=?",
+            (str(game_id),),
+        ).fetchone()
+        return dict(row) if row is not None else None
 
 
 def charge_up_to(user_id, amount):
