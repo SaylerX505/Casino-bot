@@ -32,7 +32,29 @@ SLOT_TRIPLE_PAYOUTS = {"🍒": 500, "🍋": 600, "🍊": 700, "🍇": 800, "⭐"
 SLOT_CHOICES = {"spin": {"label": "تدوير", "emoji": "🎰"}}
 _RECOVERY_DELAYS_SECONDS = (2, 5, 15, 30, 60)
 _RECOVERY_TASKS: dict[str, asyncio.Task] = {}
-_ACTIVE_SESSIONS: dict[int, "SoloWagerView"] = {}
+_ACTIVE_SESSIONS: dict[int, discord.ui.View] = {}
+
+
+def has_active_solo_session(user_id: int) -> bool:
+    """Whether this member already has an open solo-game session."""
+    current = _ACTIVE_SESSIONS.get(int(user_id))
+    return current is not None and not getattr(current, "done", False) and not current.is_finished()
+
+
+def claim_solo_session(user_id: int, view: discord.ui.View) -> bool:
+    """Atomically reserve the member's one active solo-game session."""
+    user_id = int(user_id)
+    if has_active_solo_session(user_id):
+        return False
+    _ACTIVE_SESSIONS[user_id] = view
+    return True
+
+
+def release_solo_session(user_id: int, view: discord.ui.View) -> None:
+    """Release a reserved session without clearing a newer session."""
+    if _ACTIVE_SESSIONS.get(int(user_id)) is view:
+        _ACTIVE_SESSIONS.pop(int(user_id), None)
+
 
 
 def _gross_payout(
@@ -166,8 +188,7 @@ class SoloWagerView(LayoutView):
             logger.warning("Could not update coinflip message game_id=%s", self.game_id, exc_info=True)
 
     def _release_session(self) -> None:
-        if _ACTIVE_SESSIONS.get(self.requester.id) is self:
-            _ACTIVE_SESSIONS.pop(self.requester.id, None)
+        release_solo_session(self.requester.id, self)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.requester.id:
@@ -493,8 +514,7 @@ class SoloBetting(commands.Cog):
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
 
-        current = _ACTIVE_SESSIONS.get(ctx.author.id)
-        if current is not None and not current.done and not current.is_finished():
+        if has_active_solo_session(ctx.author.id):
             return await ctx.send(
                 view=StatusPanel(
                     "عندك جلسة مفتوحة",
@@ -518,7 +538,16 @@ class SoloBetting(commands.Cog):
             payout_description=payout_description,
             outcome_resolver=outcome_resolver,
         )
-        _ACTIVE_SESSIONS[ctx.author.id] = view
+        if not claim_solo_session(ctx.author.id, view):
+            view.stop()
+            return await ctx.send(
+                view=StatusPanel(
+                    "عندك جلسة مفتوحة",
+                    "كمّل أو ألغِ جلسة الرهان الحالية قبل ما تبدأ جلسة جديدة.",
+                    "warning",
+                ),
+                **({"ephemeral": True} if ctx.interaction is not None else {}),
+            )
         try:
             view.message = await ctx.send(view=view)
         except asyncio.CancelledError:

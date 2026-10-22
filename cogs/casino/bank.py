@@ -824,8 +824,8 @@ def create_casino_wager(
         or not 0 <= win_payout <= SQLITE_MAX_INT
     ):
         raise ValueError("casino wager payout must be a non-negative SQLite-safe integer")
-    if won and win_payout <= 0:
-        raise ValueError("winning casino wagers must have a positive payout")
+    if won and win_payout < amount:
+        raise ValueError("winning casino wager gross payout cannot be smaller than its stake")
     if not won and win_payout != 0:
         raise ValueError("losing casino wagers cannot carry a payout")
 
@@ -990,7 +990,7 @@ def settle_casino_wager(
             win_payout = int(wager["win_payout"]) if not has_final_fields else final_payout
             result_text = str(wager["result"]) if not has_final_fields else final_result.strip()
             selected_outcome = final_outcome or ("win" if won else "loss")
-            if has_final_fields and won and win_payout < stake:
+            if won and win_payout < stake:
                 c.rollback()
                 raise ValueError("gross payout cannot be smaller than the original stake")
 
