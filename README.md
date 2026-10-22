@@ -26,7 +26,7 @@ An advanced casino and social-games Discord bot for the Çukur server.
    python main.py
    ```
 
-The bot uses the configured prefix `+`. See the in-bot help menu for the available commands and game rules.
+The bot uses the configured prefix `+`. See the in-bot help menu for the available commands and game rules. Runtime dependency pins are kept in `requirements.txt`; `requirements.lock` pins the complete Python 3.11 dependency resolution used by Docker and CI.
 
 ## Setup wizard
 
@@ -38,7 +38,7 @@ This bot is designed to run in one Discord server. `HOME_GUILD_ID` is required: 
 
 ## Data and persistence
 
-The economy and small application settings are stored in SQLite at the project-root `data/bank.db` by default. Set `BANK_DB_FILE` only if the host requires a custom path. Mount persistent storage at `/app/data` when using Docker. Keep only one bot process connected to a given SQLite file.
+The economy and small application settings are stored in SQLite at the project-root `data/bank.db` by default. Schema changes are applied through ordered, transactional migrations recorded in `schema_migrations`; legacy tables are adopted without replacing their rows. Balance changes are written to the append-only `economy_ledger` in the same SQL transaction as the balance mutation, with correlated transaction IDs for transfers and wagers. Set `BANK_DB_FILE` only if the host requires a custom path. Mount persistent storage at `/app/data` when using Docker. Keep only one bot process connected to a given SQLite file.
 
 Never commit the live database, SQLite journal files, user histories, activity snapshots, runtime logs, backups, or real environment secrets. Archived source snapshots are excluded from Docker images. Static game content such as `data/database.json` and `data/fazoora.json` remains in the repository because the games need it.
 
@@ -74,7 +74,7 @@ python -m compileall -q main.py config.py cogs tests
 python -m unittest discover -s tests -v
 ```
 
-The tests use temporary SQLite databases and should not operate on the live economy database. RPS wagers are recorded in the economy database as escrow; unresolved settlements retry with bounded backoff while the process is alive, remaining orphaned wagers are refunded at startup, and settlement is idempotent. Run only one bot instance against a given economy database. GitHub Actions runs these checks on pushes and pull requests and builds the Docker image as a deployment smoke check.
+The tests use temporary SQLite databases and should not operate on the live economy database. Run `python -m compileall -q main.py config.py cogs tests`, then `coverage run --branch -m unittest discover -s tests -v` and `coverage report --show-missing` to check correctness and coverage. CI also runs a broader undefined-name/syntax scan and audits every package in `requirements.lock` with pip-audit. RPS wagers are recorded as escrow; unresolved settlements retry with bounded backoff while the process is alive, remaining orphaned wagers are refunded at startup, and settlement is idempotent. Run only one bot instance against a given economy database. GitHub Actions builds the Docker image as a deployment smoke check.
 
 ## Deployment notes
 

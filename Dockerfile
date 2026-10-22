@@ -16,10 +16,10 @@ RUN apt-get update \
 WORKDIR /app
 
 
-COPY requirements.txt /tmp/requirements.txt
+COPY requirements.lock /tmp/requirements.lock
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir -r /tmp/requirements.txt \
-    && rm -f /tmp/requirements.txt
+    && python -m pip install --no-cache-dir -r /tmp/requirements.lock \
+    && rm -f /tmp/requirements.lock
 
 COPY . /app
 
