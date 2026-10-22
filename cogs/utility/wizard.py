@@ -46,6 +46,7 @@ GAME_ORDER = (
     "wheel",
     "rps",
     "riddle",
+    "coinflip",
 )
 
 
