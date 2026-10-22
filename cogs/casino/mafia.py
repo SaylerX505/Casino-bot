@@ -14,6 +14,12 @@ from cogs.casino.mafia_art import (
     generate_billboard,
     generate_mafia_reveal,
 )
+from cogs.casino.mafia_views import (
+    DayVoteView,
+    MafiaLobbyView,
+    RoleRevealView,
+    SecretButtonView,
+)
 from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
 

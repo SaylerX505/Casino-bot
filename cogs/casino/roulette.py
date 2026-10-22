@@ -1,28 +1,50 @@
-import discord
-from functools import partial
-from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
-from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
-import logging
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
-import random
-import aiohttp
+import logging
 import math
 import os
+import random
+from functools import partial
+
+import aiohttp
+import discord
+from discord.ext import commands
+from discord.ui import (
+    ActionRow,
+    Container,
+    LayoutView,
+    MediaGallery,
+    Separator,
+    TextDisplay,
+)
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
 import config
+from cogs.casino.game_registry import (
+    is_active_game,
+    owns_game_task,
+    register_game_task,
+    release_game_task,
+    set_game_view,
+)
+from cogs.casino.permissions import is_staff_or_admin
+from cogs.utility.theme import (
+    StatusPanel,
+    embed_to_v2,
+    lobby_embed,
+    report_game_failure,
+    result_embed,
+)
+
+SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
+
+logger = logging.getLogger(__name__)
+
 
 class WatermarkView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
         self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
-
-SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
-from cogs.casino.permissions import is_staff_or_admin
-
-logger = logging.getLogger(__name__)
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
 
 
 async def fetch_avatar(session, user, size=(80, 80)):

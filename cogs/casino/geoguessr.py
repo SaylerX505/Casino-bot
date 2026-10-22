@@ -11,6 +11,7 @@ from geopy.geocoders import Nominatim
 
 from cogs.casino import geoguessr_storage as geo_storage
 from cogs.casino.geoguessr_art import generate_dashboard_image, generate_result_map
+from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.geoguessr_views import ActiveGameView, GeoGuessrResultPanel, GuessGameMenu
 from cogs.casino.game_registry import (
     is_active_game,
