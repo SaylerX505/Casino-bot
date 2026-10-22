@@ -25,24 +25,51 @@ SIDES = {
     "heads": {"label": "صورة", "emoji": "🪙"},
     "tails": {"label": "كتابة", "emoji": "🪙"},
 }
+DICE_CHOICES = {str(number): {"label": str(number), "emoji": None} for number in range(1, 7)}
 _RECOVERY_DELAYS_SECONDS = (2, 5, 15, 30, 60)
 _RECOVERY_TASKS: dict[str, asyncio.Task] = {}
 _ACTIVE_SESSIONS: dict[int, "CoinflipView"] = {}
 
 
-def _gross_payout(stake: int) -> int:
-    """Return total win payout including the original stake, with a 5% house edge."""
-    return (stake * GROSS_WIN_MULTIPLIER_NUMERATOR) // GROSS_WIN_MULTIPLIER_DENOMINATOR
+def _gross_payout(
+    stake: int,
+    numerator: int = GROSS_WIN_MULTIPLIER_NUMERATOR,
+    denominator: int = GROSS_WIN_MULTIPLIER_DENOMINATOR,
+) -> int:
+    """Return the advertised gross payout for a virtual-currency wager."""
+    if stake <= 0 or numerator <= 0 or denominator <= 0:
+        raise ValueError("stake and payout multiplier must be positive")
+    return (stake * numerator) // denominator
 
 
 class CoinflipView(LayoutView):
-    """One-message solo game. Only its requester can wager; no money moves before choice."""
+    """One-message solo game with requester-bound controls and durable settlement."""
 
-    def __init__(self, cog, requester, amount: int):
+    def __init__(
+        self,
+        cog,
+        requester,
+        amount: int,
+        *,
+        game_type: str = "coinflip",
+        game_title: str = "رمي العملة",
+        choices: dict | None = None,
+        payout_numerator: int = GROSS_WIN_MULTIPLIER_NUMERATOR,
+        payout_denominator: int = GROSS_WIN_MULTIPLIER_DENOMINATOR,
+        odds_description: str = "1 من 2",
+        instructions: str = "اختار صورة أو كتابة.",
+    ):
         super().__init__(timeout=120)
         self.cog = cog
         self.requester = requester
         self.amount = amount
+        self.game_type = game_type
+        self.game_title = game_title
+        self.choices = choices or SIDES
+        self.payout_numerator = payout_numerator
+        self.payout_denominator = payout_denominator
+        self.odds_description = odds_description
+        self.instructions = instructions
         self.message = None
         self.game_id = None
         self.done = False
@@ -50,41 +77,48 @@ class CoinflipView(LayoutView):
         self._panel_text = TextDisplay(self._waiting_content())
         self._buttons = {}
 
-        for side in ("heads", "tails"):
+        choice_buttons = []
+        for choice, metadata in self.choices.items():
             button = discord.ui.Button(
-                label=SIDES[side]["label"],
-                emoji=SIDES[side]["emoji"],
+                label=metadata["label"],
+                emoji=metadata.get("emoji"),
                 style=discord.ButtonStyle.secondary,
-                custom_id=f"coinflip_{side}",
+                custom_id=f"{self.game_type}_{choice}",
             )
-            button.callback = partial(self.choose, side=side)
-            self._buttons[side] = button
+            button.callback = partial(self.choose, side=choice)
+            self._buttons[choice] = button
+            choice_buttons.append(button)
 
         cancel = discord.ui.Button(
             label="إلغاء",
             emoji="✕",
             style=discord.ButtonStyle.secondary,
-            custom_id="coinflip_cancel",
+            custom_id=f"{self.game_type}_cancel",
         )
         cancel.callback = self.cancel
         self._buttons["cancel"] = cancel
-        self.add_item(
-            Container(
-                self._panel_text,
-                Separator(),
-                ActionRow(*self._buttons.values()),
-                accent_color=THEME["teal"],
-            )
-        )
+
+        elements = [self._panel_text, Separator()]
+        if len(choice_buttons) <= 2:
+            elements.append(ActionRow(*choice_buttons, cancel))
+        else:
+            split = (len(choice_buttons) + 1) // 2
+            elements.append(ActionRow(*choice_buttons[:split]))
+            elements.append(ActionRow(*choice_buttons[split:], cancel))
+        self.add_item(Container(*elements, accent_color=THEME["teal"]))
 
     def _waiting_content(self) -> str:
-        payout = _gross_payout(self.amount)
+        payout = _gross_payout(
+            self.amount, self.payout_numerator, self.payout_denominator
+        )
+        multiplier = self.payout_numerator / self.payout_denominator
         return (
-            "# رمي العملة\n"
+            f"# {self.game_title}\n"
             f"**الرهان:** {self.amount:,} {COIN}\n"
-            f"**إجمالي الصرف عند الفوز:** {payout:,} {COIN} (1.9x شامل الرهان)\n"
+            f"**فرصة الفوز:** {self.odds_description}\n"
+            f"**إجمالي الصرف عند الفوز:** {payout:,} {COIN} ({multiplier:.1f}x شامل الرهان)\n"
             f"**صافي الربح عند الفوز:** {payout - self.amount:,} {COIN}\n\n"
-            "اختار صورة أو كتابة. رصيدك مش هيتخصم غير لما تختار، "
+            f"{self.instructions} رصيدك مش هيتخصم غير لما تختار، "
             "والنتيجة هتظهر في الرسالة دي من غير رسائل إضافية."
         )
 
@@ -135,15 +169,17 @@ class CoinflipView(LayoutView):
         self.message = interaction.message or self.message
         self._disable_buttons()
         self._panel_text.content = (
-            "# جاري تأكيد الرهان\n"
+            f"# جاري تأكيد {self.game_title}\n"
             "قفلنا الاختيار وبنحفظ نتيجة الجولة والخصم والتسوية بشكل آمن. استنى لحظة."
         )
         await interaction.response.edit_message(view=self)
 
         game_id = uuid.uuid4().hex
-        result_side = secrets.choice(tuple(SIDES))
+        result_side = secrets.choice(tuple(self.choices))
         won = side == result_side
-        payout = _gross_payout(self.amount) if won else 0
+        payout = _gross_payout(
+            self.amount, self.payout_numerator, self.payout_denominator
+        ) if won else 0
         self.game_id = game_id
 
         try:
@@ -151,7 +187,7 @@ class CoinflipView(LayoutView):
                 bank.create_casino_wager,
                 game_id,
                 self.requester.id,
-                "coinflip",
+                self.game_type,
                 self.amount,
                 side,
                 result_side,
@@ -162,7 +198,7 @@ class CoinflipView(LayoutView):
             self.cog._schedule_recovery(game_id, force_refund=True, callback=self._recovered)
             raise
         except Exception:
-            logger.exception("Could not confirm coinflip stake game_id=%s", game_id)
+            logger.exception("Could not confirm solo wager game_id=%s", game_id)
             self._panel_text.content = (
                 "# جاري التحقق من الرهان\n"
                 "حصل تأخير في قاعدة البيانات. حفظنا معرّف العملية، والبوت هيتأكد من حالتها "
@@ -223,10 +259,10 @@ class CoinflipView(LayoutView):
         self.done = True
         self.resolving = False
         self._disable_buttons()
-        side = str(result.get("choice", ""))
+        choice = str(result.get("choice", ""))
         result_side = str(result.get("result", ""))
-        side_label = SIDES.get(side, {}).get("label", side)
-        result_label = SIDES.get(result_side, {}).get("label", result_side)
+        choice_label = self.choices.get(choice, {}).get("label", choice)
+        result_label = self.choices.get(result_side, {}).get("label", result_side)
         stake = int(result.get("stake", self.amount))
         payout = int(result.get("payout", 0))
         balance_after = result.get("balance_after")
@@ -245,8 +281,8 @@ class CoinflipView(LayoutView):
         elif result.get("outcome") == "win":
             balance_line = f"\n**رصيدك بعد التسوية:** {int(balance_after):,} {COIN}" if balance_after is not None else ""
             self._panel_text.content = (
-                "# كسبت الرهان\n"
-                f"اختيارك: **{side_label}** · نتيجة العملة: **{result_label}**\n\n"
+                f"# كسبت الرهان · {self.game_title}\n"
+                f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**\n\n"
                 f"**الرهان:** −{stake:,} {COIN}\n"
                 f"**إجمالي الصرف:** +{payout:,} {COIN}\n"
                 f"**صافي الربح:** +{payout - stake:,} {COIN}"
@@ -255,8 +291,8 @@ class CoinflipView(LayoutView):
         else:
             balance_line = f"\n**رصيدك بعد التسوية:** {int(balance_after):,} {COIN}" if balance_after is not None else ""
             self._panel_text.content = (
-                "# خسرت الرهان\n"
-                f"اختيارك: **{side_label}** · نتيجة العملة: **{result_label}**\n\n"
+                f"# خسرت الرهان · {self.game_title}\n"
+                f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**\n\n"
                 f"**الرهان:** −{stake:,} {COIN}\n"
                 "**إجمالي الصرف:** 0\n"
                 f"**صافي النتيجة:** −{stake:,} {COIN}"
@@ -266,6 +302,7 @@ class CoinflipView(LayoutView):
         await self._edit_message()
         self._release_session()
         self.stop()
+
 
     async def cancel(self, interaction: discord.Interaction) -> None:
         if self.done or self.resolving:
@@ -277,7 +314,7 @@ class CoinflipView(LayoutView):
         self.done = True
         self._disable_buttons()
         self._panel_text.content = (
-            "# تم إلغاء رمي العملة\n"
+            f"# تم إلغاء {self.game_title}\n"
             "اتلغت الجلسة قبل اختيارك؛ مفيش أي رهان اتخصم."
         )
         await interaction.response.edit_message(view=self)
@@ -290,7 +327,7 @@ class CoinflipView(LayoutView):
         self.done = True
         self._disable_buttons()
         self._panel_text.content = (
-            "# انتهت صلاحية الجلسة\n"
+            f"# انتهت صلاحية {self.game_title}\n"
             "الوقت خلص قبل ما تختار؛ مفيش أي رهان اتخصم."
         )
         await self._edit_message()
@@ -309,7 +346,7 @@ class Coinflip(commands.Cog):
         except Exception:
             self._wagers_ready = False
             logger.exception(
-                "Solo casino wager recovery could not be verified; disabling new coinflip wagers"
+                "Solo casino wager recovery could not be verified; disabling new wagers"
             )
             return
 
@@ -377,13 +414,20 @@ class Coinflip(commands.Cog):
         _RECOVERY_TASKS[game_id] = task
         return task
 
-    @commands.hybrid_command(
-        name="coinflip",
-        aliases=["flip", "عملة", "رمي_العملة"],
-        description="راهن بعملة افتراضية على نتيجة رمي العملة",
-    )
-    @commands.cooldown(1, 4, commands.BucketType.user)
-    async def coinflip(self, ctx, bet: str):
+    async def _start_wager(
+        self,
+        ctx,
+        bet: str,
+        *,
+        game_type: str,
+        game_title: str,
+        choices: dict,
+        payout_numerator: int,
+        payout_denominator: int = 100,
+        odds_description: str,
+        instructions: str,
+        command_name: str,
+    ):
         if not self._wagers_ready:
             return await ctx.send(
                 view=StatusPanel(
@@ -397,7 +441,7 @@ class Coinflip(commands.Cog):
         raw_bet = bet.strip().replace(",", "") if isinstance(bet, str) else ""
         amount = int(raw_bet) if re.fullmatch(r"[0-9]+", raw_bet) else 0
         if not MIN_BET <= amount <= MAX_BET:
-            usage = "/coinflip bet:100" if ctx.interaction is not None else f"{ctx.prefix}coinflip 100"
+            usage = f"/{command_name} bet:100" if ctx.interaction is not None else f"{ctx.prefix}{command_name} 100"
             return await ctx.send(
                 view=StatusPanel(
                     "قيمة الرهان مش مناسبة",
@@ -412,13 +456,24 @@ class Coinflip(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "عندك جلسة مفتوحة",
-                    "كمّل أو ألغِ جلسة رمي العملة الحالية قبل ما تبدأ جلسة جديدة.",
+                    "كمّل أو ألغِ جلسة الرهان الحالية قبل ما تبدأ جلسة جديدة.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
 
-        view = CoinflipView(self, ctx.author, amount)
+        view = CoinflipView(
+            self,
+            ctx.author,
+            amount,
+            game_type=game_type,
+            game_title=game_title,
+            choices=choices,
+            payout_numerator=payout_numerator,
+            payout_denominator=payout_denominator,
+            odds_description=odds_description,
+            instructions=instructions,
+        )
         _ACTIVE_SESSIONS[ctx.author.id] = view
         try:
             view.message = await ctx.send(view=view)
@@ -427,8 +482,50 @@ class Coinflip(commands.Cog):
             raise
         except Exception:
             view._release_session()
-            logger.exception("Could not create coinflip view requester_id=%s", ctx.author.id)
+            logger.exception(
+                "Could not create solo wager session type=%s requester_id=%s",
+                game_type,
+                ctx.author.id,
+            )
             raise
+
+    @commands.hybrid_command(
+        name="coinflip",
+        aliases=["flip", "عملة", "رمي_العملة"],
+        description="راهن بعملة افتراضية على نتيجة رمي العملة",
+    )
+    @commands.cooldown(1, 4, commands.BucketType.user)
+    async def coinflip(self, ctx, bet: str):
+        return await self._start_wager(
+            ctx,
+            bet,
+            game_type="coinflip",
+            game_title="رمي العملة",
+            choices=SIDES,
+            payout_numerator=190,
+            odds_description="1 من 2",
+            instructions="اختار صورة أو كتابة.",
+            command_name="coinflip",
+        )
+
+    @commands.hybrid_command(
+        name="dice",
+        aliases=["نرد", "زهر"],
+        description="راهن بعملة افتراضية على رقم النرد",
+    )
+    @commands.cooldown(1, 4, commands.BucketType.user)
+    async def dice(self, ctx, bet: str):
+        return await self._start_wager(
+            ctx,
+            bet,
+            game_type="dice",
+            game_title="رمي النرد",
+            choices=DICE_CHOICES,
+            payout_numerator=570,
+            odds_description="1 من 6",
+            instructions="اختار رقم من 1 إلى 6. الرقم الصحيح يكسبك 5.7x من قيمة الرهان.",
+            command_name="dice",
+        )
 
 
 async def setup(bot):

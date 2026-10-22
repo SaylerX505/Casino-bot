@@ -21,6 +21,7 @@ GAME_LABELS = {
     "rps": "حجرة ورقة مقص",
     "riddle": "الفزورة",
     "coinflip": "رمي العملة",
+    "dice": "رمي النرد",
 }
 GAME_COMMAND_ALIASES = {
     "mafia": "mafia",
@@ -46,6 +47,9 @@ GAME_COMMAND_ALIASES = {
     "flip": "coinflip",
     "عملة": "coinflip",
     "رمي_العملة": "coinflip",
+    "dice": "dice",
+    "نرد": "dice",
+    "زهر": "dice",
 }
 
 
