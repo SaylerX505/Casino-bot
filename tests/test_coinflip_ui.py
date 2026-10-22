@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import discord
 from discord.ui import LayoutView
 
-from cogs.casino.coinflip import CoinflipView
+from cogs.casino.coinflip import CoinflipView, DICE_CHOICES
 from cogs.utility.theme import StatusPanel
 
 
@@ -32,6 +32,90 @@ class CoinflipViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len({button.custom_id for button in buttons}), 3)
         self.assertIn("1.9x", self.view._panel_text.content)
         self.assertIn("100", self.view._panel_text.content)
+
+    def test_dice_view_discloses_odds_and_uses_two_valid_button_rows(self):
+        view = CoinflipView(
+            self.cog,
+            self.requester,
+            100,
+            game_type="dice",
+            game_title="رمي النرد",
+            choices=DICE_CHOICES,
+            payout_numerator=570,
+            odds_description="1 من 6",
+            instructions="اختار رقم من 1 إلى 6.",
+        )
+        try:
+            self.assertIn("5.7x", view._panel_text.content)
+            self.assertIn("1 من 6", view._panel_text.content)
+            self.assertIn("570", view._panel_text.content)
+            buttons = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            self.assertEqual(len(buttons), 7)
+            self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+            self.assertEqual(
+                {button.label for button in buttons},
+                {"1", "2", "3", "4", "5", "6", "إلغاء"},
+            )
+            self.assertEqual(len({button.custom_id for button in buttons}), 7)
+            rows = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.ActionRow)
+            ]
+            self.assertEqual(len(rows), 2)
+            self.assertEqual([len(row.children) for row in rows], [3, 4])
+        finally:
+            view.stop()
+
+    async def test_winning_coinflip_edits_the_original_message_with_a_receipt(self):
+        from unittest.mock import Mock, patch
+
+        from cogs.casino import coinflip as coinflip_module
+
+        self.cog._schedule_recovery = Mock()
+        self.cog._settle_with_retries = AsyncMock(
+            return_value={
+                "settled": True,
+                "already_settled": False,
+                "status": "settled",
+                "outcome": "win",
+                "choice": "heads",
+                "result": "heads",
+                "stake": 100,
+                "payout": 190,
+                "balance_after": 1_090,
+            }
+        )
+        message = SimpleNamespace(edit=AsyncMock())
+        interaction = SimpleNamespace(
+            user=self.requester,
+            message=message,
+            response=SimpleNamespace(edit_message=AsyncMock(), send_message=AsyncMock()),
+        )
+        with (
+            patch.object(coinflip_module.secrets, "choice", return_value="heads"),
+            patch.object(coinflip_module.bank, "create_casino_wager", return_value={"created": True}) as create_wager,
+        ):
+            await self.view.choose(interaction, side="heads")
+
+        create_wager.assert_called_once_with(
+            self.view.game_id,
+            self.requester.id,
+            "coinflip",
+            100,
+            "heads",
+            "heads",
+            True,
+            190,
+        )
+        interaction.response.edit_message.assert_awaited_once_with(view=self.view)
+        message.edit.assert_awaited_once_with(view=self.view)
+        self.assertTrue(self.view.done)
+        self.assertIn("كسبت الرهان", self.view._panel_text.content)
+        self.assertIn("صافي الربح:** +90", self.view._panel_text.content)
+        self.assertIn("رصيدك بعد التسوية:** 1,090", self.view._panel_text.content)
 
     async def test_session_is_bound_to_the_requesting_member(self):
         other_user = SimpleNamespace(id=202)
