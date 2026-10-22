@@ -24,10 +24,10 @@ from cogs.casino.permissions import (
     ai_enabled_setting_key,
     ai_role_setting_key,
     configured_ai_role_ids,
+    configured_ai_enabled_for_guild,
     configured_log_channel_id,
     configured_manager_role_ids,
     game_channel_setting_key,
-    is_ai_enabled_for_guild as guild_ai_enabled,
     has_admin_access,
     log_channel_setting_key,
     manager_role_setting_key,
@@ -141,7 +141,7 @@ def _global_ai_enabled() -> bool:
 
 
 def _guild_ai_enabled(guild_id: int) -> bool:
-    return guild_ai_enabled(guild_id, default=True)
+    return configured_ai_enabled_for_guild(guild_id, default=True)
 
 
 def _configured_ai_enabled(guild_id: int | None = None) -> bool:
