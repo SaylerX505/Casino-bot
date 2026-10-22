@@ -119,6 +119,83 @@ class CasinoWagerTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "balance_limit")
         self.assertEqual(bank.get_balance(101), bank.SQLITE_MAX_INT)
 
+
+    def test_multistep_wager_can_commit_final_result_and_push_returns_stake(self):
+        self.create_wager(
+            game_id="blackjack-push",
+            game_type="blackjack",
+            choice="blackjack",
+            result="in_progress",
+            won=False,
+            win_payout=0,
+        )
+        pushed = bank.settle_casino_wager(
+            "blackjack-push",
+            final_result="player=20,dealer=20",
+            final_won=False,
+            final_payout=0,
+            final_outcome="push",
+        )
+        repeated = bank.settle_casino_wager("blackjack-push")
+
+        self.assertEqual(pushed["outcome"], "push")
+        self.assertEqual(pushed["payout"], 100)
+        self.assertEqual(pushed["result"], "player=20,dealer=20")
+        self.assertEqual(pushed["balance_after"], 1_000)
+        self.assertTrue(repeated["already_settled"])
+        self.assertEqual(repeated["outcome"], "push")
+        self.assertEqual(repeated["payout"], 100)
+        self.assertEqual(bank.get_balance(101), 1_000)
+        ledger = bank.get_economy_ledger(event_type="casino_wager_push", reference="blackjack-push")
+        self.assertEqual(len(ledger), 1)
+        self.assertEqual(ledger[0]["delta"], 100)
+
+    def test_multistep_wager_can_settle_final_win_after_the_player_acts(self):
+        self.create_wager(
+            game_id="blackjack-win",
+            game_type="blackjack",
+            choice="blackjack",
+            result="in_progress",
+            won=False,
+            win_payout=0,
+        )
+        result = bank.settle_casino_wager(
+            "blackjack-win",
+            final_result="player=19,dealer=18",
+            final_won=True,
+            final_payout=200,
+            final_outcome="win",
+        )
+
+        self.assertEqual(result["outcome"], "win")
+        self.assertEqual(result["result"], "player=19,dealer=18")
+        self.assertTrue(result["won"])
+        self.assertEqual(result["payout"], 200)
+        self.assertEqual(result["balance_after"], 1_100)
+        self.assertEqual(bank.get_balance(101), 1_100)
+
+    def test_multistep_wager_rejects_partial_or_invalid_final_state(self):
+        self.create_wager(
+            game_id="blackjack-invalid",
+            game_type="blackjack",
+            choice="blackjack",
+            result="in_progress",
+            won=False,
+            win_payout=0,
+        )
+        with self.assertRaisesRegex(ValueError, "provided together"):
+            bank.settle_casino_wager("blackjack-invalid", final_result="final")
+        with self.assertRaisesRegex(ValueError, "gross payout"):
+            bank.settle_casino_wager(
+                "blackjack-invalid",
+                final_result="player=21,dealer=18",
+                final_won=True,
+                final_payout=50,
+                final_outcome="win",
+            )
+        self.assertEqual(bank.get_balance(101), 900)
+        self.assertEqual(bank.active_casino_wager_ids(), ["blackjack-invalid"])
+
     def test_economy_reset_is_blocked_while_solo_wager_is_active(self):
         self.create_wager()
         with self.assertRaisesRegex(RuntimeError, "active casino wagers"):

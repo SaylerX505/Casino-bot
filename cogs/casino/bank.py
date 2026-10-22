@@ -878,13 +878,49 @@ def create_casino_wager(
             raise
 
 
-def settle_casino_wager(game_id, *, force_refund=False):
-    """Settle one persisted casino wager once, or refund it after an interrupted session."""
+def settle_casino_wager(
+    game_id,
+    *,
+    force_refund=False,
+    final_result=None,
+    final_won=None,
+    final_payout=None,
+    final_outcome=None,
+):
+    """Settle a persisted wager once; optionally commit a multi-step game's final result."""
     game_id = str(game_id)
     if not game_id:
         return {"settled": False, "reason": "not_found"}
     if not isinstance(force_refund, bool):
         raise TypeError("force_refund must be a boolean")
+
+    final_fields = (final_result, final_won, final_payout)
+    has_final_fields = any(value is not None for value in final_fields)
+    if has_final_fields and not all(value is not None for value in final_fields):
+        raise ValueError("final_result, final_won, and final_payout must be provided together")
+    if not has_final_fields and final_outcome is not None:
+        raise ValueError("final_outcome requires final settlement fields")
+    if has_final_fields:
+        if not isinstance(final_result, str) or not final_result.strip():
+            raise ValueError("final result must be a non-empty string")
+        if not isinstance(final_won, bool):
+            raise TypeError("final won flag must be a boolean")
+        if (
+            isinstance(final_payout, bool)
+            or not isinstance(final_payout, int)
+            or not 0 <= final_payout <= SQLITE_MAX_INT
+        ):
+            raise ValueError("final payout must be a non-negative SQLite-safe integer")
+        if final_won and final_payout <= 0:
+            raise ValueError("a winning final result must have a positive gross payout")
+        if not final_won and final_payout != 0:
+            raise ValueError("a losing or push result must not carry a win payout")
+        if final_outcome not in (None, "win", "loss", "push"):
+            raise ValueError("unsupported final outcome")
+        if final_outcome == "win" and not final_won:
+            raise ValueError("win outcome requires final_won=True")
+        if final_outcome in ("loss", "push") and final_won:
+            raise ValueError("loss/push outcome requires final_won=False")
 
     with _lock:
         c = _connect()
@@ -899,7 +935,18 @@ def settle_casino_wager(game_id, *, force_refund=False):
                 c.rollback()
                 return {"settled": False, "reason": "not_found"}
 
-            def receipt(*, settled, already_settled, status, outcome, payout, reason=None, balance_after=None):
+            def receipt(
+                *,
+                settled,
+                already_settled,
+                status,
+                outcome,
+                payout,
+                reason=None,
+                balance_after=None,
+                result=None,
+                won=None,
+            ):
                 return {
                     "settled": settled,
                     "already_settled": already_settled,
@@ -911,8 +958,8 @@ def settle_casino_wager(game_id, *, force_refund=False):
                     "game_type": str(wager["game_type"]),
                     "stake": int(wager["stake"]),
                     "choice": str(wager["choice"]),
-                    "result": str(wager["result"]),
-                    "won": bool(wager["won"]),
+                    "result": str(wager["result"]) if result is None else result,
+                    "won": bool(wager["won"]) if won is None else won,
                     "payout": int(payout),
                     "balance_after": balance_after,
                 }
@@ -921,7 +968,10 @@ def settle_casino_wager(game_id, *, force_refund=False):
                 status = str(wager["status"])
                 outcome = str(wager["outcome"] or "")
                 payout = int(wager["payout"] or 0)
-                row = c.execute("SELECT balance FROM users WHERE user_id=?", (str(wager["user_id"]),)).fetchone()
+                row = c.execute(
+                    "SELECT balance FROM users WHERE user_id=?",
+                    (str(wager["user_id"]),),
+                ).fetchone()
                 balance_after = int(row["balance"]) if row is not None else None
                 c.rollback()
                 return receipt(
@@ -936,8 +986,14 @@ def settle_casino_wager(game_id, *, force_refund=False):
 
             uid = str(wager["user_id"])
             stake = int(wager["stake"])
-            won = bool(wager["won"])
-            win_payout = int(wager["win_payout"])
+            won = bool(wager["won"]) if not has_final_fields else final_won
+            win_payout = int(wager["win_payout"]) if not has_final_fields else final_payout
+            result_text = str(wager["result"]) if not has_final_fields else final_result.strip()
+            selected_outcome = final_outcome or ("win" if won else "loss")
+            if has_final_fields and won and win_payout < stake:
+                c.rollback()
+                raise ValueError("gross payout cannot be smaller than the original stake")
+
             row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
             if row is None:
                 c.rollback()
@@ -957,6 +1013,18 @@ def settle_casino_wager(game_id, *, force_refund=False):
                     metadata={"game_type": str(wager["game_type"]), "stake": stake, "reason": "interrupted"},
                 )
                 status, outcome, payout = "refunded", "refund", 0
+            elif selected_outcome == "push":
+                if balance > SQLITE_MAX_INT - stake:
+                    c.rollback()
+                    return {"settled": False, "reason": "balance_limit"}
+                balance_after = balance + stake
+                c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
+                _record_ledger(
+                    c, event_type="casino_wager_push", user_id=uid, delta=stake,
+                    balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
+                    metadata={"game_type": str(wager["game_type"]), "stake": stake, "gross_return": stake},
+                )
+                status, outcome, payout = "settled", "push", stake
             elif won:
                 if balance <= SQLITE_MAX_INT - win_payout:
                     balance_after = balance + win_payout
@@ -994,9 +1062,18 @@ def settle_casino_wager(game_id, *, force_refund=False):
                 status, outcome, payout = "settled", "loss", 0
 
             c.execute(
-                "UPDATE casino_wagers SET status=?,outcome=?,payout=?,settled_at=? "
-                "WHERE game_id=? AND status='active'",
-                (status, outcome, payout, now(), game_id),
+                "UPDATE casino_wagers SET result=?,won=?,win_payout=?,status=?,outcome=?,"
+                "payout=?,settled_at=? WHERE game_id=? AND status='active'",
+                (
+                    result_text,
+                    int(won),
+                    win_payout,
+                    status,
+                    outcome,
+                    payout,
+                    now(),
+                    game_id,
+                ),
             )
             c.commit()
             return receipt(
@@ -1007,11 +1084,12 @@ def settle_casino_wager(game_id, *, force_refund=False):
                 payout=payout,
                 reason="balance_limit" if outcome == "balance_limit" else None,
                 balance_after=balance_after,
+                result=result_text,
+                won=won,
             )
         except Exception:
             c.rollback()
             raise
-
 
 def refund_orphaned_casino_wagers():
     """Refund unfinished solo wagers during startup/recovery without blocking other records."""
