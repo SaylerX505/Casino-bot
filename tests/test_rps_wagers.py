@@ -27,6 +27,34 @@ class RPSWagerTests(unittest.TestCase):
         bank.DB_FILE = self.previous_db_file
         self.temp_dir.cleanup()
 
+    def test_rps_panel_reference_and_status_persist_for_startup_recovery(self):
+        self.assertTrue(bank.create_rps_wager("match-panel-ref", 101, 202, 100))
+        self.assertTrue(bank.set_rps_wager_message_reference("match-panel-ref", 303, 404))
+        records = bank.active_rps_wager_records()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["game_id"], "match-panel-ref")
+        self.assertEqual(records[0]["player_a"], "101")
+        self.assertEqual(records[0]["player_b"], "202")
+        self.assertEqual(records[0]["amount"], 100)
+        self.assertEqual(records[0]["channel_id"], 303)
+        self.assertEqual(records[0]["message_id"], 404)
+        self.assertEqual(
+            bank.rps_wager_status("match-panel-ref"),
+            {
+                "game_id": "match-panel-ref",
+                "player_a": "101",
+                "player_b": "202",
+                "amount": 100,
+                "status": "active",
+                "outcome": None,
+                "channel_id": 303,
+                "message_id": 404,
+            },
+        )
+        self.assertFalse(bank.set_rps_wager_message_reference("missing-game", 303, 404))
+        with self.assertRaises(ValueError):
+            bank.set_rps_wager_message_reference("match-panel-ref", True, 404)
+
     def test_winner_settlement_pays_once_and_applies_tax(self):
         self.assertTrue(bank.create_rps_wager("match-1", 101, 202, 100))
         self.assertEqual(bank.get_balance(101), 900)
