@@ -1,11 +1,15 @@
+"""Discord Administrator-gated controls for the bot's server-specific tools."""
+import logging
+import sqlite3
+
 import discord
-import os
-import time
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
+from discord.ui import Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
+
+logger = logging.getLogger(__name__)
 
 
 class AdminResult(LayoutView):
@@ -21,110 +25,99 @@ class AdminResult(LayoutView):
         )
 
 
-class BankResetConfirmPanel(LayoutView):
-    def __init__(self, requester_id: int, guild_id: int):
-        super().__init__(timeout=60)
-        self.requester_id = requester_id
-        self.guild_id = guild_id
-        container = Container(
-            TextDisplay(
-                "# ⚠️ تصفير الاقتصاد\n"
-                "العملية هتمسح أرصدة الأعضاء وأغراضهم. هنحفظ نسخة احتياطية قبل التصفير."
-            ),
-            Separator(),
-            accent_color=0x8B1E1E,
-        )
-        row = ActionRow()
-        confirm = discord.ui.Button(
-            label="تأكيد التصفير",
-            style=discord.ButtonStyle.danger,
-            custom_id="admin_bank_reset_confirm",
-        )
-        confirm.callback = self.confirm_reset
-        cancel = discord.ui.Button(
-            label="إلغاء",
-            style=discord.ButtonStyle.secondary,
-            custom_id="admin_bank_reset_cancel",
-        )
-        cancel.callback = self.cancel_reset
-        row.add_item(confirm)
-        row.add_item(cancel)
-        container.add_item(row)
-        self.add_item(container)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.requester_id:
-            await interaction.response.send_message(
-                view=AdminResult("تأكيد خاص", "صاحب الطلب فقط يقدر يؤكد العملية.", False),
-                ephemeral=True,
-            )
-            return False
-        if interaction.guild_id != self.guild_id or not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                view=AdminResult("صلاحية غير كافية", "لازم تكون Administrator في نفس السيرفر.", False),
-                ephemeral=True,
-            )
-            return False
-        return True
-
-    async def confirm_reset(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            os.makedirs(os.path.join("data", "backups"), exist_ok=True)
-            backup_path = os.path.join(
-                "data",
-                "backups",
-                f"bank-reset-{self.guild_id}-{time.time_ns()}.db",
-            )
-            bank.backup_database(backup_path)
-            bank.reset_all()
-        except Exception:
-            await interaction.edit_original_response(
-                view=AdminResult("فشل التصفير", "ماقدرناش نكمل العملية. راجع سجل الأخطاء.", False),
-            )
-            raise
-
-        await interaction.edit_original_response(
-            view=AdminResult("تم تصفير الاقتصاد", f"اتحفظت نسخة احتياطية قبل التصفير: `{os.path.basename(backup_path)}`."),
-        )
-        self.stop()
-
-    async def cancel_reset(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(
-            view=AdminResult("تم الإلغاء", "مفيش أي بيانات اتغيرت."),
-        )
-        self.stop()
-
-    async def on_timeout(self):
-        for item in self.walk_children():
-            if hasattr(item, "disabled"):
-                item.disabled = True
-
 class AdminCommands(commands.Cog):
     admin = app_commands.Group(
         name="admin",
         description="إدارة إعدادات البوت داخل السيرفر",
         default_permissions=discord.Permissions(administrator=True),
     )
+    access = app_commands.Group(
+        name="access",
+        description="إدارة قائمة أدمنز البوت داخل السيرفر",
+    )
+    admin.add_command(access)
 
     def __init__(self, bot):
         self.bot = bot
 
-    async def _require_admin(self, interaction: discord.Interaction) -> bool:
-        if interaction.guild is not None and interaction.user.guild_permissions.administrator:
-            return True
-        await interaction.response.send_message(
-            view=AdminResult(
-                "غير مسموح",
-                "أوامر الإدارة متاحة فقط لحسابات Discord التي تمتلك صلاحية Administrator.",
-                success=False,
-            ),
-            ephemeral=True,
+    async def _require_admin(
+        self,
+        interaction: discord.Interaction,
+        *,
+        require_bot_admin: bool = False,
+    ) -> bool:
+        """Require real Discord Administrator; optionally require the bot allowlist too."""
+        is_guild_admin = bool(
+            interaction.guild is not None
+            and getattr(
+                getattr(interaction.user, "guild_permissions", None),
+                "administrator",
+                False,
+            )
         )
-        return False
+        if not is_guild_admin:
+            await interaction.response.send_message(
+                view=AdminResult(
+                    "غير مسموح",
+                    "أوامر الإدارة متاحة فقط لحسابات Discord التي تمتلك صلاحية Administrator داخل السيرفر.",
+                    success=False,
+                ),
+                ephemeral=True,
+            )
+            return False
 
-    @admin.command(name="access-add", description="السماح لعضو باستخدام أدوات إدارة البوت المحددة")
-    @app_commands.describe(member="العضو المراد إضافته لقائمة أدمنز البوت")
+        if require_bot_admin:
+            try:
+                allowed = bank.is_guild_admin(interaction.guild_id, interaction.user.id)
+            except (sqlite3.Error, OSError, ValueError):
+                logger.exception("Failed to read the server bot-admin allowlist")
+                await interaction.response.send_message(
+                    view=AdminResult(
+                        "تعذر التحقق من الصلاحيات",
+                        "قاعدة صلاحيات البوت غير متاحة حاليًا؛ لم ننفذ أي إجراء.",
+                        success=False,
+                    ),
+                    ephemeral=True,
+                )
+                return False
+            if not allowed:
+                await interaction.response.send_message(
+                    view=AdminResult(
+                        "محتاج تفعيل وصول البوت",
+                        "لازم تكون Administrator في Discord ومضافًا لقائمة أدمنز البوت. استخدم /admin access add لإضافتك أو اطلب من أدمن مخوّل إضافتك.",
+                        success=False,
+                    ),
+                    ephemeral=True,
+                )
+                return False
+        return True
+
+    async def _require_global_owner(
+        self,
+        interaction: discord.Interaction,
+        setting_name: str,
+    ) -> bool:
+        """Protect bot-wide controls while economy/AI settings are globally scoped."""
+        try:
+            is_owner = await self.bot.is_owner(interaction.user)
+        except (discord.DiscordException, RuntimeError):
+            is_owner = False
+            logger.exception("Failed to verify the bot application owner for a global setting")
+
+        if not is_owner:
+            await interaction.response.send_message(
+                view=AdminResult(
+                    "الإعداد ده مش متاح لأدمن السيرفر",
+                    f"إعداد **{setting_name}** بيأثر على بيانات أو سلوك البوت كله، مش السيرفر ده بس. هنقفل التغيير على مالك التطبيق لحد ما يبقى لكل سيرفر إعداد مستقل.",
+                    success=False,
+                ),
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    @access.command(name="add", description="السماح لأدمن Discord باستخدام أدوات إدارة البوت")
+    @app_commands.describe(member="عضو يمتلك بالفعل صلاحية Administrator في Discord")
     async def access_add(self, interaction: discord.Interaction, member: discord.Member):
         if not await self._require_admin(interaction):
             return
@@ -133,9 +126,22 @@ class AdminCommands(commands.Cog):
                 view=AdminResult("عضو غير صالح", "اختار عضوًا حقيقيًا، مش بوت.", False),
                 ephemeral=True,
             )
+        if not getattr(
+            getattr(member, "guild_permissions", None),
+            "administrator",
+            False,
+        ):
+            return await interaction.response.send_message(
+                view=AdminResult(
+                    "الصلاحية غير موجودة",
+                    "العضو لازم يمتلك صلاحية Discord Administrator فعلًا. إضافته لقائمة البوت لا تمنحه صلاحيات Discord جديدة.",
+                    False,
+                ),
+                ephemeral=True,
+            )
         added = bank.add_guild_admin(interaction.guild_id, member.id)
         message = (
-            f"تمت إضافة {member.mention} لقائمة أدمنز البوت في السيرفر ده."
+            f"تمت إضافة {member.mention} لأدمنز البوت في السيرفر ده."
             if added
             else f"{member.mention} موجود بالفعل في قائمة أدمنز البوت."
         )
@@ -144,8 +150,8 @@ class AdminCommands(commands.Cog):
             ephemeral=True,
         )
 
-    @admin.command(name="access-remove", description="إزالة عضو من قائمة أدمنز البوت")
-    @app_commands.describe(member="العضو المراد إزالة وصوله")
+    @access.command(name="remove", description="إزالة أدمن من قائمة أدمنز البوت")
+    @app_commands.describe(member="الأدمن المراد إزالة وصوله لأدوات البوت")
     async def access_remove(self, interaction: discord.Interaction, member: discord.Member):
         if not await self._require_admin(interaction):
             return
@@ -160,13 +166,13 @@ class AdminCommands(commands.Cog):
             ephemeral=True,
         )
 
-    @admin.command(name="access-list", description="عرض أدمنز البوت المحددين لهذا السيرفر")
+    @access.command(name="list", description="عرض أدمنز البوت المحددين لهذا السيرفر")
     async def access_list(self, interaction: discord.Interaction):
         if not await self._require_admin(interaction):
             return
         user_ids = bank.list_guild_admins(interaction.guild_id)
         if not user_ids:
-            description = "لسه مفيش أدمنز إضافيين. استخدم /admin access-add لإضافة عضو."
+            description = "لسه مفيش أدمنز بوت مضافين. استخدم /admin access add لإضافة Administrator."
         else:
             description = "\n".join(f"• <@{user_id}>" for user_id in user_ids[:25])
             if len(user_ids) > 25:
@@ -184,7 +190,9 @@ class AdminCommands(commands.Cog):
         member: discord.Member,
         amount: app_commands.Range[int, 1, 1_000_000_000],
     ):
-        if not await self._require_admin(interaction):
+        if not await self._require_admin(interaction, require_bot_admin=True):
+            return
+        if not await self._require_global_owner(interaction, "الاقتصاد"):
             return
         credited, balance = bank.credit_balance(member.id, amount)
         if not credited:
@@ -208,7 +216,9 @@ class AdminCommands(commands.Cog):
         member: discord.Member,
         amount: app_commands.Range[int, 1, 1_000_000_000],
     ):
-        if not await self._require_admin(interaction):
+        if not await self._require_admin(interaction, require_bot_admin=True):
+            return
+        if not await self._require_global_owner(interaction, "الاقتصاد"):
             return
         removed, balance = bank.remove_balance(member.id, amount)
         if not removed:
@@ -231,7 +241,9 @@ class AdminCommands(commands.Cog):
     @admin.command(name="ai-toggle", description="تشغيل أو إيقاف محسن")
     @app_commands.describe(enabled="فعّل محسن أو أوقفه")
     async def ai_toggle(self, interaction: discord.Interaction, enabled: bool):
-        if not await self._require_admin(interaction):
+        if not await self._require_admin(interaction, require_bot_admin=True):
+            return
+        if not await self._require_global_owner(interaction, "محسن"):
             return
         cog = self.bot.get_cog("AI")
         if cog is None:
@@ -239,27 +251,32 @@ class AdminCommands(commands.Cog):
                 view=AdminResult("محسن غير متاح", "إضافة الذكاء الاصطناعي مش محملة حاليًا.", False),
                 ephemeral=True,
             )
-        from cogs.utility.ai import save_ai_data
-
         cog.data["ai_enabled"] = enabled
-        save_ai_data(cog.data)
+        bank.set_setting("ai_enabled", "true" if enabled else "false")
         state = "شغال" if enabled else "متوقف"
         await interaction.response.send_message(
-            view=AdminResult("إعدادات محسن", f"محسن دلوقتي **{state}**."),
+            view=AdminResult("إعدادات محسن", f"محسن دلوقتي **{state}**. الحالة محفوظة في قاعدة بيانات البوت."),
             ephemeral=True,
         )
 
-    @admin.command(name="bank-reset", description="تصفير الاقتصاد بعد تأكيد ونسخة احتياطية")
+    @admin.command(name="bank-reset", description="تصفير الاقتصاد (متوقف لحماية البيانات المشتركة)")
     async def bank_reset(self, interaction: discord.Interaction):
-        if not await self._require_admin(interaction):
+        if not await self._require_admin(interaction, require_bot_admin=True):
             return
         await interaction.response.send_message(
-            view=BankResetConfirmPanel(interaction.user.id, interaction.guild_id),
+            view=AdminResult(
+                "التصفير موقوف لحماية البيانات",
+                "التصفير من داخل Discord متوقف لتجنب مسح الأرصدة بالخطأ. أي تصفير لازم يتم كإجراء صيانة منفصل بعد نسخة احتياطية مؤكدة ومراجعة قاعدة البيانات.",
+                False,
+            ),
             ephemeral=True,
         )
+
     @admin.command(name="status", description="عرض حالة البوت وأدمنز البوت")
     async def admin_status(self, interaction: discord.Interaction):
-        if not await self._require_admin(interaction):
+        if not await self._require_admin(interaction, require_bot_admin=True):
+            return
+        if not await self._require_global_owner(interaction, "حالة البوت"):
             return
         admins = bank.list_guild_admins(interaction.guild_id)
         ai_cog = self.bot.get_cog("AI")
@@ -267,8 +284,9 @@ class AdminCommands(commands.Cog):
         active_games = len(getattr(self.bot, "active_games", {}))
         description = (
             f"**أدمنز البوت:** {len(admins)}\n"
-            f"**محسن:** {ai_state}\n"
-            f"**الألعاب النشطة:** {active_games}"
+            f"**محسن:** {ai_state} (الإعداد محفوظ في SQLite)\n"
+            f"**الألعاب النشطة:** {active_games}\n"
+            "**تصفير الاقتصاد:** متوقف لحماية قاعدة البيانات المشتركة"
         )
         await interaction.response.send_message(
             view=AdminResult("حالة البوت", description),

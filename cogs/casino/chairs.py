@@ -1,12 +1,31 @@
+import asyncio
+import logging
+import random
+from functools import partial
+
 import discord
 from discord.ext import commands
-from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
-import asyncio
-import random
-import config
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
+import config
+from cogs.casino.game_registry import (
+    is_active_game,
+    owns_game_task,
+    register_game_task,
+    release_game_task,
+    set_game_view,
+)
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import lobby_embed, result_embed
+from cogs.utility.theme import (
+    embed_to_v2,
+    THEME,
+    StatusPanel,
+    lobby_embed,
+    report_game_failure,
+    result_embed,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # --- UI VIEWS ---
@@ -16,84 +35,135 @@ class WatermarkView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
-class ChairActionView(discord.ui.View):
-    def __init__(self, active_players, num_chairs, round_type):
-        super().__init__(timeout=15.0 if round_type == 'normal' else 4.0)
+class ChairPrepView(LayoutView):
+    def __init__(self, round_num, num_chairs):
+        super().__init__(timeout=30)
+        self._panel_text = TextDisplay(
+            f"# الجولة {round_num} — استعد\nالموسيقى شغالة. الكراسي بتجهز؛ استعد للضغط لما الموسيقى تقف."
+        )
+        disabled_buttons = [
+            discord.ui.Button(
+                style=discord.ButtonStyle.secondary,
+                label="🪑",
+                custom_id=f"chairs_prep_{round_num}_{index}",
+                disabled=True,
+            )
+            for index in range(num_chairs)
+        ]
+        rows = [
+            ActionRow(*disabled_buttons[index:index + 5])
+            for index in range(0, len(disabled_buttons), 5)
+        ]
+        self.add_item(Container(self._panel_text, Separator(), *rows, accent_color=THEME["grey"]))
+
+
+class ChairActionView(LayoutView):
+    def __init__(self, active_players, num_chairs, round_type, round_num=1):
+        super().__init__(timeout=15.0 if round_type == "normal" else 4.0)
         self.active_players = active_players
         self.num_chairs = num_chairs
         self.round_type = round_type
-        
+        self.round_num = round_num
         self.seated_players = set()
         self.eliminated_fools = set()
-        
-        for i in range(num_chairs):
-            style = discord.ButtonStyle.secondary if round_type == 'normal' else discord.ButtonStyle.secondary
-            btn = discord.ui.Button(style=style, label="🪑", custom_id=f"chair_{i}")
-            btn.callback = self.make_callback(btn)
-            self.add_item(btn)
+        self.message = None
 
-    def make_callback(self, btn):
+        if round_type == "normal":
+            description = (
+                f"# الجولة {round_num} — الموسيقى وقفت!\n"
+                f"اقعد بسرعة. متاح {num_chairs} كراسي بس."
+            )
+            accent = THEME["teal"]
+        else:
+            description = (
+                f"# الجولة {round_num} — فخ!\n"
+                "الكراسي مكسورة. متضغطش على أي كرسي وإلا هتخرج من الجولة."
+            )
+            accent = THEME["red_dark"]
+
+        self._panel_text = TextDisplay(description)
+        self._buttons = []
+        for index in range(num_chairs):
+            button = discord.ui.Button(
+                style=discord.ButtonStyle.secondary,
+                label="🪑",
+                custom_id=f"chair_{round_num}_{index}",
+            )
+            button.callback = self.make_callback(button)
+            self._buttons.append(button)
+
+        rows = [
+            ActionRow(*self._buttons[index:index + 5])
+            for index in range(0, len(self._buttons), 5)
+        ]
+        self.add_item(
+            Container(self._panel_text, Separator(), *rows, accent_color=accent)
+        )
+
+    def disable_controls(self):
+        for button in self._buttons:
+            button.disabled = True
+
+    def make_callback(self, button):
         async def callback(interaction: discord.Interaction):
             user = interaction.user
-            
             if user not in self.active_players:
-                embed = discord.Embed(
-                    description="أنت مش في اللعبة يا كابتن! اتفرج بصمت.",
-                    color=discord.Color.red()
+                return await interaction.response.send_message(
+                    view=StatusPanel("مش في الجولة", "أنت مش مشارك في لعبة الكراسي دي.", "warning"),
+                    ephemeral=True,
                 )
-                return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-            if self.round_type == 'normal':
+
+            if self.round_type == "normal":
                 if user in self.seated_players:
-                    embed = discord.Embed(
-                        description="أنت قعدت خلاص! سيب فرصة لغيرك يا بجم.",
-                        color=discord.Color.red()
+                    return await interaction.response.send_message(
+                        view=StatusPanel("أنت قعدت بالفعل", "اختيارك اتحسب بالفعل في الجولة دي.", "warning"),
+                        ephemeral=True,
                     )
-                    return await interaction.response.send_message(embed=embed, ephemeral=True)
-                
-                if btn.disabled:
-                    embed = discord.Embed(
-                        description="الكرسي ده اتاخد! دور على كرسي فاضي بسرعة 🏃‍♂️💨!",
-                        color=discord.Color.red()
+                if button.disabled:
+                    return await interaction.response.send_message(
+                        view=StatusPanel("الكرسي اتاخد", "اختار كرسي تاني بسرعة.", "warning"),
+                        ephemeral=True,
                     )
-                    return await interaction.response.send_message(embed=embed, ephemeral=True)
-                
                 if len(self.seated_players) >= self.num_chairs:
-                    embed = discord.Embed(
-                        description="للأسف الكراسي خلصت!",
-                        color=discord.Color.red()
+                    return await interaction.response.send_message(
+                        view=StatusPanel("الكراسي خلصت", "كل الكراسي المتاحة اتحجزت.", "warning"),
+                        ephemeral=True,
                     )
-                    return await interaction.response.send_message(embed=embed, ephemeral=True)
-                    
+
                 self.seated_players.add(user)
-                btn.style = discord.ButtonStyle.secondary 
-                btn.disabled = True
-                btn.label = user.display_name[:6] 
-                
+                button.disabled = True
+                button.label = user.display_name[:6]
+                self._panel_text.content = (
+                    f"# الجولة {self.round_num} — الموسيقى وقفت!\n"
+                    f"اللي قعدوا: {len(self.seated_players)} من {self.num_chairs}."
+                )
                 await interaction.response.edit_message(view=self)
-                
                 if len(self.seated_players) >= self.num_chairs:
                     self.stop()
-                    
-            elif self.round_type == 'forbidden':
+            else:
                 if user in self.eliminated_fools:
-                    return await interaction.response.defer()
-                    
+                    return await interaction.response.send_message(
+                        view=StatusPanel("اختيار محسوب", "أنت خرجت بالفعل بسبب ضغط كرسي مكسور.", "warning"),
+                        ephemeral=True,
+                    )
+                if button.disabled:
+                    return await interaction.response.send_message(
+                        view=StatusPanel("الكرسي اتحسب", "الكرسي ده اتضغط عليه بالفعل؛ اختار كرسي آخر.", "warning"),
+                        ephemeral=True,
+                    )
                 self.eliminated_fools.add(user)
-                btn.disabled = True
-                btn.label = "💥"
-                await interaction.response.edit_message(view=self)
-                
-                embed = discord.Embed(
-                    description=f"🚨 **{user.mention}** استعجل وقعد على كرسي مكسور وطار بره اللعبة!",
-                    color=discord.Color.red()
+                button.disabled = True
+                button.label = "💥"
+                self._panel_text.content = (
+                    f"# فخ الجولة {self.round_num}\n"
+                    f"{user.mention} ضغط كرسي مكسور وخرج من اللعبة."
                 )
-                await interaction.channel.send(embed=embed)
-                
+                await interaction.response.edit_message(view=self)
+
         return callback
 
 
-class ChairsLobby(discord.ui.View):
+class ChairsLobby(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
@@ -103,6 +173,30 @@ class ChairsLobby(discord.ui.View):
         self.message = None
         
         self.logo_url = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
+        self._panel_text = TextDisplay(self._panel_content())
+        self._buttons = []
+        for label, custom_id, callback_name, emoji in (
+            ("انضمام (Join)", "chairs_join", "join_btn", None),
+            ("مغادرة (Leave)", "chairs_leave", "leave_btn", None),
+            ("ابدأ الآن", "chairs_start", "start_btn", None),
+            ("+10 ثواني", "chairs_add_time", "add_time_btn", "⏱️"),
+        ):
+            button = discord.ui.Button(
+                label=label,
+                custom_id=custom_id,
+                style=discord.ButtonStyle.secondary,
+                emoji=emoji,
+            )
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(*self._buttons),
+                accent_color=THEME["teal"],
+            )
+        )
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
@@ -124,6 +218,18 @@ class ChairsLobby(discord.ui.View):
         embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=self.logo_url)
         return embed
 
+    def _panel_content(self):
+        embed = self.get_embed()
+        description = embed.description or ""
+        return f"# {embed.title or 'لعبة الكراسي الموسيقية'}\n{description}\n\n-# كازينو الحفرة • {config.BRAND}"
+
+    def _refresh_panel(self):
+        self._panel_text.content = self._panel_content()[:4000]
+
+    def _disable_buttons(self):
+        for button in self._buttons:
+            button.disabled = True
+
     async def run_timer(self):
         while self.time_left > 0 and not self.game_started:
             await asyncio.sleep(5)
@@ -131,99 +237,87 @@ class ChairsLobby(discord.ui.View):
             self.time_left -= 5
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
-                try: await self.message.edit(embed=self.get_embed())
-                except: pass
+                try:
+                    self._refresh_panel()
+                    await self.message.edit(view=self)
+                except discord.HTTPException:
+                    logger.debug("Could not refresh musical chairs lobby", exc_info=True)
 
     async def auto_start(self):
         if self.game_started: return
         if len(self.players) < 2:
             self.game_started = True
-            embed = discord.Embed(
-                description="❌ العدد غير كافي لبدء اللعبة. (تحتاج لاعبين على الأقل)",
-                color=discord.Color.red()
-            )
-            await self.ctx.send(embed=embed)
-            for child in self.children: child.disabled = True
+            self._panel_text.content = "# العدد غير كافي\nمحتاجين لاعبين على الأقل عشان الجولة تبدأ."
+            self._disable_buttons()
             if self.message: await self.message.edit(view=self)
             return
 
         self.game_started = True
-        embed = discord.Embed(
-            description="🚀 جاري تجهيز الكراسي الموسيقية...",
-            color=discord.Color.blue()
-        )
-        await self.ctx.send(embed=embed, delete_after=3)
-        for child in self.children: child.disabled = True
+        self._panel_text.content = "# جاري تجهيز الكراسي الموسيقية\nهنبدأ الجولة دلوقتي. جهّز نفسك."
+        self._disable_buttons()
         if self.message: await self.message.edit(view=self)
         
         task = self.ctx.bot.loop.create_task(self.run_game_loop())
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Chairs", replace_task=self.timer_task):
             task.cancel()
 
-    @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.secondary)
     async def join_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
-            embed = discord.Embed(
-                description="اللعبة بدأت ياعم!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("اللعبة بدأت", "مش هنقدر نضيف لاعبين بعد بداية الجولة.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if len(self.players) >= 25:
-            embed = discord.Embed(
-                description="اكتمل العدد (25 لاعب)!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("اللوبي اكتمل", "وصلنا للحد الأقصى: 25 لاعب.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if interaction.user in self.players:
-            embed = discord.Embed(
-                description="أنت مسجل بالفعل!",
-                color=discord.Color.red()
+            await interaction.response.send_message(
+                view=StatusPanel("أنت موجود", "أنت مسجل بالفعل في اللوبي.", "warning"),
+                ephemeral=True,
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             self.players.append(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.secondary)
     async def leave_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
-            embed = discord.Embed(
-                description="اللعبة بدأت!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("اللعبة بدأت", "اللوبي اتقفل ومبقاش متاح تغيير اللاعبين.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if interaction.user in self.players:
             self.players.remove(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
         else:
-            embed = discord.Embed(
-                description="أنت لست في اللعبة أصلاً!",
-                color=discord.Color.red()
+            await interaction.response.send_message(
+                view=StatusPanel("مش في اللوبي", "انضم الأول قبل ما تحاول تغادر.", "warning"),
+                ephemeral=True,
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
-            embed = discord.Embed(
-                description="للأدمن فقط!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("مش مسموح", "صاحب اللوبي فقط يقدر يبدأ الجولة أو يمدد الوقت.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         await interaction.response.defer()
         self.time_left = 0
         await self.auto_start()
 
-    @discord.ui.button(label="+10 ثواني", style=discord.ButtonStyle.secondary, emoji="⏱️")
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
                 description="للأدمن فقط!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await interaction.response.send_message(view=embed_to_v2(embed), ephemeral=True)
         self.time_left += 10
-        await interaction.response.edit_message(embed=self.get_embed())
+        self._refresh_panel()
+        await interaction.response.edit_message(view=self)
 
     # --- MUSICAL CHAIRS LOOP ---
     async def run_game_loop(self):
@@ -235,73 +329,69 @@ class ChairsLobby(discord.ui.View):
                 num_chairs = len(active_players) - 1
                 is_forbidden = False if round_num == 1 else (random.random() < 0.25)
 
-                prep_view = discord.ui.View()
-                for _ in range(num_chairs):
-                    prep_view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="🪑", disabled=True))
-                
-                embed = discord.Embed(
-                    title=f"🪑 الجولة {round_num}",
-                    description=f"استعد... الموسيقى شغالة 🎶\nالكراسي بتجهز... خليك جاهز!",
-                    color=discord.Color.dark_grey()
-                )
-                embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=self.logo_url)
-                
-                msg = await self.ctx.send(embed=embed, view=prep_view)
+                prep_view = ChairPrepView(round_num, num_chairs)
+                msg = await self.ctx.send(view=prep_view)
                 await asyncio.sleep(random.uniform(3.0, 6.0))
 
-                round_type = 'forbidden' if is_forbidden else 'normal'
-                action_view = ChairActionView(active_players, num_chairs, round_type)
+                round_type = "forbidden" if is_forbidden else "normal"
+                action_view = ChairActionView(
+                    active_players,
+                    num_chairs,
+                    round_type,
+                    round_num=round_num,
+                )
+                await msg.edit(view=action_view)
+                action_view.message = msg
+                set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)
+                await action_view.wait()
 
-                if round_type == 'normal':
-                    embed.description = f"🛑 **الموسيقى وقفت!! اقعد بسرعة!!**\n(متاح {num_chairs} كراسي بس)"
-                    embed.color = discord.Color.blue()
-                    await msg.edit(embed=embed, view=action_view)
-                    action_view.message = msg
-                    set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)
-                    await action_view.wait()
-                    
-                    for child in action_view.children: child.disabled = True
-                    try: await msg.edit(view=action_view)
-                    except: pass
-                    
-                    losers = [p for p in active_players if p not in action_view.seated_players]
-                    if losers:
-                        loser_mentions = " ".join([l.mention for l in losers])
-                        embed = discord.Embed(
-                            description=f"❌ **اللي كان بطيء ومالحقش كرسي وطار من اللعبة:** {loser_mentions}",
-                            color=discord.Color.red()
-                        )
-                        await self.ctx.send(embed=embed)
-                    
+                if round_type == "normal":
+                    losers = [
+                        player for player in active_players
+                        if player not in action_view.seated_players
+                    ]
                     active_players = list(action_view.seated_players)
-                    
-                else: 
-                    embed.description = f"🚨 **فخ!! كراسي مكسورة (حمراء)!**\nإياك تقعد!!"
-                    embed.color = discord.Color.red()
-                    await msg.edit(embed=embed, view=action_view)
-                    action_view.message = msg
-                    set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)
-                    await action_view.wait()
-                    
-                    for child in action_view.children: child.disabled = True
-                    try: await msg.edit(view=action_view)
-                    except: pass
-                    
-                    if action_view.eliminated_fools:
-                        active_players = [p for p in active_players if p not in action_view.eliminated_fools]
-                    else:
-                        embed = discord.Embed(
-                            description="👏 وحوش! محدش وقع في الفخ وكله ركز.",
-                            color=discord.Color.green()
+                    if losers:
+                        loser_mentions = " ".join(player.mention for player in losers)
+                        action_view._panel_text.content = (
+                            f"# نهاية الجولة {round_num}\n"
+                            f"اللي ما لحقش كرسي وخرج من اللعبة: {loser_mentions}"
                         )
-                        await self.ctx.send(embed=embed)
+                    else:
+                        action_view._panel_text.content = (
+                            f"# نهاية الجولة {round_num}\nكل الكراسي اتحجزت."
+                        )
+                else:
+                    if action_view.eliminated_fools:
+                        removed = action_view.eliminated_fools
+                        active_players = [
+                            player for player in active_players if player not in removed
+                        ]
+                        removed_mentions = " ".join(player.mention for player in removed)
+                        action_view._panel_text.content = (
+                            f"# نهاية الفخ — الجولة {round_num}\n"
+                            f"اللاعبون اللي ضغطوا كرسي مكسور وخرجوا: {removed_mentions}"
+                        )
+                    else:
+                        action_view._panel_text.content = (
+                            f"# نهاية الفخ — الجولة {round_num}\n"
+                            "محدش وقع في الفخ؛ كله ركز."
+                        )
+
+                action_view.disable_controls()
+                try:
+                    await msg.edit(view=action_view)
+                except discord.HTTPException:
+                    logger.debug("Could not disable musical chairs V2 controls", exc_info=True)
 
                 if len(active_players) == 0:
-                    embed = discord.Embed(
-                        description="💀 كله طار من اللعبة! مفيش فائز الجيم ده.",
-                        color=discord.Color.dark_grey()
+                    await self.ctx.send(
+                        view=StatusPanel(
+                            "انتهت لعبة الكراسي",
+                            "كله خرج من اللعبة؛ مفيش فائز في الجولة دي.",
+                            "warning",
+                        )
                     )
-                    await self.ctx.send(embed=embed, view=WatermarkView())
                     break
                     
                 round_num += 1
@@ -310,16 +400,24 @@ class ChairsLobby(discord.ui.View):
             # --- WINNER ANNOUNCEMENT ---
             if len(active_players) == 1:
                 winner = active_players[0]
-                embed = result_embed(
-                    title="🏆 بطل الكراسي الموسيقية!",
-                    description=f"🎉 الفائز النهائي والناجي الوحيد هو **{winner.mention}**!",
-                    outcome="win",
-                    thumbnail_url=winner.display_avatar.url,
+                await self.ctx.send(
+                    view=StatusPanel(
+                        "بطل الكراسي الموسيقية!",
+                        f"الفائز النهائي والناجي الوحيد هو {winner.mention}.",
+                        "success",
+                    )
                 )
-                await self.ctx.send(content=f"مبروك يا نجم {winner.mention} 👑", embed=embed, view=WatermarkView())
 
         except asyncio.CancelledError:
             raise
+        except Exception:
+            logger.exception("Musical chairs game loop failed")
+            await report_game_failure(
+                self.ctx,
+                "توقفت لعبة الكراسي بسبب خطأ",
+                "حصل خطأ تقني أثناء الجولة. سجّلنا التفاصيل، واتقفلت اللوحة الحالية بدل تكرار رسائل جديدة.",
+                fallback_view=self,
+            )
         finally:
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
@@ -340,14 +438,13 @@ class Chairs(commands.Cog):
             view.timer_task.cancel()
             return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
         try:
-            view.message = await ctx.send(embed=view.get_embed(), view=view)
+            view.message = await ctx.send(view=view)
         except Exception:
             release_game_task(self.bot, ctx.channel.id, view.timer_task)
             view.timer_task.cancel()
             raise
         if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
-            for child in view.children:
-                child.disabled = True
+            view._disable_buttons()
             await view.message.edit(view=view)
 
 async def setup(bot):

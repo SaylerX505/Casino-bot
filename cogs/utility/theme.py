@@ -1,7 +1,8 @@
 # --- EMBED THEME ---
 """موحد شكل البوت - الوان الحفرة + helpers"""
 import discord
-from discord.ui import Container, LayoutView, Separator, TextDisplay
+import logging
+from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
 import config
 
 THEME = {
@@ -34,6 +35,63 @@ def base_embed(title: str = None, description: str = None, color: int = None) ->
     return e
 
 
+def embed_to_v2(embed: discord.Embed) -> LayoutView:
+    """Convert a legacy informational embed into a Components V2 panel.
+
+    This preserves the title, body, fields, footer, accent color, and meaningful
+    artwork while keeping every announcement as its own message/event. The
+    server-logo thumbnail used by base_embed is intentionally omitted so it
+    doesn't become a large, repetitive gallery image.
+    """
+    sections = []
+    author_name = getattr(getattr(embed, "author", None), "name", None)
+    if author_name:
+        sections.append(f"**{author_name}**")
+    if embed.title:
+        sections.append(f"# {embed.title}")
+    if embed.description:
+        sections.append(embed.description)
+    for field in getattr(embed, "fields", ()):
+        name = getattr(field, "name", "") or "تفاصيل"
+        value = getattr(field, "value", "") or "—"
+        sections.append(f"**{name}**\n{value}")
+    footer_text = getattr(getattr(embed, "footer", None), "text", None)
+    if footer_text:
+        sections.append(f"-# {footer_text}")
+
+    body = "\n\n".join(section for section in sections if section).strip()
+    if not body:
+        body = "# إشعار"
+    if len(body) > 3900:
+        body = body[:3897] + "…"
+
+    color = getattr(embed, "color", None)
+    accent = color.value if color is not None else THEME["grey"]
+    children = [TextDisplay(body)]
+
+    image_url = getattr(getattr(embed, "image", None), "url", None)
+    thumbnail_url = getattr(getattr(embed, "thumbnail", None), "url", None)
+    if not image_url and thumbnail_url and thumbnail_url != LOGO_URL:
+        image_url = thumbnail_url
+
+    if image_url:
+        children.extend(
+            [
+                Separator(),
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=image_url,
+                        description=(embed.title or "صورة مرفقة")[:256],
+                    )
+                ),
+            ]
+        )
+
+    view = LayoutView(timeout=180)
+    view.add_item(Container(*children, accent_color=accent))
+    return view
+
+
 class StatusPanel(LayoutView):
     def __init__(self, title: str, description: str, outcome: str = "neutral"):
         super().__init__(timeout=120)
@@ -52,6 +110,42 @@ class StatusPanel(LayoutView):
                 accent_color=colors.get(outcome, THEME["grey"]),
             )
         )
+
+
+async def report_game_failure(ctx, title: str, description: str, fallback_view=None) -> bool:
+    """Report an unexpected game failure by editing the live panel when possible.
+
+    Editing the active message is preferred to avoid stacking duplicate failure
+    posts into a game channel. A new panel is sent only when no usable message
+    is available or Discord rejects the edit.
+    """
+    logger = logging.getLogger(__name__)
+    panel = StatusPanel(title, description, "warning")
+    active_games = getattr(ctx.bot, "active_games", {})
+    entry = active_games.get(ctx.channel.id, {}) if isinstance(active_games, dict) else {}
+    if not isinstance(entry, dict):
+        entry = {}
+    active_view = entry.get("view")
+    message = (
+        getattr(active_view, "message", None)
+        or getattr(fallback_view, "message", None)
+        or entry.get("message")
+    )
+
+    if message is not None:
+        try:
+            await message.edit(content=None, embeds=[], attachments=[], view=panel)
+            return True
+        except discord.HTTPException:
+            logger.exception("Failed to replace the active game message with a failure panel")
+
+    try:
+        await ctx.send(view=panel)
+        return True
+    except discord.HTTPException:
+        logger.exception("Failed to send a game failure panel")
+        return False
+
 
 def result_embed(
     title: str,

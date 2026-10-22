@@ -1,9 +1,13 @@
 import asyncio
 import io
+import logging
 import math
 import random
+import config
+from functools import partial
 
 import discord
+from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
 
@@ -15,12 +19,17 @@ from cogs.casino.game_registry import (
 )
 from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
+    embed_to_v2,
     THEME,
+    StatusPanel,
     WatermarkView,
     base_embed,
     get_currency,
     lobby_embed,
+    report_game_failure,
 )
+
+logger = logging.getLogger(__name__)
 
 FEE = 50
 MAX_PLAYERS = 25
@@ -46,13 +55,29 @@ SEGMENT_COLORS = [
 
 
 def format_wheel_breakdown(payout, target_loss=None, refund=0):
-    lines = [f"**رسوم الدخول:** −{FEE:,} {COIN}"]
-    lines.append(f"**المكافأة المصروفة:** +{payout:,} {COIN}" if payout else f"**المكافأة المصروفة:** 0 {COIN}")
+    """Render mutually exclusive accounting paths with no double-counting."""
     if target_loss is not None:
-        lines.append(f"**الخسارة الإجمالية:** −{target_loss:,} {COIN}")
-    if refund:
-        lines.append(f"**المردود من رسوم الدخول:** +{refund:,} {COIN}")
-    return "\n".join(lines)
+        refund_note = (
+            f" (اترد {refund:,} من رسوم الدخول بالفعل)"
+            if refund
+            else ""
+        )
+        return (
+            f"**الخسارة النهائية شاملة رسوم الدخول:** "
+            f"−{target_loss:,} {COIN}{refund_note}"
+        )
+
+    return "\n".join(
+        [
+            f"**رسوم الدخول:** −{FEE:,} {COIN}",
+            (
+                f"**المكافأة المصروفة:** +{payout:,} {COIN}"
+                if payout
+                else f"**المكافأة المصروفة:** 0 {COIN}"
+            ),
+        ]
+    )
+
 
 # --- WHEEL ART ---
 def render_wheel(highlight=None):
@@ -102,7 +127,34 @@ def render_wheel(highlight=None):
 
 
 # --- LOBBY VIEW ---
-class WheelLobby(discord.ui.View):
+class WheelResultPanel(LayoutView):
+    def __init__(self, title, description, outcome="neutral", image_name=None):
+        super().__init__(timeout=120)
+        accents = {
+            "success": THEME["green"],
+            "win": THEME["gold"],
+            "warning": THEME["orange"],
+            "loss": THEME["red_dark"],
+            "neutral": THEME["grey"],
+        }
+        self._panel_text = TextDisplay(
+            f"# {title}\n{description}\n\n-# عجلة الحفرة • {config.BRAND}"
+        )
+        content = [self._panel_text]
+        if image_name:
+            content.extend([
+                Separator(),
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{image_name}",
+                        description="نتيجة العجلة",
+                    )
+                ),
+            ])
+        self.add_item(Container(*content, accent_color=accents.get(outcome, THEME["grey"])))
+
+
+class WheelLobby(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=45)
         self.ctx = ctx
@@ -110,6 +162,29 @@ class WheelLobby(discord.ui.View):
         self.started = False
         self.time_left = 35
         self.message = None
+        self._panel_text = TextDisplay(self._panel_content())
+        self._buttons = []
+        for label, custom_id, callback_name, emoji in (
+            ("انضمام", "wheel_join", "join_button", "🎡"),
+            ("مغادرة", "wheel_leave", "leave_button", None),
+            ("ابدأ الآن", "wheel_start", "start_button", None),
+        ):
+            button = discord.ui.Button(
+                label=label,
+                custom_id=custom_id,
+                style=discord.ButtonStyle.secondary,
+                emoji=emoji,
+            )
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(*self._buttons),
+                accent_color=THEME["teal"],
+            )
+        )
         self.lobby_task = ctx.bot.loop.create_task(self.run_timer())
 
     def make_embed(self):
@@ -126,6 +201,24 @@ class WheelLobby(discord.ui.View):
             max_players=MAX_PLAYERS,
         )
 
+    def _panel_content(self, embed=None):
+        embed = embed or self.make_embed()
+        title = f"# {embed.title}\n" if embed.title else ""
+        return (title + f"{embed.description or ''}\n\n-# كازينو الحفرة • {config.BRAND}")[:4000]
+
+    def _refresh_panel(self, embed=None):
+        self._panel_text.content = self._panel_content(embed)
+
+    def _disable_buttons(self):
+        for button in self._buttons:
+            button.disabled = True
+
+    async def _private_notice(self, interaction, message):
+        await interaction.response.send_message(
+            view=StatusPanel("تنبيه", message, "warning"),
+            ephemeral=True,
+        )
+
     async def run_timer(self):
         try:
             while self.time_left > 0 and not self.started:
@@ -136,7 +229,8 @@ class WheelLobby(discord.ui.View):
                 if self.time_left == 0:
                     await self.start_game()
                 elif self.message:
-                    await self.message.edit(embed=self.make_embed())
+                    self._refresh_panel()
+                    await self.message.edit(view=self)
         except asyncio.CancelledError:
             raise
 
@@ -146,24 +240,17 @@ class WheelLobby(discord.ui.View):
 
         if not self.players:
             self.started = True
-            for item in self.children:
-                item.disabled = True
+            self._panel_text.content = "# انتهى التسجيل\nمحدش انضم للجولة دي. افتح لوبي جديد عشان تلعبوا."
+            self._disable_buttons()
             if self.message:
-                await self.message.edit(
-                    embed=base_embed(
-                        title="🎡 انتهى التسجيل",
-                        description="محدش انضم للجولة دي. افتح لوبي جديد عشان تلعبوا.",
-                        color=THEME["orange"],
-                    ),
-                    view=self,
-                )
+                await self.message.edit(view=self)
             release_game_task(self.ctx.bot, self.ctx.channel.id, self.lobby_task)
             self.stop()
             return
 
         self.started = True
-        for item in self.children:
-            item.disabled = True
+        self._panel_text.content = "# الجولة بدأت\nاللوبي اتقفل. بنجهز نتائج العجلة."
+        self._disable_buttons()
         if self.message:
             await self.message.edit(view=self)
 
@@ -182,32 +269,31 @@ class WheelLobby(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if self.started:
-            await interaction.response.send_message("الجولة بدأت بالفعل.", ephemeral=True)
+            await self._private_notice(interaction, "الجولة بدأت بالفعل.")
             return False
         return True
 
-    @discord.ui.button(label="انضمام", emoji="🎡", style=discord.ButtonStyle.secondary)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user in self.players:
-            return await interaction.response.send_message("أنت مسجل بالفعل.", ephemeral=True)
+            return await self._private_notice(interaction, "أنت مسجل بالفعل.")
         if len(self.players) >= MAX_PLAYERS:
-            return await interaction.response.send_message("اللوبي اكتمل.", ephemeral=True)
+            return await self._private_notice(interaction, "اللوبي اكتمل.")
 
         self.players.append(interaction.user)
-        await interaction.response.edit_message(embed=self.make_embed(), view=self)
+        self._refresh_panel()
+        await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="مغادرة", style=discord.ButtonStyle.secondary)
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in self.players:
-            return await interaction.response.send_message("أنت مش مسجل في الجولة.", ephemeral=True)
+            return await self._private_notice(interaction, "أنت مش مسجل في الجولة.")
 
         self.players.remove(interaction.user)
-        await interaction.response.edit_message(embed=self.make_embed(), view=self)
+        self._refresh_panel()
+        await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.ctx.author.id:
-            return await interaction.response.send_message("الهوست بس يقدر يبدأ الجولة.", ephemeral=True)
+            return await self._private_notice(interaction, "الهوست بس يقدر يبدأ الجولة.")
 
         await interaction.response.defer()
         self.time_left = 0
@@ -216,19 +302,21 @@ class WheelLobby(discord.ui.View):
     async def play_rounds(self):
         currency = get_currency(self.ctx.bot)
         results = []
-        result_message = self.message
+
+        async def publish_panel(panel, file=None):
+            # Each spin remains a separate channel event rather than overwriting prior results.
+            kwargs = {"file": file} if file is not None else {}
+            return await self.ctx.send(view=panel, **kwargs)
 
         try:
             if currency is None:
-                if result_message:
-                    await result_message.edit(
-                        embed=base_embed(
-                            title="تعذر بدء العجلة",
-                            description="نظام الاقتصاد غير متاح حاليًا. حاول مرة تانية بعد إصلاحه.",
-                            color=THEME["red_dark"],
-                        ),
-                        view=None,
+                await publish_panel(
+                    StatusPanel(
+                        "تعذر بدء العجلة",
+                        "نظام الاقتصاد غير متاح حاليًا. حاول تاني بعد إصلاحه.",
+                        "warning",
                     )
+                )
                 return
 
             players = list(self.players)
@@ -251,6 +339,8 @@ class WheelLobby(discord.ui.View):
                     target_loss = abs(outcome)
                 else:
                     target_loss = FEE
+                    if outcome == 0:
+                        outcome_note = "\nلم تكسب جائزة؛ الخسارة النهائية هي رسوم الدخول."
 
                 settlement = currency.settle_wheel(
                     player.id,
@@ -274,15 +364,12 @@ class WheelLobby(discord.ui.View):
                             f"**اللاعب:** {player.mention}\n"
                             "رصيدك قريب من الحد الأقصى المدعوم؛ لم يتم خصم رسوم الدخول."
                         )
-                    skipped_embed = base_embed(
-                        title=f"🎡 نتيجة اللفة {index}/{len(players)} • {title}",
-                        description=description,
-                        color=THEME["orange"],
+                    panel = WheelResultPanel(
+                        f"🎡 نتيجة اللفة {index}/{len(players)} • {title}",
+                        description,
+                        outcome="warning",
                     )
-                    if result_message:
-                        await result_message.edit(embed=skipped_embed, attachments=[], view=None)
-                    else:
-                        result_message = await self.ctx.send(embed=skipped_embed)
+                    await publish_panel(panel)
                     await asyncio.sleep(0.8)
                     continue
 
@@ -290,25 +377,24 @@ class WheelLobby(discord.ui.View):
                 net_change = settlement["net"]
                 refund = settlement["refund"]
                 results.append((player, label, balance_before, balance_after))
-
-                result_embed = base_embed(
-                    title=f"🎡 نتيجة اللفة {index}/{len(players)}",
-                    description=(
-                        f"**اللاعب:** {player.mention}\n"
-                        f"**النتيجة:** {label}{outcome_note}\n"
-                        f"{format_wheel_breakdown(payout, target_loss, refund)}\n"
-                        f"**صافي الرصيد:** {net_change:+,} {COIN}\n"
-                        f"**الرصيد الحالي:** {balance_after:,} {COIN}"
-                    ),
-                    color=THEME["gold"] if net_change > 0 else THEME["red_dark"] if net_change < 0 else THEME["grey"],
+                description = (
+                    f"**اللاعب:** {player.mention}\n"
+                    f"**النتيجة:** {label}{outcome_note}\n"
+                    f"{format_wheel_breakdown(payout, target_loss, refund)}\n"
+                    f"**صافي الرصيد:** {net_change:+,} {COIN}\n"
+                    f"**الرصيد الحالي:** {balance_after:,} {COIN}"
                 )
-                result_embed.set_image(url="attachment://wheel.png")
+                outcome_color = "win" if net_change > 0 else "loss" if net_change < 0 else "neutral"
+                panel = WheelResultPanel(
+                    f"🎡 نتيجة اللفة {index}/{len(players)}",
+                    description,
+                    outcome=outcome_color,
+                    image_name="wheel.png",
+                )
                 image_file = discord.File(render_wheel(segment_index), filename="wheel.png")
-                if result_message:
-                    await result_message.edit(embed=result_embed, attachments=[image_file], view=None)
-                else:
-                    result_message = await self.ctx.send(embed=result_embed, file=image_file)
+                await publish_panel(panel, image_file)
                 await asyncio.sleep(1.5)
+
             lines = []
             for player, label, before, after in results:
                 if label is None:
@@ -317,46 +403,41 @@ class WheelLobby(discord.ui.View):
                     lines.append(f"⚠️ {player.mention} — ماقدرناش نصرف الجائزة بسبب حد الرصيد.")
                 else:
                     net = after - before
-                    lines.append(f"{'🟢' if net > 0 else '🔴' if net < 0 else '⚪'} {player.mention} — {net:+,} {COIN}")
+                    marker = "🟢" if net > 0 else "🔴" if net < 0 else "⚪"
+                    lines.append(f"{marker} {player.mention} — {net:+,} {COIN}")
 
-            final_embed = base_embed(
-                title="🏁 خلصت جولات العجلة",
-                description="\n".join(lines) or "مفيش نتائج للجولة.",
-                color=THEME["green"],
+            await publish_panel(
+                WheelResultPanel(
+                    "🏁 خلصت جولات العجلة",
+                    "\n".join(lines) or "مفيش نتائج للجولة.",
+                    outcome="success",
+                )
             )
-            if result_message:
-                await result_message.edit(embed=final_embed, attachments=[], view=WatermarkView())
-            else:
-                await self.ctx.send(embed=final_embed, view=WatermarkView())
         except asyncio.CancelledError:
-            if result_message:
-                try:
-                    await result_message.edit(
-                        embed=base_embed(
-                            title="🛑 العجلة اتوقفت",
-                            description="تم إيقاف الجولة بواسطة الستاف أو الهوست.",
-                            color=THEME["orange"],
-                        ),
-                        view=None,
+            try:
+                await publish_panel(
+                    StatusPanel(
+                        "العجلة اتوقفت",
+                        "تم إيقاف الجولة بواسطة الستاف أو الهوست.",
+                        "warning",
                     )
-                except discord.HTTPException:
-                    pass
+                )
+            except discord.HTTPException:
+                logger.debug("Could not update the cancelled wheel panel", exc_info=True)
             raise
         except Exception:
-            import traceback
-            traceback.print_exc()
-            if result_message:
-                try:
-                    await result_message.edit(
-                        embed=base_embed(
-                            title="حصل خطأ في العجلة",
-                            description="الجولة اتوقفت بسبب خطأ غير متوقع. راجع سجل البوت.",
-                            color=THEME["red_dark"],
-                        ),
-                        view=None,
+            logger.exception("Wheel game loop failed")
+            try:
+                await publish_panel(
+                    StatusPanel(
+                        "حصل خطأ في العجلة",
+                        "الجولة اتوقفت بسبب خطأ تقني. سجّلنا التفاصيل، والنتائج السابقة تفضل ظاهرة كسجل للجولة.",
+                        "warning",
                     )
-                except discord.HTTPException:
-                    pass
+                )
+            except discord.HTTPException:
+                logger.exception("Could not publish the wheel failure panel")
+            return
         finally:
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
@@ -370,23 +451,22 @@ class Wheel(commands.Cog):
     @is_staff_or_admin()
     async def wheel(self, ctx):
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send(embed=base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"]))
+            return await ctx.send(view=embed_to_v2(base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"])))
 
         view = WheelLobby(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.lobby_task, ctx.author.id, "Wheel lobby", view=view):
             view.lobby_task.cancel()
-            return await ctx.send(embed=base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"]))
+            return await ctx.send(view=embed_to_v2(base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"])))
 
         try:
-            view.message = await ctx.send(embed=view.make_embed(), view=view)
+            view.message = await ctx.send(view=view)
         except Exception:
             release_game_task(self.bot, ctx.channel.id, view.lobby_task)
             view.lobby_task.cancel()
             raise
 
         if not owns_game_task(self.bot, ctx.channel.id, view.lobby_task):
-            for item in view.children:
-                item.disabled = True
+            view._disable_buttons()
             await view.message.edit(view=view)
 
 
