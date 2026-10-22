@@ -8,8 +8,10 @@ import time
 import uuid
 from pathlib import Path
 
-from cogs.casino.bank_ledger import record_economy_event as _record_ledger
-from cogs.casino.bank_ledger import read_entries as _read_ledger
+from cogs.casino.bank_ledger import (
+    read_entries as _read_ledger,
+    record_economy_event as _record_ledger,
+)
 from cogs.casino.bank_schema import run_migrations
 
 # Resolve storage from the project root, not the process working directory.
