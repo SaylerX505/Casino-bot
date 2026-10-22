@@ -12,7 +12,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
-from cogs.utility.theme import StatusPanel, THEME
+from cogs.utility.theme import THEME, StatusPanel
 
 logger = logging.getLogger(__name__)
 
