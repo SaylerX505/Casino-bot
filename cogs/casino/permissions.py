@@ -23,6 +23,7 @@ GAME_LABELS = {
     "coinflip": "رمي العملة",
     "dice": "رمي النرد",
     "slots": "ماكينة الحظ",
+    "blackjack": "Blackjack",
 }
 GAME_COMMAND_ALIASES = {
     "mafia": "mafia",
@@ -55,6 +56,10 @@ GAME_COMMAND_ALIASES = {
     "slot": "slots",
     "سلوت": "slots",
     "ماكينة": "slots",
+    "blackjack": "blackjack",
+    "bj": "blackjack",
+    "بلجاك": "blackjack",
+    "بلاكجاك": "blackjack",
 }
 
 
