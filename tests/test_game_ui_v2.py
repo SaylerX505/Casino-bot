@@ -10,7 +10,7 @@ import discord
 from discord.ui import LayoutView
 
 from cogs.casino.chairs import ChairActionView, ChairPrepView, ChairsLobby
-from cogs.casino.geoguessr import (
+from cogs.casino.geoguessr_views import (
     ActiveGameView,
     GeoGuessrResultPanel,
     GuessGameMenu,
@@ -296,7 +296,13 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             channel=SimpleNamespace(id=100),
             author=SimpleNamespace(id=200),
         )
-        view = view_type(ctx)
+        if view_type is GuessGameMenu:
+            async def start_game(_ctx, _players):
+                return None
+
+            view = view_type(ctx, start_game=start_game)
+        else:
+            view = view_type(ctx)
         try:
             self.assertIsInstance(view, LayoutView)
             buttons = [

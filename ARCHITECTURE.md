@@ -1,0 +1,27 @@
+# Casino-bot architecture
+
+The bot remains a single-process Discord application, but each subsystem should have explicit responsibility boundaries. Extract a module when a concern can be exercised without booting Discord or running a full game.
+
+## Current boundaries
+
+- `main.py`: Discord client setup, guild policy, command-error reporting, and extension loading.
+- `cogs/casino/game_registry.py`: ownership of active lobby/game tasks by channel. A game must release only the entry it owns.
+- `cogs/casino/bank.py`: SQLite persistence and atomic economy transitions. Game modules should use domain operations instead of editing tables directly.
+- `cogs/casino/geoguessr.py`: GeoGuessr round orchestration and Discord message flow; composes storage, artwork, and view modules.
+- `cogs/casino/geoguessr_storage.py`: path-based read/write/validation for static round data and used-image tracking. It does not import Discord.
+- `cogs/casino/geoguessr_art.py`: image-rendering helpers and optional avatar downloads. It does not manage lobbies, scoring, or Discord views.
+- `cogs/casino/geoguessr_views.py`: Components V2 lobby, round, and results panels. The lobby receives its game-loop callable by dependency injection and does not import the coordinator.
+- `cogs/casino/mafia.py`: Mafia game state, role actions, votes, and Discord flow.
+- `cogs/casino/mafia_art.py`: Mafia image generation, separate from role and round logic.
+- `cogs/casino/game_assets.py`: shared static asset URLs referenced by multiple games.
+
+## Rules for new game work
+
+1. Keep wallet and inventory mutations in the bank/storage layer; make transactions atomic wherever money or items are involved.
+2. Move Discord component classes into a view module when they are no longer small. Pass callbacks or narrow services in instead of making the view import its coordinator.
+3. Keep artwork/formatting helpers separate from state transitions. An optional artwork failure must never decide a winner or change a payout.
+4. Register one owner task per game lobby/channel and release it only if that same task still owns the registry entry.
+5. Test storage, scoring, and state transitions at their lowest useful boundary, then add component tests and a staging run.
+6. Refactor incrementally: preserve command names and user-visible behavior unless a behavior change is intentional, and keep the regression suite green.
+
+Avoid abstractions without a real boundary. Introduce shared interfaces when multiple games actually need the same lifecycle or domain behavior, rather than anticipating every possible future feature.
