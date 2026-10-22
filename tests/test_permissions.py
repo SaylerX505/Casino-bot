@@ -9,7 +9,7 @@ from cogs.casino.permissions import (
     ai_enabled_setting_key,
     has_admin_access,
     has_staff_access,
-    is_ai_enabled_for_guild,
+    configured_ai_enabled_for_guild,
 )
 
 
@@ -68,7 +68,7 @@ class PermissionTierTests(unittest.TestCase):
 
     def test_ai_enablement_uses_the_guild_override_and_falls_back_to_default(self):
         with patch("cogs.casino.permissions.bank.get_setting", return_value=None) as get_setting:
-            self.assertTrue(is_ai_enabled_for_guild(123, default=True))
+            self.assertTrue(configured_ai_enabled_for_guild(123, default=True))
         get_setting.assert_called_once_with(ai_enabled_setting_key(123))
 
         with patch("cogs.casino.permissions.bank.get_setting", return_value="false"):
