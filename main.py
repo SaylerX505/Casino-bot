@@ -377,12 +377,12 @@ async def load_cogs():
                 continue
 
             cog_path = f"{directory}.{filename[:-3]}"
-                try:
-                    await bot.load_extension(cog_path)
-                    logger.info("Loaded extension %s", cog_path)
-                except Exception as e:
-                    failures.append(f"{cog_path}: {type(e).__name__}")
-                    logger.exception("Failed to load extension %s", cog_path)
+            try:
+                await bot.load_extension(cog_path)
+                logger.info("Loaded extension %s", cog_path)
+            except Exception as e:
+                failures.append(f"{cog_path}: {type(e).__name__}")
+                logger.exception("Failed to load extension %s", cog_path)
 
     if failures:
         raise RuntimeError("Required extensions failed to load:\n" + "\n".join(failures))

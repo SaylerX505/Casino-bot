@@ -3,11 +3,17 @@
 import asyncio
 import logging
 import time
-
 from functools import partial
 
 import discord
-from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
+from discord.ui import (
+    ActionRow,
+    Container,
+    LayoutView,
+    MediaGallery,
+    Separator,
+    TextDisplay,
+)
 
 import config
 from cogs.casino.game_assets import SERVER_LOGO_URL
