@@ -16,6 +16,7 @@ from cogs.casino.solo_betting import (
     MAX_BET,
     MIN_BET,
     claim_solo_session,
+    recover_orphaned_casino_wagers,
     release_solo_session,
 )
 from cogs.utility.theme import THEME, StatusPanel
@@ -244,6 +245,7 @@ class BlackjackView(LayoutView):
             return await self._closed(interaction)
         self.resolving = True
         self.phase = "starting"
+        self.message = interaction.message or self.message
         try:
             await interaction.response.defer()
         except discord.HTTPException:
@@ -253,10 +255,30 @@ class BlackjackView(LayoutView):
             return
         await self._edit()
         try:
-            created = await asyncio.to_thread(
-                bank.create_casino_wager, self.game_id, self.requester.id,
-                "blackjack", self.amount, "blackjack", "in_progress", False, 0,
+            wager_args = (
+                self.game_id,
+                self.requester.id,
+                "blackjack",
+                self.amount,
+                "blackjack",
+                "in_progress",
+                False,
+                0,
             )
+            channel_id = getattr(interaction, "channel_id", None)
+            message_id = getattr(self.message, "id", None)
+            if isinstance(channel_id, int) and isinstance(message_id, int):
+                created = await asyncio.to_thread(
+                    bank.create_casino_wager,
+                    *wager_args,
+                    channel_id=channel_id,
+                    message_id=message_id,
+                )
+            else:
+                created = await asyncio.to_thread(
+                    bank.create_casino_wager,
+                    *wager_args,
+                )
         except asyncio.CancelledError:
             self.cog._schedule_recovery(self.game_id, force_refund=True, callback=self._recovered)
             raise
@@ -418,15 +440,19 @@ class Blackjack(commands.Cog):
 
     async def cog_load(self):
         try:
-            await asyncio.to_thread(bank.refund_orphaned_casino_wagers)
-            active_ids = await asyncio.to_thread(bank.active_casino_wager_ids)
+            refunded, active_ids = await recover_orphaned_casino_wagers(
+                self.bot,
+                self._schedule_recovery,
+            )
         except Exception:
             self._wagers_ready = False
             logger.exception("Blackjack wager recovery could not be verified; disabling new wagers")
             return
         self._wagers_ready = True
-        for game_id in active_ids:
-            self._schedule_recovery(game_id, force_refund=True)
+        if refunded:
+            logger.warning("Refunded %s interrupted casino wager(s) during startup", refunded)
+        if active_ids:
+            logger.warning("Scheduled recovery for %s unresolved casino wager(s)", len(active_ids))
 
     async def _settle_with_retries(self, game_id, *, force_refund=False, **settlement):
         for attempt in range(3):
