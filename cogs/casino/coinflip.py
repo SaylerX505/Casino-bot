@@ -5,6 +5,7 @@ import logging
 import re
 import secrets
 import uuid
+from collections.abc import Callable
 from functools import partial
 
 import discord
@@ -26,6 +27,9 @@ SIDES = {
     "tails": {"label": "كتابة", "emoji": "🪙"},
 }
 DICE_CHOICES = {str(number): {"label": str(number), "emoji": None} for number in range(1, 7)}
+SLOT_SYMBOLS = ("🍒", "🍋", "🍊", "🍇", "⭐", "💎")
+SLOT_TRIPLE_PAYOUTS = {"🍒": 500, "🍋": 600, "🍊": 700, "🍇": 800, "⭐": 1_000, "💎": 1_500}
+SLOT_CHOICES = {"spin": {"label": "تدوير", "emoji": "🎰"}}
 _RECOVERY_DELAYS_SECONDS = (2, 5, 15, 30, 60)
 _RECOVERY_TASKS: dict[str, asyncio.Task] = {}
 _ACTIVE_SESSIONS: dict[int, "CoinflipView"] = {}
@@ -40,6 +44,19 @@ def _gross_payout(
     if stake <= 0 or numerator <= 0 or denominator <= 0:
         raise ValueError("stake and payout multiplier must be positive")
     return (stake * numerator) // denominator
+
+
+def _spin_slots(_choice: str, stake: int) -> tuple[str, bool, int]:
+    """Return a three-reel slot result, win flag, and gross payout in integer coins."""
+    if isinstance(stake, bool) or not isinstance(stake, int) or stake <= 0:
+        raise ValueError("slot stake must be a positive integer")
+    symbols = tuple(secrets.choice(SLOT_SYMBOLS) for _ in range(3))
+    result = " · ".join(symbols)
+    if symbols[0] == symbols[1] == symbols[2]:
+        return result, True, (stake * SLOT_TRIPLE_PAYOUTS[symbols[0]]) // 100
+    if len(set(symbols)) == 2:
+        return result, True, (stake * 170) // 100
+    return result, False, 0
 
 
 class CoinflipView(LayoutView):
@@ -58,6 +75,8 @@ class CoinflipView(LayoutView):
         payout_denominator: int = GROSS_WIN_MULTIPLIER_DENOMINATOR,
         odds_description: str = "1 من 2",
         instructions: str = "اختار صورة أو كتابة.",
+        payout_description: str | None = None,
+        outcome_resolver: Callable[[str, int], tuple[str, bool, int]] | None = None,
     ):
         super().__init__(timeout=120)
         self.cog = cog
@@ -70,6 +89,8 @@ class CoinflipView(LayoutView):
         self.payout_denominator = payout_denominator
         self.odds_description = odds_description
         self.instructions = instructions
+        self.payout_description = payout_description
+        self.outcome_resolver = outcome_resolver
         self.message = None
         self.game_id = None
         self.done = False
@@ -112,12 +133,20 @@ class CoinflipView(LayoutView):
             self.amount, self.payout_numerator, self.payout_denominator
         )
         multiplier = self.payout_numerator / self.payout_denominator
+        payout_lines = (
+            f"**جدول الجوائز:** {self.payout_description}\n"
+            if self.payout_description
+            else (
+                f"**إجمالي الصرف عند الفوز:** {payout:,} {COIN} "
+                f"({multiplier:.1f}x شامل الرهان)\n"
+                f"**صافي الربح عند الفوز:** {payout - self.amount:,} {COIN}\n"
+            )
+        )
         return (
             f"# {self.game_title}\n"
             f"**الرهان:** {self.amount:,} {COIN}\n"
             f"**فرصة الفوز:** {self.odds_description}\n"
-            f"**إجمالي الصرف عند الفوز:** {payout:,} {COIN} ({multiplier:.1f}x شامل الرهان)\n"
-            f"**صافي الربح عند الفوز:** {payout - self.amount:,} {COIN}\n\n"
+            f"{payout_lines}\n"
             f"{self.instructions} رصيدك مش هيتخصم غير لما تختار، "
             "والنتيجة هتظهر في الرسالة دي من غير رسائل إضافية."
         )
@@ -175,11 +204,22 @@ class CoinflipView(LayoutView):
         await interaction.response.edit_message(view=self)
 
         game_id = uuid.uuid4().hex
-        result_side = secrets.choice(tuple(self.choices))
-        won = side == result_side
-        payout = _gross_payout(
-            self.amount, self.payout_numerator, self.payout_denominator
-        ) if won else 0
+        try:
+            if self.outcome_resolver is None:
+                result_side = secrets.choice(tuple(self.choices))
+                won = side == result_side
+                payout = _gross_payout(
+                    self.amount, self.payout_numerator, self.payout_denominator
+                ) if won else 0
+            else:
+                result_side, won, payout = self.outcome_resolver(side, self.amount)
+        except Exception:
+            logger.exception("Could not calculate solo wager outcome game_type=%s", self.game_type)
+            await self._finish_without_bet(
+                "# تعذر حساب النتيجة\n"
+                "مفيش رهان اتخصم. جرّب تبدأ جولة جديدة بعد مراجعة الحالة."
+            )
+            return
         self.game_id = game_id
 
         try:
@@ -427,6 +467,8 @@ class Coinflip(commands.Cog):
         odds_description: str,
         instructions: str,
         command_name: str,
+        payout_description: str | None = None,
+        outcome_resolver: Callable[[str, int], tuple[str, bool, int]] | None = None,
     ):
         if not self._wagers_ready:
             return await ctx.send(
@@ -473,6 +515,8 @@ class Coinflip(commands.Cog):
             payout_denominator=payout_denominator,
             odds_description=odds_description,
             instructions=instructions,
+            payout_description=payout_description,
+            outcome_resolver=outcome_resolver,
         )
         _ACTIVE_SESSIONS[ctx.author.id] = view
         try:
@@ -525,6 +569,30 @@ class Coinflip(commands.Cog):
             odds_description="1 من 6",
             instructions="اختار رقم من 1 إلى 6. الرقم الصحيح يكسبك 5.7x من قيمة الرهان.",
             command_name="dice",
+        )
+
+    @commands.hybrid_command(
+        name="slots",
+        aliases=["slot", "سلوت", "ماكينة"],
+        description="لف ماكينة الحظ مقابل رهان بعملة افتراضية",
+    )
+    @commands.cooldown(1, 4, commands.BucketType.user)
+    async def slots(self, ctx, bet: str):
+        return await self._start_wager(
+            ctx,
+            bet,
+            game_type="slots",
+            game_title="ماكينة الحظ",
+            choices=SLOT_CHOICES,
+            payout_numerator=170,
+            odds_description="الرموز مستقلة ومتساوية الاحتمال",
+            instructions="اضغط تدوير لتجربة 3 بكرات.",
+            command_name="slots",
+            payout_description=(
+                "زوج متطابق: 1.7x · ثلاثية: 5x (🍒)، 6x (🍋)، 7x (🍊)، "
+                "8x (🍇)، 10x (⭐)، 15x (💎) — كل القيم إجمالي الصرف شامل الرهان."
+            ),
+            outcome_resolver=_spin_slots,
         )
 
 
