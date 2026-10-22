@@ -21,9 +21,11 @@ from cogs.casino import bank
 from cogs.casino.permissions import (
     GAME_LABELS,
     _parse_id_list,
+    ai_enabled_setting_key,
     ai_role_setting_key,
     configured_ai_role_ids,
     configured_log_channel_id,
+    is_ai_enabled_for_guild as guild_ai_enabled,
     configured_manager_role_ids,
     game_channel_setting_key,
     has_admin_access,
@@ -126,17 +128,25 @@ def _configured_log_channel(guild_id: int, log_type: str) -> int:
     )
 
 
-def _configured_ai_enabled() -> bool:
+def _global_ai_enabled() -> bool:
     default = bool(getattr(config, "AI_ENABLED", True))
     try:
         raw = bank.get_setting("ai_enabled", "true" if default else "false")
     except Exception:
-        logger.exception("Could not read AI enabled setting for the wizard")
+        logger.exception("Could not read global AI enabled setting for the wizard")
         return False
     if raw is None:
         return default
     return str(raw).strip().lower() not in {"0", "false", "off", "no", "disabled"}
 
+
+def _guild_ai_enabled(guild_id: int) -> bool:
+    return guild_ai_enabled(guild_id, default=True)
+
+
+def _configured_ai_enabled(guild_id: int | None = None) -> bool:
+    global_enabled = _global_ai_enabled()
+    return global_enabled if guild_id is None else global_enabled and _guild_ai_enabled(guild_id)
 
 def _authorized(interaction: discord.Interaction, owner_id: int) -> bool:
     return bool(
@@ -911,11 +921,16 @@ class AISettingsWizardView(WizardLayout):
 
     def __init__(self, guild, owner, *, notice=None):
         super().__init__(guild, owner, notice=notice)
-        enabled = _configured_ai_enabled()
+        enabled = _guild_ai_enabled(guild.id)
+        global_enabled = _global_ai_enabled()
         roles = sorted(configured_ai_role_ids(guild.id))
         role_summary = ", ".join(f"<@&{role_id}>" for role_id in roles) or "لا توجد رولات إضافية"
         api_state = "مفتاح API مضبوط" if config.DEEPSEEK_API_KEY else "مفتاح API غير مضبوط"
-        state = "شغال" if enabled else "متوقف"
+        state = (
+            "شغال"
+            if global_enabled and enabled
+            else ("متوقف من الإعداد العام" if not global_enabled else "متوقف في السيرفر")
+        )
 
         self.role_select = RoleSelect(
             placeholder="اختار رولات مسموح لها باستخدام محسن",
@@ -923,13 +938,14 @@ class AISettingsWizardView(WizardLayout):
             max_values=25,
         )
         self.role_select.callback = self.save_roles
-        toggle_label = "إيقاف محسن" if enabled else "تشغيل محسن"
+        toggle_label = "إيقاف محسن في السيرفر" if enabled else "تشغيل محسن في السيرفر"
 
         self.add_item(
             Container(
                 TextDisplay(
                     "# إعدادات محسن\n"
-                    f"**الحالة:** {state}\n"
+                    f"**الحالة الفعلية:** {state}\n"
+                    f"**المفتاح العام:** {'مسموح' if global_enabled else 'متوقف من الإعداد العام'}\n"
                     f"**التكامل:** {api_state}\n"
                     f"**رولات الوصول:** {role_summary}\n\n"
                     "مالك السيرفر والـBoosters لهم وصول دائم. الرولات هنا تضيف أعضاء مسموح لهم. "
@@ -1023,8 +1039,17 @@ class AISettingsWizardView(WizardLayout):
     async def toggle_ai(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        enabled = not _configured_ai_enabled()
+        enabled = not _guild_ai_enabled(self.guild_id)
         ai_cog = interaction.client.get_cog("AI")
+        if enabled and not _global_ai_enabled():
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "محسن متوقف من الإعداد العام",
+                    "تفعيل محسن بشكل عام متاح لمالك التطبيق من /admin ai-toggle. تقدر تضبط تفعيل السيرفر هنا بعد تشغيل المفتاح العام.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
         if enabled and not config.DEEPSEEK_API_KEY:
             return await interaction.response.send_message(
                 view=StatusPanel(
@@ -1045,7 +1070,7 @@ class AISettingsWizardView(WizardLayout):
             )
 
         try:
-            bank.set_setting("ai_enabled", "true" if enabled else "false")
+            bank.set_setting(ai_enabled_setting_key(self.guild_id), "true" if enabled else "false")
         except Exception:
             logger.exception("Failed to persist AI enabled setting guild=%s", self.guild_id)
             return await interaction.response.send_message(
@@ -1053,8 +1078,6 @@ class AISettingsWizardView(WizardLayout):
                 ephemeral=True,
             )
 
-        if ai_cog is not None:
-            ai_cog.data["ai_enabled"] = enabled
         logger.info(
             "Wizard toggled AI guild=%s actor=%s enabled=%s",
             self.guild_id,
@@ -1108,7 +1131,7 @@ class WizardReviewView(WizardLayout):
         lines.extend(
             [
                 "",
-                f"**محسن:** {'شغال' if _configured_ai_enabled() else 'متوقف'} — {'مفتاح API مضبوط' if config.DEEPSEEK_API_KEY else 'مفتاح API ناقص'}",
+                f"**محسن في السيرفر:** {'شغال' if _configured_ai_enabled(guild.id) else 'متوقف'} — {'مفتاح API مضبوط' if config.DEEPSEEK_API_KEY else 'مفتاح API ناقص'}",
                 f"**رولات الوصول الإضافية لمحسن:** {ai_role_summary}",
                 "",
                 "**قنوات السجلات:**",
