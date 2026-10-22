@@ -49,6 +49,7 @@ GAME_ORDER = (
     "coinflip",
     "dice",
     "slots",
+    "blackjack",
 )
 
 
