@@ -41,6 +41,10 @@ class RPSWagerTests(unittest.TestCase):
 
         repeated = bank.settle_rps_wager("match-1", winner_id=202)
         self.assertTrue(repeated["already_settled"])
+        self.assertEqual(repeated["status"], "settled")
+        self.assertEqual(repeated["winner_id"], "101")
+        self.assertEqual(repeated["payout"], 190)
+        self.assertEqual(repeated["tax"], 10)
         self.assertEqual(bank.get_balance(101), 1_090)
         self.assertEqual(bank.get_balance(202), 900)
 
