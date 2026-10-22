@@ -29,6 +29,20 @@ class ApplicationSettingsTests(unittest.TestCase):
         bank.set_setting("ai_enabled", "true")
         self.assertEqual(bank.get_setting("ai_enabled"), "true")
 
+    def test_setting_reads_do_not_run_schema_ddl_or_commit(self):
+        bank._connect()
+        statements = []
+        bank._conn.set_trace_callback(statements.append)
+        try:
+            self.assertIsNone(bank.get_setting("missing_setting"))
+        finally:
+            bank._conn.set_trace_callback(None)
+
+        normalized = [statement.strip().upper() for statement in statements]
+        self.assertTrue(any(statement.startswith("SELECT ") for statement in normalized))
+        self.assertFalse(any("CREATE TABLE" in statement for statement in normalized))
+        self.assertNotIn("COMMIT", normalized)
+
     def test_setting_key_must_be_non_empty(self):
         with self.assertRaises(ValueError):
             bank.set_setting("", "value")
