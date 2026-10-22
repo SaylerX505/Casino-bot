@@ -10,6 +10,7 @@ The bot remains a single-process Discord application, but each subsystem should 
 - `cogs/casino/bank_schema.py`: ordered, transactional SQLite migrations applied from `schema_migrations`; legacy tables are adopted with `CREATE TABLE IF NOT EXISTS` rather than replaced.
 - `cogs/casino/bank_ledger.py`: append-only economy audit records and read queries, isolated from balance business operations; correlated multi-player actions share a transaction ID.
 - `cogs/casino/solo_betting.py`: shared solo-betting panel for coinflip, dice, and slots, with configurable outcome rules/payout tables; requester-bound Components V2 controls, bounded wagers, disclosed odds, and recovery-aware settlement. Wallet changes go through the bank API, never direct SQL.
+- `cogs/casino/blackjack.py`: multi-step single-player Blackjack lifecycle, hand-scoring rules, dealer policy, and persisted final outcomes; uses the same bank wager API while keeping its game-specific state machine separate from simple one-choice bets.
 - `cogs/casino/geoguessr.py`: GeoGuessr round orchestration and Discord message flow; composes storage, artwork, and view modules.
 - `cogs/casino/geoguessr_storage.py`: path-based read/write/validation for static round data and used-image tracking. It does not import Discord.
 - `cogs/casino/geoguessr_art.py`: image-rendering helpers and optional avatar downloads. It does not manage lobbies, scoring, or Discord views.
