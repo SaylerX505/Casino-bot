@@ -2,7 +2,7 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 import discord
 from discord.ui import LayoutView
@@ -249,7 +249,7 @@ class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         settle.assert_awaited_once_with("race-game")
         first_response.send_message.assert_awaited_once()
         second_response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
-        message.edit.assert_has_awaits([unittest.mock.call(view=view), unittest.mock.call(view=view)])
+        message.edit.assert_has_awaits([call(view=view), unittest.mock.call(view=view)])
         self.assertEqual(message.edit.await_count, 2)
         second_response.edit_message.assert_not_awaited()
         second_response.edit_original_response.assert_awaited_once()
