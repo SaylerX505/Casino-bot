@@ -87,6 +87,16 @@ class RPSWagerTests(unittest.TestCase):
         self.assertEqual(bank.get_balance(101), 900)
         self.assertEqual(bank.get_balance(202), 900)
 
+    def test_economy_reset_is_blocked_while_a_wager_is_active(self):
+        self.assertTrue(bank.create_rps_wager("match-reset-guard", 101, 202, 100))
+
+        with self.assertRaisesRegex(RuntimeError, "active RPS wagers"):
+            bank.reset_all()
+
+        self.assertEqual(bank.active_rps_wager_ids(), ["match-reset-guard"])
+        self.assertEqual(bank.get_balance(101), 900)
+        self.assertEqual(bank.get_balance(202), 900)
+
     def test_non_participant_cannot_settle_a_wager(self):
         self.assertTrue(bank.create_rps_wager("match-invalid-winner", 101, 202, 100))
 
