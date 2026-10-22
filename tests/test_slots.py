@@ -3,13 +3,13 @@
 import unittest
 from unittest.mock import patch
 
-from cogs.casino.coinflip import SLOT_TRIPLE_PAYOUTS, _spin_slots
+from cogs.casino.solo_betting import SLOT_TRIPLE_PAYOUTS, _spin_slots
 
 
 class SlotsOutcomeTests(unittest.TestCase):
     def test_matching_pair_returns_documented_gross_payout(self):
         with patch(
-            "cogs.casino.coinflip.secrets.choice",
+            "cogs.casino.solo_betting.secrets.choice",
             side_effect=["🍒", "🍒", "🍋"],
         ):
             result, won, payout = _spin_slots("spin", 100)
@@ -21,7 +21,7 @@ class SlotsOutcomeTests(unittest.TestCase):
     def test_triple_payout_uses_symbol_specific_multiplier(self):
         for symbol, multiplier in SLOT_TRIPLE_PAYOUTS.items():
             with self.subTest(symbol=symbol), patch(
-                "cogs.casino.coinflip.secrets.choice",
+                "cogs.casino.solo_betting.secrets.choice",
                 side_effect=[symbol, symbol, symbol],
             ):
                 result, won, payout = _spin_slots("spin", 100)
@@ -32,7 +32,7 @@ class SlotsOutcomeTests(unittest.TestCase):
 
     def test_three_distinct_symbols_are_a_loss(self):
         with patch(
-            "cogs.casino.coinflip.secrets.choice",
+            "cogs.casino.solo_betting.secrets.choice",
             side_effect=["🍒", "🍋", "💎"],
         ):
             result, won, payout = _spin_slots("spin", 100)

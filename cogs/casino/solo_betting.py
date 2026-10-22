@@ -1,4 +1,4 @@
-"""Solo coinflip betting game with durable economy settlement and Components V2 UI."""
+"""Shared solo betting games with durable economy settlement and Components V2 UI."""
 
 import asyncio
 import logging
@@ -59,7 +59,7 @@ def _spin_slots(_choice: str, stake: int) -> tuple[str, bool, int]:
     return result, False, 0
 
 
-class CoinflipView(LayoutView):
+class SoloWagerView(LayoutView):
     """One-message solo game with requester-bound controls and durable settlement."""
 
     def __init__(
@@ -374,7 +374,7 @@ class CoinflipView(LayoutView):
         self._release_session()
 
 
-class Coinflip(commands.Cog):
+class SoloBetting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._wagers_ready = False
@@ -589,12 +589,14 @@ class Coinflip(commands.Cog):
             instructions="اضغط تدوير لتجربة 3 بكرات.",
             command_name="slots",
             payout_description=(
-                "زوج متطابق: 1.7x · ثلاثية: 5x (🍒)، 6x (🍋)، 7x (🍊)، "
-                "8x (🍇)، 10x (⭐)، 15x (💎) — كل القيم إجمالي الصرف شامل الرهان."
+                "زوج متطابق: 90/216 احتمال (41.67%)، إجمالي الصرف 1.7x. "
+                "أي ثلاثية: 6/216 (2.78%)؛ كل رمز محدد: 1/216 (0.46%). "
+                "صافي الجوائز الثلاثية: 5x (🍒)، 6x (🍋)، 7x (🍊)، "
+                "8x (🍇)، 10x (⭐)، 15x (💎) إجمالي الصرف شامل الرهان."
             ),
             outcome_resolver=_spin_slots,
         )
 
 
 async def setup(bot):
-    await bot.add_cog(Coinflip(bot))
+    await bot.add_cog(SoloBetting(bot))

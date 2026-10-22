@@ -7,16 +7,16 @@ from unittest.mock import AsyncMock, Mock, patch
 import discord
 from discord.ui import LayoutView
 
-from cogs.casino import coinflip as coinflip_module
-from cogs.casino.coinflip import DICE_CHOICES, SLOT_CHOICES, CoinflipView, _spin_slots
+from cogs.casino import solo_betting as solo_betting_module
+from cogs.casino.solo_betting import DICE_CHOICES, SLOT_CHOICES, SoloWagerView, _spin_slots
 from cogs.utility.theme import StatusPanel
 
 
-class CoinflipViewTests(unittest.IsolatedAsyncioTestCase):
+class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.requester = SimpleNamespace(id=101, mention="<@101>")
         self.cog = SimpleNamespace()
-        self.view = CoinflipView(self.cog, self.requester, 100)
+        self.view = SoloWagerView(self.cog, self.requester, 100)
 
     async def asyncTearDown(self):
         self.view.stop()
@@ -35,7 +35,7 @@ class CoinflipViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("100", self.view._panel_text.content)
 
     def test_dice_view_discloses_odds_and_uses_two_valid_button_rows(self):
-        view = CoinflipView(
+        view = SoloWagerView(
             self.cog,
             self.requester,
             100,
@@ -71,7 +71,7 @@ class CoinflipViewTests(unittest.IsolatedAsyncioTestCase):
             view.stop()
 
     def test_slots_view_discloses_variable_paytable_with_one_spin_action(self):
-        view = CoinflipView(
+        view = SoloWagerView(
             self.cog,
             self.requester,
             100,
@@ -122,8 +122,8 @@ class CoinflipViewTests(unittest.IsolatedAsyncioTestCase):
             response=SimpleNamespace(edit_message=AsyncMock(), send_message=AsyncMock()),
         )
         with (
-            patch.object(coinflip_module.secrets, "choice", return_value="heads"),
-            patch.object(coinflip_module.bank, "create_casino_wager", return_value={"created": True}) as create_wager,
+            patch.object(solo_betting_module.secrets, "choice", return_value="heads"),
+            patch.object(solo_betting_module.bank, "create_casino_wager", return_value={"created": True}) as create_wager,
         ):
             await self.view.choose(interaction, side="heads")
 
