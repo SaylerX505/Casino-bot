@@ -12,7 +12,7 @@ from discord.ext import commands
 
 import config
 from cogs.casino import bank
-from cogs.casino.permissions import configured_ai_role_ids, is_ai_enabled_for_guild
+from cogs.casino.permissions import configured_ai_enabled_for_guild, configured_ai_role_ids
 
 logger = logging.getLogger(__name__)
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
@@ -151,7 +151,7 @@ class AI(commands.Cog):
         is_reply = isinstance(referenced, discord.Message) and referenced.author.id == self.bot.user.id
         if not (is_mentioned or is_reply) or not self._is_authorized(message):
             return
-        if not is_ai_enabled_for_guild(message.guild.id, default=True):
+        if not configured_ai_enabled_for_guild(message.guild.id, default=True):
             return
 
         if not config.DEEPSEEK_API_KEY:
