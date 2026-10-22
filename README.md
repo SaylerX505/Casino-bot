@@ -28,6 +28,14 @@ An advanced casino and social-games Discord bot for the Çukur server.
 
 The bot uses the configured prefix `+`. See the in-bot help menu for the available commands and game rules. Runtime dependency pins are kept in `requirements.txt`; `requirements.lock` pins the complete Python 3.11 dependency resolution used by Docker and CI.
 
+## Solo betting game
+
+- `/coinflip bet:100` or `+coinflip 100` opens a choice panel in the channel; only the requester can use its controls.
+- The player chooses Heads or Tails. A correct guess receives a **1.9x gross return** (0.9x net profit); a miss loses the stake.
+- The panel edits in place instead of posting a second result message. The bet is debited only after the player chooses.
+- Solo wagers and their outcomes are recorded transactionally with economy ledger entries. Settlement is idempotent; an interrupted active session is refunded during startup recovery.
+- Configure the permitted channels through `/wizard`, just like the other games.
+
 ## Setup wizard
 
 Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set a separate allowed-channel list for each game, disable or reopen individual games, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.

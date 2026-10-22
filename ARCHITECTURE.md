@@ -9,6 +9,7 @@ The bot remains a single-process Discord application, but each subsystem should 
 - `cogs/casino/bank.py`: atomic economy operations and the public persistence-facing API. Game modules should use domain operations instead of editing tables directly.
 - `cogs/casino/bank_schema.py`: ordered, transactional SQLite migrations applied from `schema_migrations`; legacy tables are adopted with `CREATE TABLE IF NOT EXISTS` rather than replaced.
 - `cogs/casino/bank_ledger.py`: append-only economy audit records and read queries, isolated from balance business operations; correlated multi-player actions share a transaction ID.
+- `cogs/casino/coinflip.py`: solo coinflip session, requester-bound Components V2 controls, bounded wagers, and recovery-aware settlement. Wallet changes go through the bank API, never direct SQL.
 - `cogs/casino/geoguessr.py`: GeoGuessr round orchestration and Discord message flow; composes storage, artwork, and view modules.
 - `cogs/casino/geoguessr_storage.py`: path-based read/write/validation for static round data and used-image tracking. It does not import Discord.
 - `cogs/casino/geoguessr_art.py`: image-rendering helpers and optional avatar downloads. It does not manage lobbies, scoring, or Discord views.
@@ -30,7 +31,8 @@ The bot remains a single-process Discord application, but each subsystem should 
 2. Move Discord component classes into a view module when they are no longer small. Pass callbacks or narrow services in instead of making the view import its coordinator.
 3. Keep artwork/formatting helpers separate from state transitions. An optional artwork failure must never decide a winner or change a payout.
 4. Register one owner task per game lobby/channel and release it only if that same task still owns the registry entry.
-5. Test storage, scoring, and state transitions at their lowest useful boundary, then add component tests and a staging run.
-6. Refactor incrementally: preserve command names and user-visible behavior unless a behavior change is intentional, and keep the regression suite green.
+5. Persist solo stakes, outcomes, and payout receipts before settlement; keep settlement idempotent and refund orphaned sessions after interruption.
+6. Test storage, scoring, and state transitions at their lowest useful boundary, then add component tests and a staging run.
+7. Refactor incrementally: preserve command names and user-visible behavior unless a behavior change is intentional, and keep the regression suite green.
 
 Avoid abstractions without a real boundary. Introduce shared interfaces when multiple games actually need the same lifecycle or domain behavior, rather than anticipating every possible future feature.
