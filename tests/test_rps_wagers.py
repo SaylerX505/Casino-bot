@@ -1,4 +1,5 @@
 """Regression tests for restart-safe RPS escrow and idempotent settlement."""
+from concurrent.futures import ThreadPoolExecutor
 import os
 import tempfile
 import unittest
@@ -99,6 +100,45 @@ class RPSWagerTests(unittest.TestCase):
 
         self.assertEqual(bank.active_rps_wager_ids(), ["match-reset-guard"])
         self.assertEqual(bank.get_balance(101), 900)
+        self.assertEqual(bank.get_balance(202), 900)
+
+    def test_concurrent_wager_creation_cannot_overdraw_wallets(self):
+        bank.set_balance(101, 1_000)
+        bank.set_balance(202, 1_000)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(
+                executor.map(
+                    lambda index: bank.create_rps_wager(
+                        f"concurrent-start-{index}", 101, 202, 1_000
+                    ),
+                    range(8),
+                )
+            )
+
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(bank.get_balance(101), 0)
+        self.assertEqual(bank.get_balance(202), 0)
+        self.assertEqual(len(bank.active_rps_wager_ids()), 1)
+
+    def test_concurrent_settlement_returns_the_original_receipt_once(self):
+        self.assertTrue(bank.create_rps_wager("match-concurrent-settle", 101, 202, 100))
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(
+                executor.map(
+                    lambda _: bank.settle_rps_wager(
+                        "match-concurrent-settle", winner_id=101
+                    ),
+                    range(8),
+                )
+            )
+
+        self.assertEqual(sum(not result["already_settled"] for result in results), 1)
+        self.assertTrue(all(result["settled"] for result in results))
+        self.assertTrue(all(result["winner_id"] == "101" for result in results))
+        self.assertTrue(all(result["payout"] == 190 for result in results))
+        self.assertEqual(bank.get_balance(101), 1_090)
         self.assertEqual(bank.get_balance(202), 900)
 
     def test_non_participant_cannot_settle_a_wager(self):
