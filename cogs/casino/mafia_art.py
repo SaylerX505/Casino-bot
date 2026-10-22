@@ -41,7 +41,7 @@ async def generate_billboard(alive_players):
     except Exception:
         logger.debug("Mafia billboard asset unavailable; using a fallback canvas", exc_info=True)
         base = Image.new('RGBA', (1200, 600), (30, 30, 30, 255))
-    width, height = base.size
+    width = base.width
     cols, avatar_size, padding_x, padding_y, start_y = 9, 70, 25, 30, 100
     rows = [alive_players[i:i + cols] for i in range(0, len(alive_players), cols)]
     async with aiohttp.ClientSession() as session:
