@@ -108,11 +108,24 @@ def _migration_4_casino_wager_message_refs(connection):
         connection.execute("ALTER TABLE casino_wagers ADD COLUMN message_id INTEGER")
 
 
+def _migration_5_rps_wager_message_refs(connection):
+    """Remember each RPS challenge panel so startup can close stale controls."""
+    columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(rps_wagers)").fetchall()
+    }
+    if "channel_id" not in columns:
+        connection.execute("ALTER TABLE rps_wagers ADD COLUMN channel_id INTEGER")
+    if "message_id" not in columns:
+        connection.execute("ALTER TABLE rps_wagers ADD COLUMN message_id INTEGER")
+
+
 _SCHEMA_MIGRATIONS = (
     (1, "core_schema", _migration_1_core_schema),
     (2, "economy_ledger", _migration_2_economy_ledger),
     (3, "single_player_casino_wagers", _migration_3_single_player_casino_wagers),
     (4, "casino_wager_message_refs", _migration_4_casino_wager_message_refs),
+    (5, "rps_wager_message_refs", _migration_5_rps_wager_message_refs),
 )
 
 
