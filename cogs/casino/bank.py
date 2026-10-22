@@ -7,7 +7,6 @@ import threading
 import time
 from pathlib import Path
 
-SQLITE_MAX_INTEGER = (1 << 63) - 1
 
 # Resolve storage from the project root, not the process working directory.
 DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
@@ -42,6 +41,10 @@ def _connect():
             "CREATE INDEX IF NOT EXISTS idx_rps_wagers_active "
             "ON rps_wagers(created_at) WHERE status='active'"
         )
+        _conn.execute(
+            "CREATE TABLE IF NOT EXISTS app_settings ("
+            "setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at REAL NOT NULL)"
+        )
         _conn.commit()
     return _conn
 
@@ -67,8 +70,10 @@ def get_balance(user_id):
         return int(row["balance"]) if row else 0
 
 def update_balance(user_id, amount):
-    """Apply a safe adjustment without allowing overdrafts or integer overflow."""
-    uid, amount = str(user_id), int(amount)
+    """Apply an integer adjustment without overdrafts or implicit type coercion."""
+    if isinstance(amount, bool) or not isinstance(amount, int):
+        raise TypeError("balance adjustment must be an integer")
+    uid, amount = str(user_id), amount
     if amount > 0:
         credited, balance = credit_balance(uid, amount)
         if not credited:
@@ -83,9 +88,9 @@ def update_balance(user_id, amount):
 
 
 def debit_balance(user_id, amount):
-    """Debit only when the account can cover the full amount."""
-    uid, amount = str(user_id), int(amount)
-    if amount <= 0 or amount > (1 << 63) - 1:
+    """Debit only when the account can cover the full integer amount."""
+    uid = str(user_id)
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0 or amount > SQLITE_MAX_INT:
         return False, get_balance(uid)
     with _lock:
         c = _connect()
@@ -110,9 +115,11 @@ def debit_balance(user_id, amount):
 
 
 def credit_balance(user_id, amount):
-    """Credit coins atomically without exceeding SQLite's signed integer range."""
-    uid, amount = str(user_id), int(amount)
-    sqlite_max_int = (1 << 63) - 1
+    """Credit integer coins atomically without exceeding SQLite's signed integer range."""
+    uid = str(user_id)
+    sqlite_max_int = SQLITE_MAX_INT
+    if isinstance(amount, bool) or not isinstance(amount, int):
+        return False, get_balance(uid)
     if amount <= 0 or amount > sqlite_max_int:
         return False, get_balance(uid)
     with _lock:
@@ -144,10 +151,16 @@ def remove_balance(user_id, amount):
 
 
 def transfer_balance(sender_id, recipient_id, amount):
-    """Transfer coins atomically; return (success, sender_balance_after)."""
-    sender, recipient, amount = str(sender_id), str(recipient_id), int(amount)
-    sqlite_max_int = (1 << 63) - 1
-    if amount <= 0 or amount > sqlite_max_int or sender == recipient:
+    """Transfer integer coins atomically; return (success, sender_balance_after)."""
+    sender, recipient = str(sender_id), str(recipient_id)
+    sqlite_max_int = SQLITE_MAX_INT
+    if (
+        isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+        or amount > sqlite_max_int
+        or sender == recipient
+    ):
         return False, get_balance(sender)
     with _lock:
         c = _connect()
@@ -411,9 +424,16 @@ def place_bet(player_a, player_b, amount):
 
 
 def create_rps_wager(game_id, player_a, player_b, amount):
-    """Atomically debit both stakes and persist them as an recoverable wager."""
-    game_id, a, b, amount = str(game_id), str(player_a), str(player_b), int(amount)
-    if not game_id or a == b or amount <= 0 or amount > (1 << 63) - 1:
+    """Atomically debit both integer stakes and persist a recoverable wager."""
+    game_id, a, b = str(game_id), str(player_a), str(player_b)
+    if (
+        not game_id
+        or a == b
+        or isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+        or amount > SQLITE_MAX_INT
+    ):
         return False
 
     with _lock:
@@ -590,9 +610,9 @@ def active_rps_wager_ids():
 
 
 def charge_up_to(user_id, amount):
-    """Charge at most the available balance; return (charged, new_balance)."""
-    uid, amount = str(user_id), int(amount)
-    if amount <= 0 or amount > (1 << 63) - 1:
+    """Charge at most the available integer balance; return (charged, new_balance)."""
+    uid = str(user_id)
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0 or amount > SQLITE_MAX_INT:
         return 0, get_balance(uid)
     with _lock:
         c = _connect()
@@ -768,10 +788,18 @@ def backup_database(destination):
 
 
 def reset_all():
+    """Reset wallets only when no persisted RPS wager needs those wallet rows."""
     with _lock:
         c = _connect()
         try:
             c.execute("BEGIN IMMEDIATE")
+            active_wager = c.execute(
+                "SELECT game_id FROM rps_wagers WHERE status='active' LIMIT 1"
+            ).fetchone()
+            if active_wager is not None:
+                raise RuntimeError(
+                    "cannot reset the economy while active RPS wagers exist"
+                )
             c.execute("DELETE FROM users")
             c.execute("DELETE FROM inventory")
             c.commit()
@@ -812,17 +840,11 @@ def migrate_from_json(data):
 
 # --- SMALL PERSISTENT APPLICATION SETTINGS ---
 def get_setting(key, default=None):
-    """Read a non-sensitive application setting from SQLite, not a tracked JSON file."""
+    """Read a non-sensitive application setting without performing schema writes."""
     if not isinstance(key, str) or not key.strip():
         raise ValueError("setting key must be a non-empty string")
     with _lock:
-        connection = _connect()
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS app_settings ("
-            "setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at REAL NOT NULL)"
-        )
-        connection.commit()
-        row = connection.execute(
+        row = _connect().execute(
             "SELECT setting_value FROM app_settings WHERE setting_key=?", (key.strip(),)
         ).fetchone()
         return row["setting_value"] if row is not None else default
@@ -835,10 +857,6 @@ def set_setting(key, value):
     value = str(value)
     with _lock:
         connection = _connect()
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS app_settings ("
-            "setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at REAL NOT NULL)"
-        )
         connection.execute(
             "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) "
             "ON CONFLICT(setting_key) DO UPDATE SET "
