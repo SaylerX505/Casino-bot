@@ -32,7 +32,7 @@ SLOT_TRIPLE_PAYOUTS = {"🍒": 500, "🍋": 600, "🍊": 700, "🍇": 800, "⭐"
 SLOT_CHOICES = {"spin": {"label": "تدوير", "emoji": "🎰"}}
 _RECOVERY_DELAYS_SECONDS = (2, 5, 15, 30, 60)
 _RECOVERY_TASKS: dict[str, asyncio.Task] = {}
-_ACTIVE_SESSIONS: dict[int, "CoinflipView"] = {}
+_ACTIVE_SESSIONS: dict[int, "SoloWagerView"] = {}
 
 
 def _gross_payout(
@@ -504,7 +504,7 @@ class SoloBetting(commands.Cog):
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
 
-        view = CoinflipView(
+        view = SoloWagerView(
             self,
             ctx.author,
             amount,

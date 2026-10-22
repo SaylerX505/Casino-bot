@@ -8,7 +8,12 @@ import discord
 from discord.ui import LayoutView
 
 from cogs.casino import solo_betting as solo_betting_module
-from cogs.casino.solo_betting import DICE_CHOICES, SLOT_CHOICES, SoloWagerView, _spin_slots
+from cogs.casino.solo_betting import (
+    DICE_CHOICES,
+    SLOT_CHOICES,
+    SoloWagerView,
+    _spin_slots,
+)
 from cogs.utility.theme import StatusPanel
 
 
