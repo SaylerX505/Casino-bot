@@ -182,5 +182,70 @@ class RPSStartupRecoveryTests(unittest.IsolatedAsyncioTestCase):
         schedule.assert_any_call("pending-b")
 
 
+
+
+class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stale_first_choice_edit_cannot_overwrite_the_final_result(self):
+        player = SimpleNamespace(id=101, mention="<@101>")
+        opponent = SimpleNamespace(id=202, mention="<@202>")
+        message = SimpleNamespace(edit=AsyncMock())
+        view = RPSView(
+            SimpleNamespace(send=AsyncMock()),
+            player,
+            opponent,
+            100,
+            "race-game",
+        )
+        view.message = message
+
+        ack_started = asyncio.Event()
+        release_ack = asyncio.Event()
+
+        async def pause_first_ack(*args, **kwargs):
+            ack_started.set()
+            await release_ack.wait()
+
+        first_response = SimpleNamespace(
+            send_message=AsyncMock(side_effect=pause_first_ack),
+            edit_message=AsyncMock(),
+            is_done=lambda: False,
+        )
+        second_response = SimpleNamespace(
+            send_message=AsyncMock(),
+            edit_message=AsyncMock(),
+            is_done=lambda: False,
+        )
+        first_interaction = SimpleNamespace(user=player, response=first_response)
+        second_interaction = SimpleNamespace(user=opponent, response=second_response)
+
+        with patch(
+            "cogs.casino.rps._settle_wager",
+            return_value={
+                "settled": True,
+                "status": "refunded",
+                "payout": 0,
+                "tax": 0,
+            },
+        ) as settle:
+            first_task = asyncio.create_task(view.choose(first_interaction, "🪨"))
+            await asyncio.wait_for(ack_started.wait(), timeout=1)
+            second_task = asyncio.create_task(view.choose(second_interaction, "🪨"))
+
+            # The second click must wait until the first non-terminal panel edit ends.
+            await asyncio.sleep(0)
+            self.assertFalse(view.done)
+            self.assertNotIn(opponent.id, view.choices)
+
+            release_ack.set()
+            await asyncio.gather(first_task, second_task)
+
+        settle.assert_awaited_once_with("race-game")
+        first_response.send_message.assert_awaited_once()
+        message.edit.assert_awaited_once_with(view=view)
+        second_response.edit_message.assert_awaited_once_with(view=view)
+        self.assertTrue(view.done)
+        self.assertIn("تعادل", view._panel_text.content)
+        self.assertTrue(all(button.disabled for button in view._buttons))
+
 if __name__ == "__main__":
     unittest.main()
