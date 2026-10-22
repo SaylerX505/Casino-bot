@@ -40,6 +40,28 @@ class CasinoWagerTests(unittest.TestCase):
         options.update(overrides)
         return bank.create_casino_wager(**options)
 
+    def test_panel_references_persist_for_startup_recovery(self):
+        created = self.create_wager(
+            game_id="coinflip-panel-ref",
+            channel_id=303,
+            message_id=404,
+        )
+        self.assertTrue(created["created"])
+        records = bank.active_casino_wager_records()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["game_id"], "coinflip-panel-ref")
+        self.assertEqual(records[0]["channel_id"], 303)
+        self.assertEqual(records[0]["message_id"], 404)
+        self.assertEqual(
+            bank.casino_wager_status("coinflip-panel-ref"),
+            {
+                "status": "active",
+                "outcome": None,
+                "stake": 100,
+                "game_type": "coinflip",
+            },
+        )
+
     def test_winning_wager_debits_once_pays_once_and_writes_ledger(self):
         created = self.create_wager()
         self.assertTrue(created["created"])
