@@ -347,6 +347,8 @@ NON_COG_MODULES = frozenset({
     "geoguessr_views.py",
     "mafia_art.py",
     "mafia_views.py",
+    "roulette_art.py",
+    "roulette_views.py",
 })
 UTILITY_EXTENSION_ALLOWLIST = frozenset({"help.py", "ai.py", "admin.py", "wizard.py"})
 

@@ -1,12 +1,10 @@
 import asyncio
-import io
 import logging
 import math
 import os
 import random
 from functools import partial
 
-import aiohttp
 import discord
 from discord.ext import commands
 from discord.ui import (
@@ -17,7 +15,6 @@ from discord.ui import (
     Separator,
     TextDisplay,
 )
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 import config
 from cogs.casino.game_registry import (
@@ -28,6 +25,8 @@ from cogs.casino.game_registry import (
     set_game_view,
 )
 from cogs.casino.permissions import is_staff_or_admin
+from cogs.casino.roulette_art import generate_sniper_image
+from cogs.casino.roulette_views import KickView
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
@@ -48,198 +47,7 @@ class WatermarkView(discord.ui.View):
         self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 
-async def fetch_avatar(session, user, size=(80, 80)):
-    try:
-        async with session.get(user.display_avatar.url) as resp:
-            data = await resp.read()
-            img = Image.open(io.BytesIO(data)).convert("RGBA").resize(size)
-            return img
-    except Exception:
-        logger.debug("Could not load a player avatar for the roulette image", exc_info=True)
-        return Image.new("RGBA", size, (50, 50, 50, 255))
-
-async def generate_sniper_image(player):
-    width, height = 800, 500
-    # --- SCENE BACKGROUND ---
-    base = Image.new('RGBA', (width, height), (15, 15, 15, 255))
-    draw = ImageDraw.Draw(base)
-    
-    cx, cy = width//2, height//2
-    # --- SCOPE GEOMETRY ---
-    radius = 180
-    
-    # --- SCOPE LOGO ---
-    logo_path = os.path.join(os.getcwd(), "server_logo.png")
-    if os.path.exists(logo_path):
-        try:
-            logo = Image.open(logo_path).convert("RGBA")
-            # --- LOGO SCALING ---
-            logo = logo.resize((int(radius * 1.5), int(radius * 1.5)))
-            logo = logo.filter(ImageFilter.GaussianBlur(5))
-            # --- LOGO POSITIONING ---
-            base.paste(logo, (cx - logo.width//2, cy - logo.height//2), logo)
-        except Exception as e:
-            print(f"Error loading logo: {e}")
-            
-    # --- SCOPE DETAILS ---
-    draw.ellipse((cx-radius, cy-radius, cx+radius, cy+radius), outline=(255, 50, 50, 200), width=4)
-    draw.line((cx, cy-radius, cx, cy+radius), fill=(255, 50, 50, 150), width=2)
-    draw.line((cx-radius, cy, cx+radius, cy), fill=(255, 50, 50, 150), width=2)
-    draw.ellipse((cx-4, cy-4, cx+4, cy+4), fill=(255, 0, 0, 255))
-    
-    # --- HUNTER AVATAR ---
-    async with aiohttp.ClientSession() as session:
-        try:
-            avatar = await fetch_avatar(session, player, (80, 80))
-            base.paste(avatar, (40, height - 120), avatar)
-            draw.rectangle((40, height - 120, 120, height - 40), outline=(0, 255, 0, 200), width=3)
-            
-            try: font = ImageFont.truetype("tahoma.ttf", 20)
-            except Exception:
-                logger.debug("Roulette image font unavailable; using the default font", exc_info=True)
-                font = ImageFont.load_default()
-            draw.text((40, height - 35), "SNIPER ACTIVE", fill=(0, 255, 0, 200), font=font)
-        except Exception:
-            logger.debug("Could not compose the optional roulette avatar overlay", exc_info=True)
-            
-    out_bytes = io.BytesIO()
-    base.save(out_bytes, format='PNG')
-    out_bytes.seek(0)
-    return out_bytes
-
-
 # --- UI VIEWS ---
-class KickSelect(discord.ui.Select):
-    def __init__(self, chosen_player, chunk_targets, active_players, part_num, total_parts):
-        self.chosen_player = chosen_player
-        options = []
-        for player in chunk_targets:
-            real_index = active_players.index(player) + 1
-            options.append(
-                discord.SelectOption(
-                    label=f"{real_index}- {player.display_name}",
-                    value=str(player.id),
-                    description="يطير بره اللعبة",
-                )
-            )
-        placeholder = "اختار ضحية..." if total_parts == 1 else f"اختار ضحية... (قائمة {part_num})"
-        super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user != self.chosen_player:
-            return await interaction.response.send_message(
-                view=StatusPanel("مش دورك", "اختيار الضحية متاح للقناص المختار فقط.", "warning"),
-                ephemeral=True,
-            )
-
-        selected_id = int(self.values[0])
-        if selected_id in self.view.kicked_ids:
-            return await interaction.response.send_message(
-                view=StatusPanel("اختيار مكرر", "أنت اخترت اللاعب ده بالفعل. اختار شخصًا آخر.", "warning"),
-                ephemeral=True,
-            )
-
-        self.view.kicked_ids.append(selected_id)
-        if self.view.double_shot_active and len(self.view.kicked_ids) < 2:
-            return await interaction.response.send_message(
-                view=StatusPanel("تم تسجيل الضحية الأولى", "اختار ضحية ثانية بسرعة.", "success"),
-                ephemeral=True,
-            )
-
-        self.view._panel_text.content = (
-            "# تم تسجيل الاختيار\nالاختيار اتسجل. بنجهز نتيجة الجولة دلوقتي."
-        )
-        await interaction.response.send_message(
-            view=StatusPanel("تم اعتماد الاختيار", "استنى نتيجة الجولة.", "success"),
-            ephemeral=True,
-        )
-        self.view.stop()
-
-
-class KickView(LayoutView):
-    def __init__(self, chosen_player, active_players, has_weapon, currency_cog, round_num=1):
-        super().__init__(timeout=20.0)
-        self.kicked_ids = []
-        self.chosen_player = chosen_player
-        self.double_shot_active = False
-        self.currency_cog = currency_cog
-        self.message = None
-        self.round_num = round_num
-        self._panel_text = TextDisplay(
-            f"# 🎯 الروليت — الجولة {round_num}\n"
-            f"القناص المختار: {chosen_player.mention}\n"
-            "قدامك 20 ثانية تختار ضحية من القائمة. الاختيار النهائي بيظهر بعد اعتمادك."
-        )
-        components = [
-            self._panel_text,
-            MediaGallery(
-                discord.MediaGalleryItem(
-                    media="attachment://sniper.png",
-                    description="صورة القناص المختار",
-                )
-            ),
-            Separator(),
-        ]
-        self._action_rows = []
-        self.weapon_btn = None
-        if has_weapon:
-            self.weapon_btn = discord.ui.Button(
-                label="سلاح الحفرة",
-                style=discord.ButtonStyle.secondary,
-                emoji="🔫",
-                custom_id="roulette_use_weapon",
-            )
-            self.weapon_btn.callback = self.weapon_callback
-            self._action_rows.append(ActionRow(self.weapon_btn))
-
-        targets = [player for player in active_players if player != chosen_player]
-        chunk_size = 25
-        total_parts = (len(targets) - 1) // chunk_size + 1
-        self._selects = []
-        for index in range(0, len(targets), chunk_size):
-            select = KickSelect(
-                chosen_player,
-                targets[index:index + chunk_size],
-                active_players,
-                (index // chunk_size) + 1,
-                total_parts,
-            )
-            self._selects.append(select)
-            self._action_rows.append(ActionRow(select))
-
-        self.add_item(Container(*components, *self._action_rows, accent_color=THEME["red_dark"]))
-
-    def disable_controls(self):
-        if self.weapon_btn is not None:
-            self.weapon_btn.disabled = True
-        for select in self._selects:
-            select.disabled = True
-
-    async def weapon_callback(self, interaction: discord.Interaction):
-        if interaction.user != self.chosen_player:
-            return await interaction.response.send_message(
-                view=StatusPanel("السلاح مش بتاعك", "استخدام السلاح متاح للقناص المختار فقط.", "warning"),
-                ephemeral=True,
-            )
-
-        success = self.currency_cog is not None and self.currency_cog.remove_item(
-            self.chosen_player.id, "double_shot", 1
-        )
-        if not success:
-            return await interaction.response.send_message(
-                view=StatusPanel("تعذر استخدام السلاح", "الأداة مش موجودة في شنطتك أو نظام الاقتصاد مش متاح.", "warning"),
-                ephemeral=True,
-            )
-
-        self.double_shot_active = True
-        self.weapon_btn.disabled = True
-        self._panel_text.content = (
-            f"# الجولة {self.round_num} — السلاح اتفعل\n"
-            f"{self.chosen_player.mention} فعل سلاح الحفرة. يقدر يختار ضحيتين بدل واحدة."
-        )
-        await interaction.response.edit_message(view=self)
-
-
 class RouletteLobby(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=120)

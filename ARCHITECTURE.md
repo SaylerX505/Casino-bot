@@ -16,6 +16,9 @@ The bot remains a single-process Discord application, but each subsystem should 
 - `cogs/casino/mafia.py`: Mafia game state, round orchestration, role resolution, and economy interactions.
 - `cogs/casino/mafia_views.py`: Mafia lobby, secret selection, day voting, and role reveal Components V2 views; the lobby receives the game loop through dependency injection.
 - `cogs/casino/mafia_art.py`: Mafia image generation, separate from role and round logic.
+- `cogs/casino/roulette.py`: roulette lobby, round orchestration, scoring, and Discord result flow.
+- `cogs/casino/roulette_views.py`: reusable Components V2 target selection and weapon-action panel.
+- `cogs/casino/roulette_art.py`: optional artwork composition and avatar downloads, separated from roulette state and payout decisions.
 - `cogs/casino/currency.py`: economy command handlers and the cog-facing bank adapter.
 - `cogs/casino/currency_catalog.py`: the item catalog and shared currency formatting.
 - `cogs/casino/currency_views.py`: shop, inventory, transfer modal, and persistent economy hub components; views use a narrow cog-facing interface instead of owning wallet storage.

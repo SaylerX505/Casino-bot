@@ -23,7 +23,8 @@ from cogs.casino.mafia_views import (
     RoleRevealView,
     SecretButtonView,
 )
-from cogs.casino.roulette import KickView, RouletteLobby
+from cogs.casino.roulette import RouletteLobby
+from cogs.casino.roulette_views import KickView
 from cogs.casino.wheel import WheelLobby, WheelResultPanel
 from cogs.utility.theme import embed_to_v2
 
