@@ -74,7 +74,7 @@ def ai_enabled_setting_key(guild_id: int) -> str:
     return f"guild:{int(guild_id)}:ai_enabled"
 
 
-def is_ai_enabled_for_guild(guild_id: int, *, default: bool = True) -> bool:
+def configured_ai_enabled_for_guild(guild_id: int, *, default: bool = True) -> bool:
     """Read this guild's AI override; DB errors fail closed."""
     try:
         raw = bank.get_setting(ai_enabled_setting_key(guild_id))
