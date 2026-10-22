@@ -36,7 +36,7 @@ The bot uses the configured prefix `+`. See the in-bot help menu for the availab
 - `+blackjack 100` / `/blackjack bet:100`: play a multi-step hand against the dealer. Regular wins pay **2.0x gross** (1.0x net); a natural blackjack pays **2.5x gross** (1.5x net); pushes return the full stake.
 - `+slots 100` / `/slots bet:100`: spin three independent reels. Any win occurs in 96/216 outcomes (44.44%); a loss occurs in 120/216 (55.56%). One matching pair appears in 90/216 outcomes (41.67%) and returns **1.7x gross**. A triple appears in 6/216 outcomes (2.78%); each specific triple is 1/216 (0.46%) and returns **5x–15x gross**, depending on the symbol. The theoretical long-run gross return of the published paytable is **94.44%**.
 - Coinflip, dice, and slots share one configurable V2 betting panel and edit in place instead of posting a second result message. Blackjack has its own multi-step V2 panel. Every game edits its active message; coinflip/dice/slots only debit when the choice/spin starts, and blackjack only debits when the player presses **ابدأ اللعب**.
-- Solo wagers and their outcomes are recorded transactionally with economy ledger entries. Settlement is idempotent; an interrupted active session is refunded during startup recovery.
+- Solo wagers and their outcomes are recorded transactionally with economy ledger entries. Settlement is idempotent; an interrupted active session is refunded during startup recovery. The bot also stores the original channel/message IDs so it can replace an old game panel with a clear refund notice after restart, instead of leaving stale controls visible.
 - Configure the permitted channels through `/wizard`, just like the other games.
 
 ## Setup wizard
@@ -49,7 +49,7 @@ This bot is designed to run in one Discord server. `HOME_GUILD_ID` is required: 
 
 ## Data and persistence
 
-The economy and small application settings are stored in SQLite at the project-root `data/bank.db` by default. Schema changes are applied through ordered, transactional migrations recorded in `schema_migrations`; legacy tables are adopted without replacing their rows. Balance changes are written to the append-only `economy_ledger` in the same SQL transaction as the balance mutation, with correlated transaction IDs for transfers and wagers. Set `BANK_DB_FILE` only if the host requires a custom path. Mount persistent storage at `/app/data` when using Docker. Keep only one bot process connected to a given SQLite file.
+The economy and small application settings are stored in SQLite at the project-root `data/bank.db` by default. Schema changes are applied through ordered, transactional migrations recorded in `schema_migrations`; legacy tables are adopted without replacing their rows. The casino-wager schema also stores optional channel/message references for safely closing interrupted game panels after recovery. Balance changes are written to the append-only `economy_ledger` in the same SQL transaction as the balance mutation, with correlated transaction IDs for transfers and wagers. Set `BANK_DB_FILE` only if the host requires a custom path. Mount persistent storage at `/app/data` when using Docker. Keep only one bot process connected to a given SQLite file.
 
 Never commit the live database, SQLite journal files, user histories, activity snapshots, runtime logs, backups, or real environment secrets. Archived source snapshots are excluded from Docker images. Static game content such as `data/database.json` and `data/fazoora.json` remains in the repository because the games need it.
 
