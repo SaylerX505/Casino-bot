@@ -11,7 +11,7 @@ class BankMutatorValidationTests(unittest.TestCase):
             bank.set_balance(101, -1)
         with self.assertRaises(ValueError):
             bank.set_balance(101, (1 << 63))
-        with self.assertRaises(ValueError):
+        with self.assertRaises(TypeError):
             bank.set_balance(101, True)
 
     def test_add_item_requires_a_positive_integer_quantity(self):
@@ -36,6 +36,9 @@ class BankMutatorValidationTests(unittest.TestCase):
                 self.assertRaises(ValueError),
             ):
                 bank.set_daily(101, invalid_timestamp, 0)
+
+        with self.assertRaises(TypeError):
+            bank.set_daily(101, True, 0)
 
         for invalid_streak in (-1, True, 1.5):
             with (
