@@ -48,6 +48,15 @@ class GameChannelPolicyTests(unittest.TestCase):
             self.assertTrue(permissions.is_game_channel_allowed(100, 999, "coinflip"))
             self.assertTrue(permissions.is_game_channel_allowed(100, 999, "dice"))
             self.assertTrue(permissions.is_game_channel_allowed(100, 999, "slots"))
+            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "blackjack"))
+
+    def test_blackjack_channel_allowlist_is_enforced(self):
+        with patch(
+            "cogs.casino.permissions.bank.get_setting",
+            return_value=json.dumps([200]),
+        ):
+            self.assertTrue(permissions.is_game_channel_allowed(100, 200, "blackjack"))
+            self.assertFalse(permissions.is_game_channel_allowed(100, 201, "blackjack"))
 
     def test_game_name_aliases_resolve_to_one_persisted_key(self):
         cases = {
@@ -70,6 +79,9 @@ class GameChannelPolicyTests(unittest.TestCase):
             "slots": "slots",
             "slot": "slots",
             "سلوت": "slots",
+            "blackjack": "blackjack",
+            "bj": "blackjack",
+            "بلاكجاك": "blackjack",
         }
         for name, expected in cases.items():
             with self.subTest(name=name):
