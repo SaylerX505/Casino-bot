@@ -139,6 +139,11 @@ async def _publish_interrupted_wager_panel(bot, record, receipt):
             record.get("game_id"),
             exc_info=True,
         )
+    except Exception:
+        logger.exception(
+            "Interrupted wager was refunded, but an unexpected error blocked panel cleanup game_id=%s",
+            record.get("game_id"),
+        )
 
 
 async def recover_orphaned_casino_wagers(bot, schedule_recovery):
