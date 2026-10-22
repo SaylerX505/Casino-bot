@@ -14,7 +14,7 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
-from cogs.utility.theme import THEME, base_embed, embed_to_v2, get_currency
+from cogs.utility.theme import THEME, StatusPanel, base_embed, embed_to_v2, get_currency
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
@@ -44,6 +44,64 @@ async def _settle_wager(game_id, winner_id=None):
 
 _RECOVERY_DELAYS_SECONDS = (5, 15, 30, 60, 120, 300)
 _RECOVERY_TASKS: dict[str, asyncio.Task] = {}
+_STARTUP_PANEL_TASKS: set[asyncio.Task] = set()
+
+
+async def _publish_interrupted_rps_panel(bot, record, receipt):
+    """Close a stale challenge panel only after both stakes are safely refunded."""
+    if receipt.get("status") != "refunded":
+        return
+    if receipt.get("outcome") != "refund":
+        return
+    channel_id = record.get("channel_id")
+    message_id = record.get("message_id")
+    if not channel_id or not message_id:
+        return
+
+    amount = int(record.get("amount", 0))
+    total_refund = amount * 2
+    try:
+        await bot.wait_until_ready()
+        channel = bot.get_channel(int(channel_id))
+        if channel is None:
+            channel = await bot.fetch_channel(int(channel_id))
+        message = await channel.fetch_message(int(message_id))
+        await message.edit(
+            view=StatusPanel(
+                "التحدي اتوقف بعد إعادة التشغيل",
+                (
+                    "التحدي السابق ماكملش قبل ما البوت يقفل. "
+                    f"اترد **{amount:,} {COIN} لكل لاعب** "
+                    f"(إجمالي **{total_refund:,} {COIN}** للطرفين). "
+                    "الأزرار القديمة اتقفلت؛ ابدأوا تحديًا جديدًا لو حابين."
+                ),
+                "warning",
+            ),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except asyncio.CancelledError:
+        raise
+    except discord.NotFound:
+        logging.getLogger(__name__).info(
+            "Interrupted RPS wager refunded but original panel no longer exists game_id=%s",
+            record.get("game_id"),
+        )
+    except discord.Forbidden:
+        logging.getLogger(__name__).warning(
+            "Interrupted RPS wager refunded but the bot cannot access its panel game_id=%s",
+            record.get("game_id"),
+        )
+    except discord.HTTPException:
+        logging.getLogger(__name__).warning(
+            "Interrupted RPS wager refunded but its old panel could not be updated game_id=%s",
+            record.get("game_id"),
+            exc_info=True,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Interrupted RPS wager was refunded, but unexpected panel cleanup failed game_id=%s",
+            record.get("game_id"),
+        )
 
 
 async def _retry_wager_recovery(game_id, winner_id=None, on_recovered=None):
@@ -401,8 +459,41 @@ class RPS(commands.Cog):
     async def cog_load(self):
         logger = logging.getLogger(__name__)
         try:
+            # Capture panel references before the initial refund mutates escrow state.
+            records = bank.active_rps_wager_records()
             refunded = bank.refund_orphaned_rps_wagers()
             pending_wagers = bank.active_rps_wager_ids()
+            active_ids = set(pending_wagers)
+            records_by_id = {str(record["game_id"]): record for record in records}
+
+            for game_id, record in records_by_id.items():
+                has_panel = bool(record.get("channel_id") and record.get("message_id"))
+                if game_id in active_ids:
+                    callback = (
+                        partial(_publish_interrupted_rps_panel, self.bot, record)
+                        if has_panel
+                        else None
+                    )
+                    _schedule_wager_recovery(game_id, on_recovered=callback)
+                    continue
+
+                receipt = bank.rps_wager_status(game_id)
+                if (
+                    has_panel
+                    and receipt is not None
+                    and receipt.get("status") == "refunded"
+                    and receipt.get("outcome") == "refund"
+                ):
+                    task = asyncio.create_task(
+                        _publish_interrupted_rps_panel(self.bot, record, receipt)
+                    )
+                    _STARTUP_PANEL_TASKS.add(task)
+                    task.add_done_callback(_STARTUP_PANEL_TASKS.discard)
+
+            # Defensive fallback if an older/partial schema yields active IDs without rows.
+            for game_id in pending_wagers:
+                if str(game_id) not in records_by_id:
+                    _schedule_wager_recovery(game_id)
         except Exception:
             self._escrow_ready = False
             logger.exception(
@@ -415,8 +506,6 @@ class RPS(commands.Cog):
             logger.warning(
                 "Refunded %s interrupted RPS wager(s) during startup", refunded
             )
-        for game_id in pending_wagers:
-            _schedule_wager_recovery(game_id)
         if pending_wagers:
             logger.warning(
                 "Scheduled background recovery for %s unresolved RPS wager(s)",
@@ -532,6 +621,23 @@ class RPS(commands.Cog):
 
         try:
             view.message = await ctx.send(view=view)
+            try:
+                stored_reference = bank.set_rps_wager_message_reference(
+                    game_id,
+                    int(ctx.channel.id),
+                    int(view.message.id),
+                )
+                if not stored_reference:
+                    logging.getLogger(__name__).warning(
+                        "RPS message reference was not saved because wager is no longer active game_id=%s",
+                        game_id,
+                    )
+            except Exception:
+                # Losing the optional panel reference must not invalidate an already-started wager.
+                logging.getLogger(__name__).exception(
+                    "Could not persist RPS challenge panel reference game_id=%s",
+                    game_id,
+                )
             await view.wait()
         except asyncio.CancelledError:
             await view.abort()
