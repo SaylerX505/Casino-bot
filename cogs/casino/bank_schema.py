@@ -96,10 +96,23 @@ def _migration_3_single_player_casino_wagers(connection):
     )
 
 
+def _migration_4_casino_wager_message_refs(connection):
+    """Remember the live Discord panel so startup recovery can close stale controls."""
+    columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(casino_wagers)").fetchall()
+    }
+    if "channel_id" not in columns:
+        connection.execute("ALTER TABLE casino_wagers ADD COLUMN channel_id INTEGER")
+    if "message_id" not in columns:
+        connection.execute("ALTER TABLE casino_wagers ADD COLUMN message_id INTEGER")
+
+
 _SCHEMA_MIGRATIONS = (
     (1, "core_schema", _migration_1_core_schema),
     (2, "economy_ledger", _migration_2_economy_ledger),
     (3, "single_player_casino_wagers", _migration_3_single_player_casino_wagers),
+    (4, "casino_wager_message_refs", _migration_4_casino_wager_message_refs),
 )
 
 
