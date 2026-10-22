@@ -8,7 +8,7 @@ import discord
 from discord.ui import LayoutView
 
 from cogs.casino import coinflip as coinflip_module
-from cogs.casino.coinflip import DICE_CHOICES, CoinflipView
+from cogs.casino.coinflip import DICE_CHOICES, SLOT_CHOICES, CoinflipView, _spin_slots
 from cogs.utility.theme import StatusPanel
 
 
@@ -67,6 +67,36 @@ class CoinflipViewTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(len(rows), 2)
             self.assertEqual([len(row.children) for row in rows], [3, 4])
+        finally:
+            view.stop()
+
+    def test_slots_view_discloses_variable_paytable_with_one_spin_action(self):
+        view = CoinflipView(
+            self.cog,
+            self.requester,
+            100,
+            game_type="slots",
+            game_title="ماكينة الحظ",
+            choices=SLOT_CHOICES,
+            payout_numerator=170,
+            odds_description="الرموز مستقلة ومتساوية الاحتمال",
+            instructions="اضغط تدوير لتجربة 3 بكرات.",
+            payout_description="زوج متطابق: 1.7x · ثلاثية: 5x-15x",
+            outcome_resolver=_spin_slots,
+        )
+        try:
+            content = view._panel_text.content
+            self.assertIn("جدول الجوائز", content)
+            self.assertIn("1.7x", content)
+            self.assertIn("15x", content)
+            buttons = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            self.assertEqual(len(buttons), 2)
+            self.assertEqual({button.label for button in buttons}, {"تدوير", "إلغاء"})
+            self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+            self.assertIn("slots_spin", {button.custom_id for button in buttons})
         finally:
             view.stop()
 

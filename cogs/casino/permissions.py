@@ -22,6 +22,7 @@ GAME_LABELS = {
     "riddle": "الفزورة",
     "coinflip": "رمي العملة",
     "dice": "رمي النرد",
+    "slots": "ماكينة الحظ",
 }
 GAME_COMMAND_ALIASES = {
     "mafia": "mafia",
@@ -50,6 +51,10 @@ GAME_COMMAND_ALIASES = {
     "dice": "dice",
     "نرد": "dice",
     "زهر": "dice",
+    "slots": "slots",
+    "slot": "slots",
+    "سلوت": "slots",
+    "ماكينة": "slots",
 }
 
 

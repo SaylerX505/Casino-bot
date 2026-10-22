@@ -48,6 +48,7 @@ GAME_ORDER = (
     "riddle",
     "coinflip",
     "dice",
+    "slots",
 )
 
 
