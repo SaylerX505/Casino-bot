@@ -610,12 +610,13 @@ def charge_up_to(user_id, amount):
             raise
 
 def set_balance(user_id, amount):
-    if isinstance(balance, bool) or not isinstance(balance, int) or not 0 <= balance <= SQLITE_MAX_INTEGER:
-        raise ValueError("Balance must be a non-negative SQLite 64-bit integer")
-    """Set a wallet balance to a valid SQLite integer; negative balances are forbidden."""
-    uid, amount = str(user_id), int(amount)
+    """Set a wallet balance to a non-negative SQLite-safe integer."""
+    if isinstance(amount, bool) or not isinstance(amount, int):
+        raise ValueError("balance must be an integer")
     if amount < 0 or amount > SQLITE_MAX_INT:
         raise ValueError("balance must be within SQLite's non-negative integer range")
+
+    uid = str(user_id)
     with _lock:
         c = _connect()
         try:
@@ -626,7 +627,6 @@ def set_balance(user_id, amount):
         except Exception:
             c.rollback()
             raise
-
 def get_daily(uid):
     uid = str(uid)
     with _lock:
@@ -635,19 +635,21 @@ def get_daily(uid):
         return float(row["last_daily"]), int(row["streak"])
 
 def set_daily(uid, last, streak):
+    """Persist a valid daily timestamp and non-negative integer streak."""
+    if isinstance(last, bool):
+        raise ValueError("Daily timestamp must be finite and non-negative")
     try:
-        last_daily = float(last_daily)
+        last_daily = float(last)
     except (TypeError, ValueError, OverflowError):
         raise ValueError("Daily timestamp must be finite and non-negative") from None
     if not math.isfinite(last_daily) or last_daily < 0:
         raise ValueError("Daily timestamp must be finite and non-negative")
     if isinstance(streak, bool) or not isinstance(streak, int) or streak < 0:
         raise ValueError("Daily streak must be a non-negative integer")
-    uid, last, streak = str(uid), float(last), int(streak)
-    if not math.isfinite(last) or last < 0:
-        raise ValueError("last daily timestamp must be finite and non-negative")
-    if streak < 0 or streak > SQLITE_MAX_INT:
-        raise ValueError("daily streak must be a non-negative SQLite integer")
+    if streak > SQLITE_MAX_INT:
+        raise ValueError("Daily streak exceeds SQLite's integer range")
+
+    uid = str(uid)
     with _lock:
         c = _connect()
         try:
@@ -655,13 +657,12 @@ def set_daily(uid, last, streak):
             c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
             c.execute(
                 "UPDATE users SET last_daily=?, streak=? WHERE user_id=?",
-                (last, streak, uid),
+                (last_daily, streak, uid),
             )
             c.commit()
         except Exception:
             c.rollback()
             raise
-
 def get_item_count(user_id, item):
     with _lock:
         row = _connect().execute("SELECT qty FROM inventory WHERE user_id=? AND item=?", (str(user_id), item)).fetchone()
@@ -678,12 +679,13 @@ def top_balances(limit=10):
         return [(r["user_id"], int(r["balance"])) for r in rows]
 
 def add_item(user_id, item, amount=1):
-    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INTEGER:
-        raise ValueError("Item amount must be a positive SQLite-safe integer")
     """Add a strictly positive quantity without overflowing SQLite's integer range."""
-    uid, amount = str(user_id), int(amount)
-    if not str(item).strip() or amount <= 0 or amount > SQLITE_MAX_INT:
-        raise ValueError("item and positive quantity are required")
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
+        raise ValueError("item quantity must be a positive SQLite-safe integer")
+    if not isinstance(item, str) or not item.strip():
+        raise ValueError("item name is required")
+
+    uid = str(user_id)
     with _lock:
         c = _connect()
         try:
@@ -709,14 +711,14 @@ def add_item(user_id, item, amount=1):
         except Exception:
             c.rollback()
             raise
-
 def remove_item(user_id, item, amount=1):
-    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INTEGER:
-        return False
     """Atomically consume inventory only when sufficient quantity exists."""
-    uid, amount = str(user_id), int(amount)
-    if amount <= 0 or amount > (1 << 63) - 1:
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
         return False
+    if not isinstance(item, str) or not item.strip():
+        return False
+
+    uid = str(user_id)
     with _lock:
         c = _connect()
         try:
@@ -734,7 +736,6 @@ def remove_item(user_id, item, amount=1):
         except Exception:
             c.rollback()
             raise
-
 def get_whitelist():
     with _lock:
         rows = _connect().execute("SELECT kind, target_id FROM whitelist").fetchall()
