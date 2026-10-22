@@ -120,9 +120,10 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
                 "balance_after": 1_090,
             }
         )
-        message = SimpleNamespace(edit=AsyncMock())
+        message = SimpleNamespace(id=555, edit=AsyncMock())
         interaction = SimpleNamespace(
             user=self.requester,
+            channel_id=999,
             message=message,
             response=SimpleNamespace(edit_message=AsyncMock(), send_message=AsyncMock()),
         )
@@ -141,6 +142,8 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             "heads",
             True,
             190,
+            channel_id=999,
+            message_id=555,
         )
         interaction.response.edit_message.assert_awaited_once_with(view=self.view)
         message.edit.assert_awaited_once_with(view=self.view)
