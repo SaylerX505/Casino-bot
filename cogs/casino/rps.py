@@ -239,6 +239,15 @@ class RPSView(LayoutView):
         for button in self._buttons:
             button.disabled = True
 
+    async def _private_notice(self, interaction, content):
+        if interaction.response.is_done():
+            await interaction.edit_original_response(
+                content=content,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        else:
+            await interaction.response.send_message(content, ephemeral=True)
+
     def _queue_recovery_if_needed(self, result, winner_id=None):
         if result.get("settled"):
             return
@@ -310,6 +319,18 @@ class RPSView(LayoutView):
                     logging.getLogger(__name__).exception(
                         "Could not edit the existing RPS result message; not sending a duplicate"
                     )
+                if interaction is not None and interaction.response.is_done():
+                    try:
+                        await interaction.edit_original_response(
+                            content="اتسجل اختيارك، والنتيجة النهائية ظاهرة في رسالة التحدي.",
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                    except discord.HTTPException:
+                        logging.getLogger(__name__).warning(
+                            "Could not close deferred RPS acknowledgement game_id=%s",
+                            self.game_id,
+                            exc_info=True,
+                        )
             else:
                 await self.ctx.send(view=self)
         except discord.HTTPException:
@@ -427,30 +448,33 @@ class RPSView(LayoutView):
         await self.publish_result(embed)
 
     async def choose(self, interaction: discord.Interaction, move: str):
-        # Keep the acknowledgement and non-terminal panel edit ordered before a
-        # second player's terminal transition can publish the final result.
+        # A second click may queue behind the first panel edit. Acknowledge it
+        # before waiting for the lock so its Discord interaction cannot expire.
+        if self._choice_lock.locked():
+            try:
+                await interaction.response.defer(ephemeral=True, thinking=True)
+            except discord.HTTPException:
+                logging.getLogger(__name__).warning(
+                    "Could not defer queued RPS interaction game_id=%s",
+                    self.game_id,
+                    exc_info=True,
+                )
+                return
+
         async with self._choice_lock:
             if self.done:
-                return await interaction.response.send_message(
-                    "التحدي خلص بالفعل.", ephemeral=True
-                )
+                return await self._private_notice(interaction, "التحدي خلص بالفعل.")
             if interaction.user.id not in (self.player.id, self.opponent.id):
-                return await interaction.response.send_message(
-                    "مش طرف في التحدي.", ephemeral=True
-                )
+                return await self._private_notice(interaction, "مش طرف في التحدي.")
             if interaction.user.id in self.choices:
-                return await interaction.response.send_message(
-                    "اختارت خلاص!", ephemeral=True
-                )
+                return await self._private_notice(interaction, "اختارت خلاص!")
 
             self.choices[interaction.user.id] = move
             if len(self.choices) == 2:
                 should_finish = True
             else:
                 should_finish = False
-                await interaction.response.send_message(
-                    "✅ سجلنا اختيارك بسرية.", ephemeral=True
-                )
+                await self._private_notice(interaction, "✅ سجلنا اختيارك بسرية.")
                 self._refresh_panel()
                 if self.message is not None:
                     try:
