@@ -20,6 +20,7 @@ GAME_LABELS = {
     "wheel": "عجلة الحفرة",
     "rps": "حجرة ورقة مقص",
     "riddle": "الفزورة",
+    "coinflip": "رمي العملة",
 }
 GAME_COMMAND_ALIASES = {
     "mafia": "mafia",
@@ -41,6 +42,10 @@ GAME_COMMAND_ALIASES = {
     "حومص": "rps",
     "riddle": "riddle",
     "فزورة": "riddle",
+    "coinflip": "coinflip",
+    "flip": "coinflip",
+    "عملة": "coinflip",
+    "رمي_العملة": "coinflip",
 }
 
 

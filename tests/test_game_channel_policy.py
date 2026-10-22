@@ -45,6 +45,7 @@ class GameChannelPolicyTests(unittest.TestCase):
             self.assertFalse(permissions.is_game_channel_allowed(100, 300, "mafia"))
             self.assertTrue(permissions.is_game_channel_allowed(101, 300, "mafia"))
             self.assertTrue(permissions.is_game_channel_allowed(100, 999, "roulette"))
+            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "coinflip"))
 
     def test_game_name_aliases_resolve_to_one_persisted_key(self):
         cases = {
@@ -58,6 +59,9 @@ class GameChannelPolicyTests(unittest.TestCase):
             "عجلة": "wheel",
             "حومص": "rps",
             "فزورة": "riddle",
+            "coinflip": "coinflip",
+            "flip": "coinflip",
+            "عملة": "coinflip",
         }
         for name, expected in cases.items():
             with self.subTest(name=name):
