@@ -2,12 +2,13 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 from discord.ui import LayoutView
 
-from cogs.casino.coinflip import CoinflipView, DICE_CHOICES
+from cogs.casino import coinflip as coinflip_module
+from cogs.casino.coinflip import DICE_CHOICES, CoinflipView
 from cogs.utility.theme import StatusPanel
 
 
@@ -70,10 +71,6 @@ class CoinflipViewTests(unittest.IsolatedAsyncioTestCase):
             view.stop()
 
     async def test_winning_coinflip_edits_the_original_message_with_a_receipt(self):
-        from unittest.mock import Mock, patch
-
-        from cogs.casino import coinflip as coinflip_module
-
         self.cog._schedule_recovery = Mock()
         self.cog._settle_with_retries = AsyncMock(
             return_value={
