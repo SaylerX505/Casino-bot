@@ -70,6 +70,22 @@ def ai_role_setting_key(guild_id: int) -> str:
     return f"guild:{int(guild_id)}:ai_role_ids"
 
 
+def ai_enabled_setting_key(guild_id: int) -> str:
+    return f"guild:{int(guild_id)}:ai_enabled"
+
+
+def is_ai_enabled_for_guild(guild_id: int, *, default: bool = True) -> bool:
+    """Read this guild's AI override; DB errors fail closed."""
+    try:
+        raw = bank.get_setting(ai_enabled_setting_key(guild_id))
+    except Exception:
+        logger.exception("Could not read AI enabled override for guild=%s", guild_id)
+        return False
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in {"0", "false", "off", "no", "disabled"}
+
+
 def configured_log_channel_id(guild_id: int | None, log_type: str, fallback: int = 0) -> int:
     """Resolve a same-guild logging destination. Database failures fail closed."""
     if guild_id is None or log_type not in {"economy", "command_errors"}:
