@@ -1,4 +1,5 @@
 """Tests for retrying RPS escrow settlement after transient SQLite failures."""
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -115,17 +116,60 @@ class RPSBackgroundRecoveryTests(unittest.IsolatedAsyncioTestCase):
 class RPSStartupRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_database_recovery_failure_disables_new_wagers_without_crashing_load(self):
         cog = RPS(SimpleNamespace())
-        with patch(
-            "cogs.casino.rps.bank.refund_orphaned_rps_wagers",
-            side_effect=OSError("database unavailable"),
+        with (
+            patch(
+                "cogs.casino.rps.bank.active_rps_wager_records",
+                side_effect=OSError("database unavailable"),
+            ),
+            patch("cogs.casino.rps.bank.refund_orphaned_rps_wagers") as refund,
         ):
             await cog.cog_load()
 
+        refund.assert_not_called()
+
         self.assertFalse(cog._escrow_ready)
+
+
+    async def test_startup_refunds_and_closes_a_previously_active_challenge_panel(self):
+        bot = SimpleNamespace()
+        record = {
+            "game_id": "interrupted-rps",
+            "player_a": "101",
+            "player_b": "202",
+            "amount": 100,
+            "channel_id": 303,
+            "message_id": 404,
+        }
+        status = {
+            "game_id": "interrupted-rps",
+            "player_a": "101",
+            "player_b": "202",
+            "amount": 100,
+            "status": "refunded",
+            "outcome": "refund",
+            "channel_id": 303,
+            "message_id": 404,
+        }
+        publish = AsyncMock()
+        with (
+            patch("cogs.casino.rps.bank.active_rps_wager_records", return_value=[record]),
+            patch("cogs.casino.rps.bank.refund_orphaned_rps_wagers", return_value=1) as refund,
+            patch("cogs.casino.rps.bank.active_rps_wager_ids", return_value=[]),
+            patch("cogs.casino.rps.bank.rps_wager_status", return_value=status),
+            patch("cogs.casino.rps._publish_interrupted_rps_panel", new=publish),
+        ):
+            cog = RPS(bot)
+            await cog.cog_load()
+            await asyncio.sleep(0)
+
+        refund.assert_called_once_with()
+        self.assertTrue(cog._escrow_ready)
+        publish.assert_awaited_once_with(bot, record, status)
 
     async def test_startup_schedules_retries_for_escrow_left_active(self):
         cog = RPS(SimpleNamespace())
         with (
+            patch("cogs.casino.rps.bank.active_rps_wager_records", return_value=[]),
             patch("cogs.casino.rps.bank.refund_orphaned_rps_wagers", return_value=2),
             patch("cogs.casino.rps.bank.active_rps_wager_ids", return_value=["pending-a", "pending-b"]),
             patch("cogs.casino.rps._schedule_wager_recovery") as schedule,
