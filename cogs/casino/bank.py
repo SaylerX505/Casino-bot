@@ -1173,6 +1173,56 @@ def casino_wager_status(game_id):
         return dict(row) if row is not None else None
 
 
+def set_rps_wager_message_reference(game_id, channel_id, message_id):
+    """Attach the public challenge panel IDs to an active wager for restart cleanup."""
+    game_id = str(game_id).strip()
+    if not game_id:
+        return False
+    for field_name, field_value in (("channel_id", channel_id), ("message_id", message_id)):
+        if (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, int)
+            or not 0 < field_value <= SQLITE_MAX_INT
+        ):
+            raise ValueError(f"{field_name} must be a positive integer")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            changed = c.execute(
+                "UPDATE rps_wagers SET channel_id=?,message_id=? "
+                "WHERE game_id=? AND status='active'",
+                (channel_id, message_id, game_id),
+            ).rowcount
+            c.commit()
+            return changed == 1
+        except Exception:
+            c.rollback()
+            raise
+
+
+def active_rps_wager_records():
+    """Return active escrow and Discord panel references before startup refund."""
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id,player_a,player_b,amount,channel_id,message_id "
+            "FROM rps_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def rps_wager_status(game_id):
+    """Read a durable RPS receipt for recovery decisions without changing balances."""
+    with _lock:
+        row = _connect().execute(
+            "SELECT game_id,player_a,player_b,amount,status,outcome,channel_id,message_id "
+            "FROM rps_wagers WHERE game_id=?",
+            (str(game_id),),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+
 def charge_up_to(user_id, amount):
     """Charge at most the available integer balance; return (charged, new_balance)."""
     uid = str(user_id)
