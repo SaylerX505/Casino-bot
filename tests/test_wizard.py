@@ -123,7 +123,8 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
 
     def test_ai_settings_page_exposes_toggle_and_role_allowlist(self):
         with (
-            patch("cogs.utility.wizard._configured_ai_enabled", return_value=True),
+            patch("cogs.utility.wizard._global_ai_enabled", return_value=True),
+            patch("cogs.utility.wizard._guild_ai_enabled", return_value=True),
             patch("cogs.utility.wizard.configured_ai_role_ids", return_value={400}),
         ):
             view = AISettingsWizardView(self.guild, self.owner)
@@ -147,6 +148,36 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("wizard_ai_toggle", button_ids)
         self.assertIn("wizard_ai_clear_roles", button_ids)
         self.assertIn("wizard_ai_back", button_ids)
+
+    async def test_ai_toggle_persists_a_guild_override_not_the_global_master_switch(self):
+        interaction = SimpleNamespace(
+            user=self.owner,
+            guild=self.guild,
+            guild_id=self.guild.id,
+            message=SimpleNamespace(id=555),
+            client=SimpleNamespace(get_cog=lambda _name: object()),
+            response=SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard._global_ai_enabled", return_value=True),
+            patch("cogs.utility.wizard._guild_ai_enabled", return_value=False),
+            patch("cogs.utility.wizard.config.DEEPSEEK_API_KEY", "test-key"),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+            patch("cogs.utility.wizard.configured_ai_role_ids", return_value=set()),
+        ):
+            view = AISettingsWizardView(self.guild, self.owner)
+            await view.toggle_ai(interaction)
+
+        save_setting.assert_called_once_with(
+            f"guild:{self.guild.id}:ai_enabled",
+            "true",
+        )
+        interaction.response.edit_message.assert_awaited_once()
+        interaction.response.send_message.assert_not_awaited()
 
     def test_log_wizard_has_per_type_channel_select_and_disable_action(self):
         with patch("cogs.utility.wizard._configured_log_channel", return_value=0):
