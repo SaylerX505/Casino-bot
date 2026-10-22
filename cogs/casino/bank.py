@@ -7,7 +7,6 @@ import threading
 import time
 from pathlib import Path
 
-
 # Resolve storage from the project root, not the process working directory.
 DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
 _lock = threading.RLock()
@@ -73,7 +72,7 @@ def update_balance(user_id, amount):
     """Apply an integer adjustment without overdrafts or implicit type coercion."""
     if isinstance(amount, bool) or not isinstance(amount, int):
         raise TypeError("balance adjustment must be an integer")
-    uid, amount = str(user_id), amount
+    uid = str(user_id)
     if amount > 0:
         credited, balance = credit_balance(uid, amount)
         if not credited:
@@ -469,13 +468,13 @@ def create_rps_wager(game_id, player_a, player_b, amount):
 def settle_rps_wager(game_id, winner_id=None):
     """Settle or refund a persisted RPS wager exactly once."""
     game_id = str(game_id)
-    sqlite_max_int = (1 << 63) - 1
+    sqlite_max_int = SQLITE_MAX_INT
     with _lock:
         c = _connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             wager = c.execute(
-                "SELECT player_a,player_b,amount,status FROM rps_wagers WHERE game_id=?",
+                "SELECT player_a,player_b,amount,status,outcome FROM rps_wagers WHERE game_id=?",
                 (game_id,),
             ).fetchone()
             if wager is None:
@@ -483,13 +482,28 @@ def settle_rps_wager(game_id, winner_id=None):
                 return {"settled": False, "reason": "not_found"}
             if wager["status"] != "active":
                 c.rollback()
+                status = str(wager["status"])
+                amount = int(wager["amount"])
+                outcome = str(wager["outcome"] or "")
+                settled_winner = (
+                    outcome.partition(":")[2]
+                    if status == "settled" and outcome.startswith("winner:")
+                    else None
+                )
+                payout = 0
+                tax = 0
+                if settled_winner is not None:
+                    pot = amount * 2
+                    payout = (pot * 95) // 100
+                    tax = pot - payout
                 return {
                     "settled": True,
                     "already_settled": True,
-                    "status": wager["status"],
+                    "status": status,
                     "reason": None,
-                    "payout": 0,
-                    "tax": 0,
+                    "winner_id": settled_winner,
+                    "payout": payout,
+                    "tax": tax,
                 }
 
             a, b, amount = str(wager["player_a"]), str(wager["player_b"]), int(wager["amount"])
