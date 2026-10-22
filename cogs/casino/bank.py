@@ -612,7 +612,7 @@ def charge_up_to(user_id, amount):
 def set_balance(user_id, amount):
     """Set a wallet balance to a non-negative SQLite-safe integer."""
     if isinstance(amount, bool) or not isinstance(amount, int):
-        raise ValueError("balance must be an integer")
+        raise TypeError("balance must be an integer")
     if amount < 0 or amount > SQLITE_MAX_INT:
         raise ValueError("balance must be within SQLite's non-negative integer range")
 
@@ -637,7 +637,7 @@ def get_daily(uid):
 def set_daily(uid, last, streak):
     """Persist a valid daily timestamp and non-negative integer streak."""
     if isinstance(last, bool):
-        raise ValueError("Daily timestamp must be finite and non-negative")
+        raise TypeError("Daily timestamp must be numeric")
     try:
         last_daily = float(last)
     except (TypeError, ValueError, OverflowError):
