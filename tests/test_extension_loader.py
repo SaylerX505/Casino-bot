@@ -18,6 +18,7 @@ class ExtensionLoaderClassificationTests(unittest.TestCase):
             "geoguessr_storage.py",
             "geoguessr_views.py",
             "mafia_art.py",
+            "mafia_views.py",
         }
         for filename in helper_modules:
             with self.subTest(filename=filename):

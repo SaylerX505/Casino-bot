@@ -16,10 +16,11 @@ from cogs.casino.geoguessr_views import (
     GuessGameMenu,
 )
 from cogs.casino.hide_and_seek import HidingView, LobbyView, SeekerView
-from cogs.casino.mafia import (
+from cogs.casino.mafia_views import (
     DayVoteView,
     EphemeralActionView,
     MafiaLobbyView,
+    RoleRevealView,
     SecretButtonView,
 )
 from cogs.casino.roulette import KickView, RouletteLobby
@@ -181,6 +182,24 @@ class MafiaSecretActionV2Tests(unittest.TestCase):
             view.stop()
 
 
+class MafiaRoleRevealV2Tests(unittest.TestCase):
+    def test_role_reveal_is_a_private_state_injected_v2_view(self):
+        player = _FakeMember(5301)
+        view = RoleRevealView([player], {player: "mafia"})
+        try:
+            self.assertIsInstance(view, LayoutView)
+            buttons = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            self.assertEqual(len(buttons), 1)
+            self.assertIs(buttons[0].style, discord.ButtonStyle.secondary)
+            self.assertIn("تم توزيع الأدوار", view._panel_text.content)
+            self.assertEqual(buttons[0].custom_id, "mafia_reveal_role")
+        finally:
+            view.stop()
+
+
 class MafiaVoteV2Tests(unittest.TestCase):
     def test_day_vote_panel_uses_v2_select_and_secondary_skip(self):
         players = [_FakeMember(4100 + index) for index in range(5)]
@@ -296,7 +315,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             channel=SimpleNamespace(id=100),
             author=SimpleNamespace(id=200),
         )
-        if view_type is GuessGameMenu:
+        if view_type in (GuessGameMenu, MafiaLobbyView):
             async def start_game(_ctx, _players):
                 return None
 
@@ -467,7 +486,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             channel=SimpleNamespace(id=100),
             author=SimpleNamespace(id=200),
         )
-        view = MafiaLobbyView(ctx)
+        view = MafiaLobbyView(ctx, start_game=lambda _ctx, _players: None)
         try:
             self.assertIsInstance(view, LayoutView)
             buttons = [
