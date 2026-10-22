@@ -174,6 +174,7 @@ class RPSView(LayoutView):
         self.bet = bet
         self.game_id = str(game_id)
         self.choices = {}
+        self._choice_lock = asyncio.Lock()
         self.done = False
         self.message = None
         self._panel_text = TextDisplay(self._embed_content(self.make_embed()))
@@ -317,12 +318,13 @@ class RPSView(LayoutView):
             self.stop()
 
     async def finish(self, interaction=None):
-        if self.done:
-            return
-        self.done = True
-
-        player_choice = self.choices.get(self.player.id)
-        opponent_choice = self.choices.get(self.opponent.id)
+        # Serialize the terminal transition with in-flight non-terminal panel edits.
+        async with self._choice_lock:
+            if self.done:
+                return
+            self.done = True
+            player_choice = self.choices.get(self.player.id)
+            opponent_choice = self.choices.get(self.opponent.id)
 
         if player_choice is None or opponent_choice is None:
             result = await _settle_wager(self.game_id)
@@ -404,9 +406,10 @@ class RPSView(LayoutView):
         await self.finish()
 
     async def abort(self):
-        if self.done:
-            return
-        self.done = True
+        async with self._choice_lock:
+            if self.done:
+                return
+            self.done = True
         settlement = await _settle_wager(self.game_id)
 
         if not settlement.get("settled"):
@@ -424,21 +427,48 @@ class RPSView(LayoutView):
         await self.publish_result(embed)
 
     async def choose(self, interaction: discord.Interaction, move: str):
-        if self.done:
-            return await interaction.response.send_message("التحدي خلص بالفعل.", ephemeral=True)
-        if interaction.user.id not in (self.player.id, self.opponent.id):
-            return await interaction.response.send_message("مش طرف في التحدي.", ephemeral=True)
-        if interaction.user.id in self.choices:
-            return await interaction.response.send_message("اختارت خلاص!", ephemeral=True)
+        # Keep the acknowledgement and non-terminal panel edit ordered before a
+        # second player's terminal transition can publish the final result.
+        async with self._choice_lock:
+            if self.done:
+                return await interaction.response.send_message(
+                    "التحدي خلص بالفعل.", ephemeral=True
+                )
+            if interaction.user.id not in (self.player.id, self.opponent.id):
+                return await interaction.response.send_message(
+                    "مش طرف في التحدي.", ephemeral=True
+                )
+            if interaction.user.id in self.choices:
+                return await interaction.response.send_message(
+                    "اختارت خلاص!", ephemeral=True
+                )
 
-        self.choices[interaction.user.id] = move
-        if len(self.choices) == 2:
-            return await self.finish(interaction)
+            self.choices[interaction.user.id] = move
+            if len(self.choices) == 2:
+                should_finish = True
+            else:
+                should_finish = False
+                await interaction.response.send_message(
+                    "✅ سجلنا اختيارك بسرية.", ephemeral=True
+                )
+                self._refresh_panel()
+                if self.message is not None:
+                    try:
+                        await self.message.edit(view=self)
+                    except discord.NotFound:
+                        logging.getLogger(__name__).info(
+                            "RPS panel disappeared while recording a choice game_id=%s",
+                            self.game_id,
+                        )
+                    except discord.HTTPException:
+                        logging.getLogger(__name__).warning(
+                            "Could not refresh RPS choice status game_id=%s",
+                            self.game_id,
+                            exc_info=True,
+                        )
 
-        await interaction.response.send_message("✅ سجلنا اختيارك بسرية.", ephemeral=True)
-        self._refresh_panel()
-        if self.message is not None:
-            await self.message.edit(view=self)
+        if should_finish:
+            await self.finish(interaction)
 
     async def rock(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.choose(interaction, "🪨")
