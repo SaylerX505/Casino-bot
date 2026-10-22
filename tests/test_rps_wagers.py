@@ -1,8 +1,8 @@
 """Regression tests for restart-safe RPS escrow and idempotent settlement."""
-from concurrent.futures import ThreadPoolExecutor
 import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from cogs.casino import bank
