@@ -1,6 +1,5 @@
 """Artwork generation and optional image downloads for Russian roulette."""
 
-import asyncio
 import io
 import logging
 import os
@@ -17,7 +16,7 @@ async def fetch_avatar(session, user, size=(80, 80)):
             data = await resp.read()
             img = Image.open(io.BytesIO(data)).convert("RGBA").resize(size)
             return img
-    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
+    except (aiohttp.ClientError, TimeoutError, OSError, ValueError):
         logger.debug("Could not load a player avatar for the roulette image", exc_info=True)
         return Image.new("RGBA", size, (50, 50, 50, 255))
 
@@ -63,7 +62,7 @@ async def generate_sniper_image(player):
             logger.debug("Roulette image font unavailable; using the default font", exc_info=True)
             font = ImageFont.load_default()
         draw.text((40, height - 35), "SNIPER ACTIVE", fill=(0, 255, 0, 200), font=font)
-    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
+    except (aiohttp.ClientError, TimeoutError, OSError, ValueError):
         logger.debug("Could not compose the optional roulette avatar overlay", exc_info=True)
             
     out_bytes = io.BytesIO()
