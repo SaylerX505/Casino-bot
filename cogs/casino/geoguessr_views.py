@@ -1,7 +1,8 @@
 """Discord Components V2 views for GeoGuessr lobby, round, and results."""
 
-import asyncio
 from functools import partial
+
+import asyncio
 import logging
 import time
 
