@@ -31,14 +31,18 @@ class BankMutatorValidationTests(unittest.TestCase):
 
     def test_daily_state_rejects_invalid_timestamps_and_streaks(self):
         for invalid_timestamp in (-1, float("nan"), float("inf"), "not-a-time"):
-            with self.subTest(timestamp=invalid_timestamp):
-                with self.assertRaises(ValueError):
-                    bank.set_daily(101, invalid_timestamp, 0)
+            with (
+                self.subTest(timestamp=invalid_timestamp),
+                self.assertRaises(ValueError),
+            ):
+                bank.set_daily(101, invalid_timestamp, 0)
 
         for invalid_streak in (-1, True, 1.5):
-            with self.subTest(streak=invalid_streak):
-                with self.assertRaises(ValueError):
-                    bank.set_daily(101, 0, invalid_streak)
+            with (
+                self.subTest(streak=invalid_streak),
+                self.assertRaises(ValueError),
+            ):
+                bank.set_daily(101, 0, invalid_streak)
 
 
 if __name__ == "__main__":
