@@ -9,13 +9,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+      - name: Reject tracked runtime state and environment secrets
+        shell: bash
+        run: |
+          while IFS= read -r path; do
+            case "$path" in
+              .env.example|*/.env.example) ;;
+              .env|.env.*|*/.env|*/.env.*)
+                echo "::error::Potential environment secret must not be tracked: $path"
+                exit 1
+                ;;
+            esac
+          done < <(git ls-files)
+
+          while IFS= read -r path; do
+            case "$path" in
+              data/ai_data.json|data/state.json|data/used_images.json|data/used_images.json.tmp|data/currency.json|archive-wrapper-files/data/*|archive-wrapper-files/bot_logs.txt|bot_logs.txt|*.db|*.db-*|*.sqlite|*.sqlite-*|*.sqlite3|*.sqlite3-*)
+                echo "::error::Runtime database, generated state or log must not be tracked: $path"
+                exit 1
+                ;;
+            esac
+          done < <(git ls-files)
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+      - name: Install Ruff static analyzer
+        run: python -m pip install ruff
+      - name: Run Ruff static analysis on maintained core and regression tests
+        run: |
+          python -m ruff check --output-format=github main.py config.py cogs/casino/bank.py cogs/casino/permissions.py cogs/casino/currency.py cogs/casino/rps.py cogs/casino/game_assets.py cogs/casino/geoguessr_art.py cogs/casino/geoguessr_storage.py cogs/casino/geoguessr_views.py cogs/casino/mafia_art.py cogs/casino/currency_catalog.py cogs/casino/currency_views.py cogs/utility/admin.py cogs/utility/ai.py cogs/utility/help.py cogs/utility/wizard.py tests/test_game_channel_policy.py tests/test_wizard.py tests/test_app_settings.py tests/test_ai_privacy.py tests/test_command_error_logging.py tests/test_currency_audit_logging.py tests/test_geoguessr_storage.py tests/test_geoguessr_art.py tests/test_mafia_scan_privacy.py tests/test_bank_mutator_validation.py tests/test_home_guild_policy.py tests/test_bank_validation.py tests/test_game_ui_v2.py tests/test_rps_retry.py tests/test_extension_loader.py
       - name: Compile Python files
         run: python -m compileall -q main.py config.py cogs tests
       - name: Run unit tests
@@ -25,7 +51,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+      - name: Validate Docker build-context exclusions
+        shell: bash
+        run: |
+          test -f .dockerignore
+          for pattern in ".env" ".env.*" "!.env.example" "data/ai_data.json" "data/state.json" "data/used_images.json" "data/used_images.json.tmp" "data/currency.json" "data/backups/" "archive-wrapper-files/" "bot_logs.txt"; do
+            if ! grep -Fxq "$pattern" .dockerignore; then
+              echo "::error::Missing Docker ignore rule: $pattern"
+              exit 1
+            fi
+          done
+          grep -Fxq "*.db" .dockerignore
       - name: Build Docker image
         run: |
           for attempt in 1 2 3; do
@@ -38,8 +75,23 @@ jobs:
             fi
           done
           exit 1
+      - name: Verify image contains static data but no runtime secrets
+        run: |
+          docker run --rm -e DISCORD_TOKEN= casino-bot:test sh -c '
+            test -f /app/data/database.json
+            test -f /app/data/fazoora.json
+            test ! -e /app/data/ai_data.json
+            test ! -e /app/data/state.json
+            test ! -e /app/data/used_images.json
+            test ! -e /app/data/used_images.json.tmp
+            test ! -e /app/data/bank.db
+            test ! -e /app/.env
+            test ! -e /app/data/currency.json
+            test ! -e /app/archive-wrapper-files
+            test ! -e /app/bot_logs.txt
+          '
       - name: Smoke-test startup without a token
         run: |
-          output="$(docker run --rm -e DISCORD_TOKEN= casino-bot:test)"
+          output="$(docker run --rm -e DISCORD_TOKEN= casino-bot:test 2>&1)"
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -F "DISCORD_TOKEN is missing"

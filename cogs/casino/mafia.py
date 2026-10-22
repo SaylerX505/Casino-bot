@@ -1,16 +1,21 @@
 import discord
+from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 from discord.ext import commands
 from cogs.casino.game_registry import is_active_game, owns_game_task, register_game_task, release_game_task, set_game_view
 import asyncio
 import logging
-from PIL import Image, ImageDraw
-import io
 import random
-import aiohttp
+from functools import partial
 import config
 
+from cogs.casino.game_assets import SERVER_LOGO_URL
+from cogs.casino.mafia_art import (
+    generate_action_image,
+    generate_billboard,
+    generate_mafia_reveal,
+)
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import StatusPanel, lobby_embed, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
 
 logger = logging.getLogger(__name__)
 
@@ -19,86 +24,6 @@ class WatermarkView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
         self.add_item(discord.ui.Button(label="Developed by @neglawy & @17 Nicotine", style=discord.ButtonStyle.secondary, disabled=True))
-
-SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
-AVATAR_SETTINGS = {
-    "dead_civilian": {"pos": (655, 425), "size": (50, 50)},
-    "dead_doctor":   {"pos": (189, 331), "size": (90, 90)},
-    "saved_person":  {"pos": (190, 144), "size": (130, 130)},
-    "mafia_1": [{"pos": (520, 331), "size": (180, 180)}], 
-    "mafia_2": [{"pos": (250, 285), "size": (150, 150)}, {"pos": (565, 353), "size": (150, 150)}],
-    "mafia_3": [{"pos": (133, 147), "size": (50, 50)}, {"pos": (316, 180), "size": (45, 45)}, {"pos": (512, 171), "size": (50, 50)}]
-}
-
-async def fetch_avatar(session, user, size):
-    try:
-        async with session.get(user.display_avatar.url) as resp:
-            data = await resp.read()
-            img = Image.open(io.BytesIO(data)).convert("RGBA").resize(size)
-            mask = Image.new("L", size, 0)
-            ImageDraw.Draw(mask).ellipse((0, 0, size[0], size[1]), fill=255)
-            circular = Image.new("RGBA", size, (0, 0, 0, 0))
-            circular.paste(img, (0, 0), mask)
-            return circular
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        return Image.new("RGBA", size, (50, 50, 50, 255))
-
-async def generate_billboard(alive_players):
-    try:
-        base = Image.open("mafiagame/billboard.jpg").convert("RGBA")
-    except:
-        base = Image.new('RGBA', (1200, 600), (30, 30, 30, 255))
-    width, height = base.size
-    cols, avatar_size, padding_x, padding_y, start_y = 9, 70, 25, 30, 100
-    rows = [alive_players[i:i + cols] for i in range(0, len(alive_players), cols)]
-    async with aiohttp.ClientSession() as session:
-        for row_idx, row_players in enumerate(rows):
-            items_in_row = len(row_players)
-            row_width = (items_in_row * avatar_size) + ((items_in_row - 1) * padding_x)
-            row_start_x = (width - row_width) // 2
-            for col_idx, player in enumerate(row_players):
-                x = row_start_x + (col_idx * (avatar_size + padding_x))
-                y = start_y + (row_idx * (avatar_size + padding_y))
-                avatar = await fetch_avatar(session, player, size=(avatar_size, avatar_size))
-                base.paste(avatar, (int(x), int(y)), avatar)
-    out = io.BytesIO()
-    base.save(out, format='PNG')
-    out.seek(0)
-    return out
-
-async def generate_action_image(base_img, target, key):
-    try:
-        base = Image.open(f"mafiagame/{base_img}").convert("RGBA")
-    except:
-        base = Image.new('RGBA', (1200, 600), (0, 0, 0, 255))
-    s = AVATAR_SETTINGS[key]
-    async with aiohttp.ClientSession() as session:
-        avatar = await fetch_avatar(session, target, size=s["size"])
-        base.paste(avatar, (int(s["pos"][0]-s["size"][0]/2), int(s["pos"][1]-s["size"][1]/2)), avatar)
-    out = io.BytesIO()
-    base.save(out, format='PNG')
-    out.seek(0)
-    return out
-
-async def generate_mafia_reveal(mafias):
-    count = len(mafias)
-    try:
-        base = Image.open(f"mafiagame/mafia_{count}.jpg").convert("RGBA")
-    except:
-        base = Image.new('RGBA', (1200, 600), (20, 0, 0, 255))
-    configs = AVATAR_SETTINGS[f"mafia_{count}"]
-    async with aiohttp.ClientSession() as session:
-        for i, p in enumerate(mafias):
-            if i >= len(configs): break
-            pos, size = configs[i]["pos"], configs[i]["size"]
-            avatar = await fetch_avatar(session, p, size=size)
-            base.paste(avatar, (int(pos[0]-size[0]/2), int(pos[1]-size[1]/2)), avatar)
-    out = io.BytesIO()
-    base.save(out, format='PNG')
-    out.seek(0)
-    return out
 
 async def poke_reminder(user, role_name, view):
     await asyncio.sleep(10)
@@ -116,25 +41,49 @@ async def poke_reminder(user, role_name, view):
 class MafiaDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
         self.view_parent = view_parent
-        options = [discord.SelectOption(label=p.display_name, value=str(p.id)) for p in targets[:25]]
-        super().__init__(placeholder="اختار ضحيتك المرة دي...", min_values=1, max_values=1, options=options)
+        options = [
+            discord.SelectOption(label=player.display_name, value=str(player.id))
+            for player in targets[:25]
+        ]
+        super().__init__(
+            placeholder="اختار ضحيتك المرة دي...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction):
         self.view_parent.selected_id = int(self.values[0])
-        embed = discord.Embed(
-            description="🩸 الأوامر صدرت... ارجع للشات الأساسي.",
-            color=discord.Color.dark_red()
+        self.view_parent._panel_text.content = (
+            "# تم تسجيل الاختيار\nالأمر اتسجل بسرية. ارجع للشات الأساسي."
         )
-        await interaction.response.edit_message(embed=embed, view=None)
+        self.view_parent.disable_controls()
+        await interaction.response.edit_message(view=self.view_parent)
         self.view_parent.stop()
 
-class EphemeralActionView(discord.ui.View):
-    def __init__(self, targets):
-        super().__init__(timeout=20.0) 
-        self.selected_id = None
-        self.add_item(MafiaDropdown(targets, self))
 
-class SecretButtonView(discord.ui.View):
+class EphemeralActionView(LayoutView):
+    def __init__(self, targets):
+        super().__init__(timeout=20.0)
+        self.selected_id = None
+        self.dropdown = MafiaDropdown(targets, self)
+        self._panel_text = TextDisplay(
+            "# اختيار سري\nاختار هدفًا واحدًا من القائمة. اختيارك مش هيظهر في القناة."
+        )
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(self.dropdown),
+                accent_color=THEME["red_dark"],
+            )
+        )
+
+    def disable_controls(self):
+        self.dropdown.disabled = True
+
+
+class SecretButtonView(LayoutView):
     def __init__(self, active_user, role_users, targets, role_name):
         super().__init__(timeout=20.0)
         self.active_user = active_user
@@ -142,97 +91,178 @@ class SecretButtonView(discord.ui.View):
         self.targets = targets
         self.role_name = role_name
         self.selected_id = None
-        
-        btn_label = "🔪 افتح قايمة الاغتيال" if role_name == "mafia" else "💉 افتح شنطة الإسعافات"
-        btn_style = discord.ButtonStyle.secondary if role_name == "mafia" else discord.ButtonStyle.secondary
-        
-        btn = discord.ui.Button(label=btn_label, style=btn_style)
-        btn.callback = self.btn_callback
-        self.add_item(btn)
+        self.message = None
+
+        if role_name == "mafia":
+            button_label = "افتح قائمة الاغتيال"
+            image_name = "mafia_looking.jpg"
+            self._panel_text = TextDisplay(
+                "# حركة المافيا\nالاختيار متاح للقناص المحدد فقط. اختار ضحية بسرية."
+            )
+            accent = THEME["red_dark"]
+        else:
+            button_label = "افتح شنطة الإسعافات"
+            image_name = "doctor_looking.jpg"
+            self._panel_text = TextDisplay(
+                "# حركة الدكتور\nالاختيار متاح للدكتور فقط. اختار لاعبًا تحميه بسرية."
+            )
+            accent = THEME["teal"]
+
+        self.button = discord.ui.Button(
+            label=button_label,
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"mafia_secret_action_{role_name}",
+        )
+        self.button.callback = self.btn_callback
+        self.add_item(
+            Container(
+                self._panel_text,
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{image_name}",
+                        description="لوحة الحركة السرية",
+                    )
+                ),
+                Separator(),
+                ActionRow(self.button),
+                accent_color=accent,
+            )
+        )
+
+    def disable_controls(self):
+        self.button.disabled = True
 
     async def btn_callback(self, interaction: discord.Interaction):
         if interaction.user not in self.role_users:
             role_ar = "المافيا" if self.role_name == "mafia" else "الدكتور"
-            embed = discord.Embed(
-                description=f"انت مش من {role_ar}! العب بعيد.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("حركة سرية", f"الحركة دي متاحة لأفراد {role_ar} فقط.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
+
         if interaction.user != self.active_user:
             action_ar = "بالاغتيال" if self.role_name == "mafia" else "بالعلاج"
-            embed = discord.Embed(
-                description=f"القرعة اختارت {self.active_user.mention} عشان يقوم {action_ar} الليلة دي! استنى دورك.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "استنى دورك",
+                    f"القرعة اختارت {self.active_user.mention} عشان يقوم {action_ar} الليلة دي.",
+                    "warning",
+                ),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
+
         ephemeral_view = EphemeralActionView(self.targets)
-        await interaction.response.send_message("اختار بسرعة قبل الوقت ما يخلص:", view=ephemeral_view, ephemeral=True)
+        await interaction.response.send_message(
+            view=ephemeral_view,
+            ephemeral=True,
+        )
         await ephemeral_view.wait()
-        
+
         self.selected_id = ephemeral_view.selected_id
-        if self.selected_id:
-            for child in self.children: child.disabled = True
-            try: await interaction.message.edit(view=self)
-            except: pass
+        if self.selected_id is not None:
+            self.disable_controls()
+            self._panel_text.content = (
+                "# الحركة اتسجلت\nتم تسجيل الاختيار السري. النتيجة هتظهر بعد نهاية الليل."
+            )
+            try:
+                await interaction.message.edit(view=self)
+            except discord.HTTPException:
+                logger.debug("Could not disable Mafia secret-action V2 controls", exc_info=True)
             self.stop()
+
 
 class VoteDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
         self.view_parent = view_parent
-        options = [discord.SelectOption(label=p.display_name, value=str(p.id)) for p in targets]
-        super().__init__(placeholder="مين شاكك فيه؟ (اضغط للتصويت)", min_values=1, max_values=1, options=options)
+        options = [
+            discord.SelectOption(label=player.display_name, value=str(player.id))
+            for player in targets[:25]
+        ]
+        super().__init__(
+            placeholder="مين شاكك فيه؟ (اضغط للتصويت)",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user not in self.view_parent.alive_players:
-            embed = discord.Embed(
-                description="الميتين مابيتكلموش 💀",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("التصويت غير متاح", "الميتين مابيتكلموش؛ التصويت للأحياء فقط.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
         self.view_parent.votes[interaction.user] = int(self.values[0])
         await self.view_parent.update_embed(interaction)
 
-class DayVoteView(discord.ui.View):
-    def __init__(self, alive_players):
-        super().__init__(timeout=20.0) 
-        self.alive_players = alive_players
-        self.votes = {} 
-        self.add_item(VoteDropdown(alive_players[:25], self)) 
 
-    @discord.ui.button(label="تفويت (Skip)", style=discord.ButtonStyle.secondary)
-    async def skip_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user not in self.alive_players:
-            embed = discord.Embed(
-                description="الميتين مابيتكلموش 💀",
-                color=discord.Color.red()
+class DayVoteView(LayoutView):
+    def __init__(self, alive_players):
+        super().__init__(timeout=20.0)
+        self.alive_players = alive_players
+        self.votes = {}
+        self.message = None
+        self._panel_text = TextDisplay(self._vote_summary())
+        self.dropdown = VoteDropdown(alive_players[:25], self)
+        self.skip_button = discord.ui.Button(
+            label="تفويت (Skip)",
+            custom_id="mafia_vote_skip",
+            style=discord.ButtonStyle.secondary,
+        )
+        self.skip_button.callback = self.skip_btn
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(self.dropdown),
+                ActionRow(self.skip_button),
+                accent_color=THEME["orange"],
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+        )
+
+    def _vote_summary(self):
+        lines = ["# ⚖️ التصويت للإعدام", "اختار لاعبًا أو فوّت التصويت. يمكن تحديث اختيارك قبل انتهاء الوقت.", ""]
+        if not self.votes:
+            lines.append("في انتظار تصويت المواطنين...")
+        else:
+            lines.append("**الأصوات الحالية:**")
+            for voter, target_id in self.votes.items():
+                if target_id == "SKIP":
+                    lines.append(f"{voter.mention} → ⏭️ **تفويت**")
+                else:
+                    target = next(
+                        (player for player in self.alive_players if player.id == target_id),
+                        None,
+                    )
+                    if target:
+                        lines.append(f"{voter.mention} → 🔪 {target.mention}")
+        return "\n".join(lines)[:4000]
+
+    async def skip_btn(self, interaction: discord.Interaction):
+        if interaction.user not in self.alive_players:
+            return await interaction.response.send_message(
+                view=StatusPanel("التصويت غير متاح", "الميتين مابيتكلموش؛ التصويت للأحياء فقط.", "warning"),
+                ephemeral=True,
+            )
         self.votes[interaction.user] = "SKIP"
         await self.update_embed(interaction)
 
     async def update_embed(self, interaction):
-        desc = "**الأصوات الحالية:**\n\n"
-        for voter, target_id in self.votes.items():
-            if target_id == "SKIP":
-                desc += f"{voter.mention} ➔ ⏭️ **تفويت**\n"
-            else:
-                target_user = next((p for p in self.alive_players if p.id == target_id), None)
-                if target_user:
-                    desc += f"{voter.mention} ➔ 🔪 {target_user.mention}\n"
-                    
-        embed = interaction.message.embeds[0]
-        embed.description = desc
-        try: await interaction.response.edit_message(embed=embed)
-        except: pass
-        
+        self._panel_text.content = self._vote_summary()
+        try:
+            await interaction.response.edit_message(view=self)
+        except discord.HTTPException:
+            logger.debug("Could not update Mafia V2 vote panel", exc_info=True)
+
         if len(self.votes) >= len(self.alive_players):
             self.stop()
 
-class MafiaLobbyView(discord.ui.View):
+    def disable_controls(self):
+        self.dropdown.disabled = True
+        self.skip_button.disabled = True
+
+
+class MafiaLobbyView(LayoutView):
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
@@ -240,6 +270,24 @@ class MafiaLobbyView(discord.ui.View):
         self.game_started = False
         self.time_left = 60
         self.message = None
+        self._panel_text = TextDisplay(self._panel_content())
+        self._buttons = []
+        for label, custom_id, callback_name, emoji in (
+            ("انضمام (Join)", "mafia_join", "join_button", None),
+            ("مغادرة (Leave)", "mafia_leave", "leave_button", None),
+            ("ابدأ الآن", "mafia_start", "start_button", None),
+            ("+10 ثواني", "mafia_add_time", "add_time", "⏱️"),
+        ):
+            button = discord.ui.Button(label=label, custom_id=custom_id, style=discord.ButtonStyle.secondary, emoji=emoji)
+            button.callback = partial(getattr(self, callback_name), button=button)
+            self._buttons.append(button)
+        self.add_item(Container(
+            self._panel_text,
+            MediaGallery(discord.MediaGalleryItem(media="attachment://menu.jpg", description="لوحة لعبة المافيا")),
+            Separator(),
+            ActionRow(*self._buttons),
+            accent_color=THEME["red_dark"],
+        ))
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
@@ -255,6 +303,25 @@ class MafiaLobbyView(discord.ui.View):
         embed.set_footer(text="لعبة المافيا - كازينو الحفرة", icon_url=SERVER_LOGO_URL)
         return embed
 
+    def _panel_content(self, embed=None):
+        embed = embed or self.get_embed()
+        title = f"# {embed.title}\n" if embed.title else ""
+        description = f"{embed.description or ''}\n\n"
+        return (title + description + f"-# لعبة المافيا • كازينو الحفرة • {config.BRAND}")[:4000]
+
+    def _refresh_panel(self, embed=None):
+        self._panel_text.content = self._panel_content(embed)
+
+    def _disable_buttons(self):
+        for button in self._buttons:
+            button.disabled = True
+
+    async def _private_notice(self, interaction, title, description):
+        await interaction.response.send_message(
+            view=StatusPanel(title, description, "warning"),
+            ephemeral=True,
+        )
+
     async def run_timer(self):
         while self.time_left > 0 and not self.game_started:
             await asyncio.sleep(5)
@@ -262,8 +329,11 @@ class MafiaLobbyView(discord.ui.View):
             self.time_left -= 5
             if self.time_left <= 0: await self.auto_start()
             elif self.message:
-                try: await self.message.edit(embed=self.get_embed())
-                except: pass
+                try:
+                    self._refresh_panel()
+                    await self.message.edit(view=self)
+                except discord.HTTPException:
+                    logger.debug("Could not refresh Mafia lobby", exc_info=True)
 
     async def auto_start(self):
         if self.game_started: return
@@ -274,83 +344,83 @@ class MafiaLobbyView(discord.ui.View):
                 description="الحفرة فاضية! (تحتاج 5 لاعبين على الأقل لبدء المافيا)",
                 color=discord.Color.red()
             )
-            await self.ctx.send(embed=cancel_embed)
-            for child in self.children: child.disabled = True
+            self._refresh_panel(cancel_embed)
+            self._disable_buttons()
             if self.message: await self.message.edit(view=self)
             return
 
         self.game_started = True
-        for child in self.children: child.disabled = True
+        self._panel_text.content = "# المافيا بدأت\nاللوبي اتقفل. بيتم توزيع الأدوار السرية."
+        self._disable_buttons()
         if self.message: await self.message.edit(view=self)
         
         task = self.ctx.bot.loop.create_task(run_mafia_game(self.ctx, self.players))
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Mafia", replace_task=self.timer_task):
             task.cancel()
 
-    @discord.ui.button(label="انضمام (Join)", style=discord.ButtonStyle.secondary)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
                 description="اللعبة بدأت خلاص!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if len(self.players) >= 25:
             embed = discord.Embed(
                 description="الحد الأقصى 25 لاعب!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             embed = discord.Embed(
                 description="أنت سجلت اسمك ياعم!",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         else:
             self.players.append(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
 
-    @discord.ui.button(label="مغادرة (Leave)", style=discord.ButtonStyle.secondary)
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
                 description="اللعبة بدأت!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             self.players.remove(interaction.user)
-            await interaction.response.edit_message(embed=self.get_embed())
+            self._refresh_panel()
+            await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
                 description="أنت مش في اللعبة أصلاً!",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
 
-    @discord.ui.button(label="ابدأ الآن", style=discord.ButtonStyle.secondary)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
                 description="للأدمن فقط!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         await interaction.response.defer()
         self.time_left = 0
         await self.auto_start()
 
-    @discord.ui.button(label="+10 ثواني", style=discord.ButtonStyle.secondary, emoji="⏱️")
     async def add_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
                 description="للأدمن فقط!",
                 color=discord.Color.red()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         self.time_left += 10
-        await interaction.response.edit_message(embed=self.get_embed())
+        self._refresh_panel()
+        await interaction.response.edit_message(view=self)
 
 
 # --- CORE GAME LOOP ---
@@ -402,30 +472,51 @@ async def run_mafia_game(ctx, players):
         except Exception:
             logger.exception("Mafia game state registration failed")
 
-        class RoleRevealView(discord.ui.View):
-            def __init__(self): super().__init__(timeout=60)
-            @discord.ui.button(label="👀 اعرف دورك السري", style=discord.ButtonStyle.secondary)
-            async def reveal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user not in alive:
-                    embed = discord.Embed(
-                        description="أنت مش في الجيم!",
-                        color=discord.Color.red()
-                    )
-                    return await interaction.response.send_message(embed=embed, ephemeral=True)
-                r = game_roles[interaction.user]
-                ar_role = "🔪 مافيا" if r == 'mafia' else ("💉 دكتور" if r == 'doctor' else "👤 مواطن غلبان")
-                embed = discord.Embed(
-                    description=f"دورك في اللعبة هو: **{ar_role}**\nاحتفظ بالسر!",
-                    color=discord.Color.blurple()
+        class RoleRevealView(LayoutView):
+            def __init__(self):
+                super().__init__(timeout=60)
+                self._panel_text = TextDisplay(
+                    "# تم توزيع الأدوار\nاضغط على الزرار عشان تعرف دورك في السر. احتفظ بالسر."
                 )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                self.button = discord.ui.Button(
+                    label="اعرف دورك السري",
+                    emoji="👀",
+                    style=discord.ButtonStyle.secondary,
+                    custom_id="mafia_reveal_role",
+                )
+                self.button.callback = self.reveal_btn
+                self.add_item(
+                    Container(
+                        self._panel_text,
+                        Separator(),
+                        ActionRow(self.button),
+                        accent_color=THEME["red_dark"],
+                    )
+                )
 
-        embed = discord.Embed(
-            description="🎲 **تم توزيع الأدوار!** اضغط على الزرار عشان تعرف دورك ايه في السر.",
-            color=discord.Color.blurple()
-        )
+            async def reveal_btn(self, interaction: discord.Interaction):
+                if interaction.user not in alive:
+                    return await interaction.response.send_message(
+                        view=StatusPanel("مش في الجيم", "أنت مش مشارك في اللعبة دي.", "warning"),
+                        ephemeral=True,
+                    )
+                role = game_roles[interaction.user]
+                role_label = (
+                    "🔪 مافيا"
+                    if role == "mafia"
+                    else ("💉 دكتور" if role == "doctor" else "👤 مواطن")
+                )
+                await interaction.response.send_message(
+                    view=StatusPanel(
+                        "دورك السري",
+                        f"دورك في اللعبة هو **{role_label}**. احتفظ بالسر!",
+                        "success",
+                    ),
+                    ephemeral=True,
+                )
+
         reveal_view = RoleRevealView()
-        reveal_view.message = await ctx.send(embed=embed, view=reveal_view)
+        reveal_view.message = await ctx.send(view=reveal_view)
         set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), reveal_view)
         await asyncio.sleep(5) 
         
@@ -436,12 +527,12 @@ async def run_mafia_game(ctx, players):
                 description=f"🌙 **الليلة {day_number}**\nالليل دخل على الحفرة... المافيا بتتحرك.",
                 color=discord.Color.dark_theme()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(view=embed_to_v2(embed))
             
             bb_bytes = await generate_billboard(alive)
             bb_embed = discord.Embed(color=discord.Color.dark_theme())
             bb_embed.set_image(url="attachment://billboard.jpg")
-            await ctx.send(embed=bb_embed, file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
+            await ctx.send(view=embed_to_v2(bb_embed), file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
             await asyncio.sleep(2)
 
             alive_mafias = [m for m in mafias if m in alive]
@@ -460,7 +551,7 @@ async def run_mafia_game(ctx, players):
                     )
                     m_embed.set_image(url="attachment://mafia_looking.jpg")
                     
-                    m_msg = await ctx.send(embed=m_embed, file=mafia_file, view=m_view)
+                    m_msg = await ctx.send(view=m_view, file=mafia_file)
                     m_view.message = m_msg
                     set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), m_view)
                     reminder = asyncio.create_task(poke_reminder(hitman, "mafia", m_view))
@@ -478,11 +569,11 @@ async def run_mafia_game(ctx, players):
                                 description=f"⚠️ **النظام:** المافيا {hitman.mention} نام في العسل لـ 3 جولات ورا بعض! تم استبعاده من اللعبة للكسل.",
                                 color=discord.Color.dark_grey()
                             )
-                            await ctx.send(embed=embed)
+                            await ctx.send(view=embed_to_v2(embed))
                     else:
                         afk_tracker[hitman] = 0
 
-                    for c in m_view.children: c.disabled = True
+                    m_view.disable_controls()
                     try: await m_msg.edit(view=m_view)
                     except discord.HTTPException: pass
                 except asyncio.CancelledError:
@@ -517,7 +608,7 @@ async def run_mafia_game(ctx, players):
                     )
                     d_embed.set_image(url="attachment://doctor_looking.jpg")
                     
-                    d_msg = await ctx.send(embed=d_embed, file=doc_file, view=d_view)
+                    d_msg = await ctx.send(view=d_view, file=doc_file)
                     d_view.message = d_msg
                     set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), d_view)
                     reminder = asyncio.create_task(poke_reminder(doctor, "doctor", d_view))
@@ -535,11 +626,11 @@ async def run_mafia_game(ctx, players):
                                 description=f"⚠️ **النظام:** الدكتور {doctor.mention} اتأخر 3 جولات ومأنقذش حد! تم سحب رخصته واستبعاده من اللعبة.",
                                 color=discord.Color.dark_grey()
                             )
-                            await ctx.send(embed=embed)
+                            await ctx.send(view=embed_to_v2(embed))
                     else:
                         afk_tracker[doctor] = 0
                     
-                    for c in d_view.children: c.disabled = True
+                    d_view.disable_controls()
                     try: await d_msg.edit(view=d_view)
                     except discord.HTTPException: pass
                 except asyncio.CancelledError:
@@ -565,7 +656,7 @@ async def run_mafia_game(ctx, players):
                 description="🌅 **الشمس طلعت على الحفرة...**",
                 color=discord.Color.gold()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(view=embed_to_v2(embed))
             await asyncio.sleep(1) 
             
             if mafia_target_id:
@@ -579,7 +670,7 @@ async def run_mafia_game(ctx, players):
                             color=discord.Color.green()
                         )
                         res_embed.set_image(url="attachment://saved.jpg")
-                        await ctx.send(embed=res_embed, file=discord.File(fp=save_bytes, filename="saved.jpg"))
+                        await ctx.send(view=embed_to_v2(res_embed), file=discord.File(fp=save_bytes, filename="saved.jpg"))
                     else:
                         alive.remove(target_obj)
                         if game_roles[target_obj] == 'doctor':
@@ -589,7 +680,7 @@ async def run_mafia_game(ctx, players):
                                 color=discord.Color.dark_theme()
                             )
                             res_embed.set_image(url="attachment://dead_doc.jpg")
-                            await ctx.send(embed=res_embed, file=discord.File(fp=kill_bytes, filename="dead_doc.jpg"))
+                            await ctx.send(view=embed_to_v2(res_embed), file=discord.File(fp=kill_bytes, filename="dead_doc.jpg"))
                         else:
                             kill_bytes = await generate_action_image("mafia_kill.jpg", target_obj, "dead_civilian")
                             res_embed = discord.Embed(
@@ -597,13 +688,13 @@ async def run_mafia_game(ctx, players):
                                 color=discord.Color.dark_theme()
                             )
                             res_embed.set_image(url="attachment://dead_civ.jpg")
-                            await ctx.send(embed=res_embed, file=discord.File(fp=kill_bytes, filename="dead_civ.jpg"))
+                            await ctx.send(view=embed_to_v2(res_embed), file=discord.File(fp=kill_bytes, filename="dead_civ.jpg"))
             else:
                 embed = discord.Embed(
                     description="الليلة دي عدت بسلام... المافيا نامت ومحدش مات. 🕊️",
                     color=discord.Color.blue()
                 )
-                await ctx.send(embed=embed)
+                await ctx.send(view=embed_to_v2(embed))
 
             await asyncio.sleep(2) 
 
@@ -621,20 +712,15 @@ async def run_mafia_game(ctx, players):
                 color=discord.Color.orange()
             )
             bb_embed.set_image(url="attachment://billboard.jpg")
-            await ctx.send(embed=bb_embed, file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
+            await ctx.send(view=embed_to_v2(bb_embed), file=discord.File(fp=bb_bytes, filename="billboard.jpg"))
             
-            embed = discord.Embed(
-                title="⚖️ التصويت للإعدام",
-                description="في انتظار تصويت المواطنين...",
-                color=discord.Color.gold()
-            )
             vote_view = DayVoteView(alive)
-            vote_msg = await ctx.send(embed=embed, view=vote_view)
+            vote_msg = await ctx.send(view=vote_view)
             vote_view.message = vote_msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), vote_view)
             await vote_view.wait() 
             
-            for c in vote_view.children: c.disabled = True
+            vote_view.disable_controls()
             try: await vote_msg.edit(view=vote_view)
             except discord.HTTPException: pass
             
@@ -647,7 +733,7 @@ async def run_mafia_game(ctx, players):
                     description="محدش صوت أصلاً... اليوم عدى على الفاضي.",
                     color=discord.Color.light_grey()
                 )
-                await ctx.send(embed=embed)
+                await ctx.send(view=embed_to_v2(embed))
             else:
                 final_tally_desc = "**📊 النتيجة النهائية للتصويت:**\n\n"
                 for t_id, count in tally.items():
@@ -661,7 +747,7 @@ async def run_mafia_game(ctx, players):
                     description=final_tally_desc,
                     color=discord.Color.blurple()
                 )
-                await ctx.send(embed=embed)
+                await ctx.send(view=embed_to_v2(embed))
                 await asyncio.sleep(2)
                 
                 sorted_tally = sorted(tally.items(), key=lambda x: x[1], reverse=True)
@@ -677,13 +763,13 @@ async def run_mafia_game(ctx, players):
                         description="الناس اختلفت والأصوات اتعادلت... محدش اتعدم النهاردة. ⚖️",
                         color=discord.Color.light_grey()
                     )
-                    await ctx.send(embed=embed)
+                    await ctx.send(view=embed_to_v2(embed))
                 elif top_target_id == "SKIP":
                     embed = discord.Embed(
                         description="الأغلبية اختارت تفوت التصويت... محدش هيتعدم النهاردة. ⏭️",
                         color=discord.Color.light_grey()
                     )
-                    await ctx.send(embed=embed)
+                    await ctx.send(view=embed_to_v2(embed))
                 else:
                     hanged_player = next((p for p in alive if p.id == top_target_id), None)
                     if hanged_player:
@@ -691,14 +777,14 @@ async def run_mafia_game(ctx, players):
                         try:
                             cur_cog = ctx.bot.get_cog('Currency')
                         except Exception:
+                            logger.exception("Could not resolve the Currency cog for the Mafia item action")
                             cur_cog = None
-                        if cur_cog and cur_cog.get_item_count(hanged_player.id, "veto") > 0:
-                            cur_cog.remove_item(hanged_player.id, "veto", 1)
+                        if cur_cog and cur_cog.remove_item(hanged_player.id, "veto", 1):
                             embed = discord.Embed(
                                 description=f"⛔ **{hanged_player.mention}** استخدم **فيتو**! الناس صوتت ضده بس الفيتو لغى الإعدام... عاش يا وحش!",
                                 color=discord.Color.gold()
                             )
-                            await ctx.send(embed=embed)
+                            await ctx.send(view=embed_to_v2(embed))
                             await asyncio.sleep(2)
                             alive_mafias = [m for m in mafias if m in alive]
                             if len(alive_mafias) == 0:
@@ -716,7 +802,7 @@ async def run_mafia_game(ctx, players):
                             description=f"🚨 الناس قررت تعدم **{hanged_player.mention}**! وبعد ما فتشوه اكتشفوا إنه كان: **{ar_role}**.",
                             color=discord.Color.red()
                         )
-                        await ctx.send(embed=embed)
+                        await ctx.send(view=embed_to_v2(embed))
 
             await asyncio.sleep(2) 
 
@@ -732,6 +818,13 @@ async def run_mafia_game(ctx, players):
             
     except asyncio.CancelledError:
         raise
+    except Exception:
+        logger.exception("Mafia game loop failed")
+        await report_game_failure(
+            ctx,
+            "توقفت المافيا بسبب خطأ",
+            "حصل عطل غير متوقع أثناء اللعبة. تم تسجيل الخطأ، وتم إيقاف الجولة بدل ما تستمر بحالة غير مضمونة.",
+        )
     finally:
         for reminder in reminder_tasks:
             reminder.cancel()
@@ -747,7 +840,7 @@ async def town_wins(ctx, mafias):
         outcome="win",
     )
     embed.set_image(url="attachment://reveal.jpg")
-    await ctx.send(embed=embed, file=discord.File(fp=reveal_bytes, filename="reveal.jpg"), view=WatermarkView())
+    await ctx.send(view=embed_to_v2(embed), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
 async def mafia_wins(ctx, mafias):
     reveal_bytes = await generate_mafia_reveal(mafias)
@@ -757,7 +850,7 @@ async def mafia_wins(ctx, mafias):
         outcome="loss",
     )
     embed.set_image(url="attachment://reveal.jpg")
-    await ctx.send(embed=embed, file=discord.File(fp=reveal_bytes, filename="reveal.jpg"), view=WatermarkView())
+    await ctx.send(view=embed_to_v2(embed), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
 # --- COG COMMANDS ---
 class Mafia(commands.Cog):
@@ -777,10 +870,9 @@ class Mafia(commands.Cog):
             if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "Mafia lobby", view=view):
                 view.timer_task.cancel()
                 return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
-            view.message = await ctx.send(embed=view.get_embed(), file=menu_file, view=view)
+            view.message = await ctx.send(view=view, file=menu_file)
             if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
-                for child in view.children:
-                    child.disabled = True
+                view._disable_buttons()
                 await view.message.edit(view=view)
         except Exception as e:
             if view is not None:
@@ -790,55 +882,102 @@ class Mafia(commands.Cog):
                 description=f"⚠️ تأكد من وجود مجلد `mafiagame` والصور بالأسماء الصحيحة. \nالخطأ: {e}",
                 color=discord.Color.red()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(view=embed_to_v2(embed))
 
     @commands.hybrid_command(name='اكشف', aliases=['scan', 'كشف'], description='استخدم أداة كشف المافيا')
     async def mafia_scan(self, ctx):
-        """🔍 استخدم كشف مافيا: تلميح عن مافيا واحد عايش (بيشتغل في قناة اللعبة)"""
-        cur_cog = self.bot.get_cog('Currency')
+        """Use one scan item and deliver all investigation details privately."""
+        async def respond(title, description, kind="warning"):
+            kwargs = {"ephemeral": True} if getattr(ctx, "interaction", None) is not None else {}
+            return await ctx.send(
+                view=StatusPanel(title, description, kind),
+                **kwargs,
+            )
+
+        cur_cog = self.bot.get_cog("Currency")
         if cur_cog is None:
-            return await ctx.send("❌ سيستم الفلوس واقع! كلم نجلاوي.")
+            return await respond("الاقتصاد غير متاح", "مركز الاقتصاد مش محمّل حاليًا. جرّب تاني بعد إصلاح البوت.")
         if cur_cog.get_item_count(ctx.author.id, "mafia_scan") <= 0:
-            return await ctx.send(f"❌ {ctx.author.mention} معكش **كشف مافيا**! اشتريه من الشوب بـ 150 (`+رصيد` > Shop).")
-        if not hasattr(self.bot, 'active_games') or ctx.channel.id not in self.bot.active_games:
-            return await ctx.send("❌ مفيش لعبة مافيا شغالة هنا!")
-        game_data = self.bot.active_games[ctx.channel.id]
-        game = game_data.get('game_ref')
-        if game is None or getattr(game, 'game_name', '') != 'mafia':
-            return await ctx.send("❌ الأمر ده بيشتغل في لعبة المافيا بس!")
+            return await respond(
+                "أداة الكشف مش موجودة",
+                "مفيش كشف مافيا في شنطتك. تقدر تشتريه من المتجر داخل مركز الاقتصاد.",
+            )
+        active_games = getattr(self.bot, "active_games", {})
+        game_data = active_games.get(ctx.channel.id)
+        if game_data is None:
+            return await respond("مفيش لعبة مافيا", "ابدأ لعبة مافيا في الروم ده الأول.")
+        game = game_data.get("game_ref")
+        if game is None or getattr(game, "game_name", "") != "mafia":
+            return await respond("الأمر خاص بالمافيا", "أداة الكشف بتشتغل داخل جولة مافيا نشطة بس.")
         if ctx.author not in game.alive:
-            return await ctx.send("💀 الميتين مابيكشفوش!")
-        alive_mafias = [m for m in game.mafias if m in game.alive and m != ctx.author]
+            return await respond("أنت خارج الجولة", "اللاعبون اللي خرجوا من الجولة مش بيقدروا يستخدموا أدواتها.")
+        alive_mafias = [member for member in game.mafias if member in game.alive and member != ctx.author]
         if not alive_mafias:
-            return await ctx.send("❌ مفيش مافيا عايشة غيرك (او انت المافيا)!")
+            return await respond("مفيش هدف صالح", "مفيش مافيا تانية عايشة تقدر تكشفها دلوقتي.")
         if not cur_cog.remove_item(ctx.author.id, "mafia_scan", 1):
-            return await ctx.send(f"❌ {ctx.author.mention} أداة الكشف اتستخدمت أو مش موجودة. راجع شنطتك وحاول تاني.")
+            return await respond(
+                "تعذر استخدام الأداة",
+                "الأداة اتستخدمت أو مش موجودة. اتأكد من شنطتك وحاول تاني.",
+            )
+
         hint = random.choice(alive_mafias)
         masked = hint.display_name[:2] + "***"
-        embed = discord.Embed(
+        result_panel = discord.Embed(
             title="🔍 نتيجة الكشف (سري)",
-            description=f"الجهاز بيقول ان **{masked}** ({hint.mention}) عليه حركات مافيا... 👀\n(اتخصم منك 1 كشف)",
-            color=discord.Color.gold()
+            description=(
+                f"الجهاز بيقول إن **{masked}** ({hint.mention}) عليه حركات مافيا... 👀\n"
+                "(اتخصم منك 1 كشف)"
+            ),
+            color=discord.Color.gold(),
         )
         try:
-            await ctx.author.send(embed=embed)
+            await ctx.author.send(
+                view=embed_to_v2(result_panel),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except discord.Forbidden:
             try:
                 cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
-            except Exception as refund_error:
-                print(f"Failed to refund mafia_scan after DM Forbidden: {refund_error}")
-                return await ctx.send("❌ افتح الخاص؛ فشل إرجاع أداة الكشف تلقائيًا، كلم الستاف.")
-            return await ctx.send(f"❌ {ctx.author.mention} افتح الرسائل الخاصة؛ رجعنا أداة الكشف لشنطتك.")
-        except discord.HTTPException as send_error:
+            except Exception:
+                logger.exception(
+                    "Failed to refund mafia_scan after DM Forbidden user_id=%s",
+                    ctx.author.id,
+                )
+                return await respond(
+                    "تعذر استرداد الأداة",
+                    "الخاص مقفول وفشل استرداد أداة الكشف تلقائيًا. تواصل مع إدارة السيرفر قبل استخدام أداة أخرى.",
+                )
+            return await respond(
+                "افتح الرسائل الخاصة",
+                "مش قادر أبعت نتيجة الكشف في الخاص، ورجّعنا الأداة لشنطتك.",
+            )
+        except discord.HTTPException:
             try:
                 cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
-            except Exception as refund_error:
-                print(f"Failed to refund mafia_scan after DM error: {refund_error}")
-                return await ctx.send("❌ فشل إرسال النتيجة وإرجاع الأداة تلقائيًا؛ كلم الستاف.")
-            print(f"Failed to deliver mafia_scan result: {send_error}")
-            return await ctx.send("❌ مقدرناش نبعت النتيجة في الخاص؛ رجعنا أداة الكشف لشنطتك.")
+            except Exception:
+                logger.exception(
+                    "Failed to refund mafia_scan after DM HTTP error user_id=%s",
+                    ctx.author.id,
+                )
+                return await respond(
+                    "تعذر استرداد الأداة",
+                    "فشل إرسال النتيجة واسترداد الأداة تلقائيًا. تواصل مع إدارة السيرفر قبل استخدام أداة أخرى.",
+                )
+            logger.warning(
+                "Could not deliver Mafia scan via DM; refunded item user_id=%s",
+                ctx.author.id,
+                exc_info=True,
+            )
+            return await respond(
+                "تعذر إرسال النتيجة",
+                "ما قدرناش نبعت النتيجة في الخاص، ورجّعنا الأداة لشنطتك.",
+            )
 
-        await ctx.send(f"📩 {ctx.author.mention} نتيجة الكشف اتبعتتلك في الخاص! (عشان اللعبة ماتتحرقش)")
+        return await respond(
+            "النتيجة اتبعتت في الخاص",
+            "راجع رسائلك الخاصة لمعرفة نتيجة الكشف. تفاصيل الهدف لا تظهر في شات اللعبة.",
+            "success",
+        )
 
 async def setup(bot):
     await bot.add_cog(Mafia(bot))

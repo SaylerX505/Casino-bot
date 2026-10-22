@@ -1,10 +1,11 @@
 """Regression tests for the interactive inventory view."""
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import discord
 
-from cogs.casino.currency import CurrencyHubLayout, InventoryView
+from cogs.casino.currency import Currency, CurrencyHubLayout, InventoryView
 
 
 class FakeCurrency:
@@ -88,6 +89,25 @@ class InventoryViewTests(unittest.TestCase):
         self.assertIsNone(view.timeout)
         self.assertTrue(all(custom_ids))
         self.assertTrue({"hubv2_daily", "hubv2_top", "hubv2_shop", "hubv2_transfer"}.issubset(custom_ids))
+
+
+
+class PersistentEconomyViewLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_hub_is_registered_on_load_and_removed_on_unload(self):
+        bot = SimpleNamespace(add_view=Mock(), remove_view=Mock())
+        cog = Currency(bot)
+
+        await cog.cog_load()
+
+        bot.add_view.assert_called_once()
+        view = bot.add_view.call_args.args[0]
+        self.assertIsInstance(view, CurrencyHubLayout)
+        self.assertIsNone(view.timeout)
+
+        cog.cog_unload()
+
+        bot.remove_view.assert_called_once_with(view)
+        self.assertIsNone(cog._persistent_hub_view)
 
 
 if __name__ == "__main__":

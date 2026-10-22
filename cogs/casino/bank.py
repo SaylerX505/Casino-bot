@@ -1,26 +1,49 @@
 # --- SQLITE BANK ---
 """SQLite bank: balances, daily, streaks, inventory, whitelist. Thread-safe + atomic."""
+import math
 import os
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
-DB_FILE = "data/bank.db"
+# Resolve storage from the project root, not the process working directory.
+DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
 _lock = threading.RLock()
 _conn = None
+SQLITE_MAX_INT = (1 << 63) - 1
 
 def _connect():
     global _conn
     if _conn is None:
-        os.makedirs("data", exist_ok=True)
-        _conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+        os.makedirs(os.path.dirname(os.path.abspath(DB_FILE)), exist_ok=True)
+        _conn = sqlite3.connect(DB_FILE, timeout=30, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA synchronous=NORMAL")
+        _conn.execute("PRAGMA busy_timeout=30000")
         _conn.execute("CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0, last_daily REAL NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0)")
         _conn.execute("CREATE TABLE IF NOT EXISTS inventory (user_id TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, item))")
         _conn.execute("CREATE TABLE IF NOT EXISTS whitelist (kind TEXT NOT NULL, target_id INTEGER NOT NULL, PRIMARY KEY (kind, target_id))")
         _conn.execute("CREATE TABLE IF NOT EXISTS guild_admins (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (guild_id, user_id))")
+        _conn.execute("""CREATE TABLE IF NOT EXISTS rps_wagers (
+            game_id TEXT PRIMARY KEY,
+            player_a TEXT NOT NULL,
+            player_b TEXT NOT NULL,
+            amount INTEGER NOT NULL CHECK(amount > 0),
+            status TEXT NOT NULL CHECK(status IN ('active', 'settled', 'refunded')),
+            outcome TEXT,
+            created_at REAL NOT NULL,
+            settled_at REAL
+        )""")
+        _conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rps_wagers_active "
+            "ON rps_wagers(created_at) WHERE status='active'"
+        )
+        _conn.execute(
+            "CREATE TABLE IF NOT EXISTS app_settings ("
+            "setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at REAL NOT NULL)"
+        )
         _conn.commit()
     return _conn
 
@@ -32,7 +55,7 @@ def _ensure(uid):
 def fmt(n):
     try:
         return format(int(n), ",d")
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return str(n)
 
 def now():
@@ -46,8 +69,10 @@ def get_balance(user_id):
         return int(row["balance"]) if row else 0
 
 def update_balance(user_id, amount):
-    """Apply a safe adjustment without allowing overdrafts or integer overflow."""
-    uid, amount = str(user_id), int(amount)
+    """Apply an integer adjustment without overdrafts or implicit type coercion."""
+    if isinstance(amount, bool) or not isinstance(amount, int):
+        raise TypeError("balance adjustment must be an integer")
+    uid = str(user_id)
     if amount > 0:
         credited, balance = credit_balance(uid, amount)
         if not credited:
@@ -62,9 +87,9 @@ def update_balance(user_id, amount):
 
 
 def debit_balance(user_id, amount):
-    """Debit only when the account can cover the full amount."""
-    uid, amount = str(user_id), int(amount)
-    if amount <= 0 or amount > (1 << 63) - 1:
+    """Debit only when the account can cover the full integer amount."""
+    uid = str(user_id)
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0 or amount > SQLITE_MAX_INT:
         return False, get_balance(uid)
     with _lock:
         c = _connect()
@@ -89,9 +114,11 @@ def debit_balance(user_id, amount):
 
 
 def credit_balance(user_id, amount):
-    """Credit coins atomically without exceeding SQLite's signed integer range."""
-    uid, amount = str(user_id), int(amount)
-    sqlite_max_int = (1 << 63) - 1
+    """Credit integer coins atomically without exceeding SQLite's signed integer range."""
+    uid = str(user_id)
+    sqlite_max_int = SQLITE_MAX_INT
+    if isinstance(amount, bool) or not isinstance(amount, int):
+        return False, get_balance(uid)
     if amount <= 0 or amount > sqlite_max_int:
         return False, get_balance(uid)
     with _lock:
@@ -123,10 +150,16 @@ def remove_balance(user_id, amount):
 
 
 def transfer_balance(sender_id, recipient_id, amount):
-    """Transfer coins atomically; return (success, sender_balance_after)."""
-    sender, recipient, amount = str(sender_id), str(recipient_id), int(amount)
-    sqlite_max_int = (1 << 63) - 1
-    if amount <= 0 or amount > sqlite_max_int or sender == recipient:
+    """Transfer integer coins atomically; return (success, sender_balance_after)."""
+    sender, recipient = str(sender_id), str(recipient_id)
+    sqlite_max_int = SQLITE_MAX_INT
+    if (
+        isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+        or amount > sqlite_max_int
+        or sender == recipient
+    ):
         return False, get_balance(sender)
     with _lock:
         c = _connect()
@@ -388,10 +421,212 @@ def place_bet(player_a, player_b, amount):
             raise
 
 
+
+def create_rps_wager(game_id, player_a, player_b, amount):
+    """Atomically debit both integer stakes and persist a recoverable wager."""
+    game_id, a, b = str(game_id), str(player_a), str(player_b)
+    if (
+        not game_id
+        or a == b
+        or isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+        or amount > SQLITE_MAX_INT
+    ):
+        return False
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            if c.execute("SELECT 1 FROM rps_wagers WHERE game_id=?", (game_id,)).fetchone():
+                c.rollback()
+                return False
+
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (a,))
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (b,))
+            row_a = c.execute("SELECT balance FROM users WHERE user_id=?", (a,)).fetchone()
+            row_b = c.execute("SELECT balance FROM users WHERE user_id=?", (b,)).fetchone()
+            if not row_a or int(row_a["balance"]) < amount or not row_b or int(row_b["balance"]) < amount:
+                c.rollback()
+                return False
+
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
+            c.execute(
+                "INSERT INTO rps_wagers "
+                "(game_id,player_a,player_b,amount,status,created_at) VALUES (?,?,?,?,'active',?)",
+                (game_id, a, b, amount, now()),
+            )
+            c.commit()
+            return True
+        except Exception:
+            c.rollback()
+            raise
+
+
+def settle_rps_wager(game_id, winner_id=None):
+    """Settle or refund a persisted RPS wager exactly once."""
+    game_id = str(game_id)
+    sqlite_max_int = SQLITE_MAX_INT
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            wager = c.execute(
+                "SELECT player_a,player_b,amount,status,outcome FROM rps_wagers WHERE game_id=?",
+                (game_id,),
+            ).fetchone()
+            if wager is None:
+                c.rollback()
+                return {"settled": False, "reason": "not_found"}
+            if wager["status"] != "active":
+                c.rollback()
+                status = str(wager["status"])
+                amount = int(wager["amount"])
+                outcome = str(wager["outcome"] or "")
+                settled_winner = (
+                    outcome.partition(":")[2]
+                    if status == "settled" and outcome.startswith("winner:")
+                    else None
+                )
+                payout = 0
+                tax = 0
+                if settled_winner is not None:
+                    pot = amount * 2
+                    payout = (pot * 95) // 100
+                    tax = pot - payout
+                return {
+                    "settled": True,
+                    "already_settled": True,
+                    "status": status,
+                    "reason": None,
+                    "winner_id": settled_winner,
+                    "payout": payout,
+                    "tax": tax,
+                }
+
+            a, b, amount = str(wager["player_a"]), str(wager["player_b"]), int(wager["amount"])
+            if winner_id is not None and str(winner_id) not in (a, b):
+                c.rollback()
+                raise ValueError("winner is not a participant in this wager")
+
+            rows = c.execute(
+                "SELECT user_id,balance FROM users WHERE user_id IN (?,?)", (a, b)
+            ).fetchall()
+            balances = {str(row["user_id"]): int(row["balance"]) for row in rows}
+            if a not in balances or b not in balances:
+                c.rollback()
+                raise RuntimeError("RPS wager references a missing wallet")
+
+            status = "refunded"
+            outcome = "refund"
+            reason = None
+            payout = 0
+            tax = 0
+
+            def refund_stakes():
+                if balances[a] > sqlite_max_int - amount or balances[b] > sqlite_max_int - amount:
+                    return False
+                c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amount, a))
+                c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amount, b))
+                return True
+
+            if winner_id is not None:
+                winner = str(winner_id)
+                pot = amount * 2
+                payout = (pot * 95) // 100
+                tax = pot - payout
+                if balances[winner] <= sqlite_max_int - payout:
+                    c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (payout, winner))
+                    status = "settled"
+                    outcome = "winner:" + winner
+                else:
+                    if not refund_stakes():
+                        c.rollback()
+                        return {"settled": False, "reason": "balance_limit"}
+                    reason = "balance_limit"
+                    payout = 0
+                    tax = 0
+            elif not refund_stakes():
+                c.rollback()
+                return {"settled": False, "reason": "balance_limit"}
+
+            c.execute(
+                "UPDATE rps_wagers SET status=?, outcome=?, settled_at=? "
+                "WHERE game_id=? AND status='active'",
+                (status, outcome, now(), game_id),
+            )
+            c.commit()
+            return {
+                "settled": True,
+                "already_settled": False,
+                "status": status,
+                "reason": reason,
+                "winner_id": str(winner_id) if winner_id is not None and status == "settled" else None,
+                "payout": payout,
+                "tax": tax,
+            }
+        except Exception:
+            c.rollback()
+            raise
+
+
+def refund_orphaned_rps_wagers():
+    """Refund interrupted RPS wagers, isolating errors so one record cannot block recovery."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id FROM rps_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        game_ids = [str(row["game_id"]) for row in rows]
+
+    refunded = 0
+    pending = 0
+    for game_id in game_ids:
+        try:
+            result = settle_rps_wager(game_id)
+        except Exception:
+            pending += 1
+            logger.exception(
+                "Could not recover orphaned RPS wager game_id=%s; escrow remains recorded",
+                game_id,
+            )
+            continue
+
+        if not result.get("settled"):
+            pending += 1
+            logger.error(
+                "Orphaned RPS wager remains active game_id=%s reason=%s",
+                game_id,
+                result.get("reason", "unknown"),
+            )
+        elif result.get("status") == "refunded":
+            refunded += 1
+
+    if pending:
+        logger.error(
+            "%s orphaned RPS wager(s) remain active and require retry or operator reconciliation",
+            pending,
+        )
+    return refunded
+
+
+def active_rps_wager_ids():
+    """Return active escrow IDs in stable order for startup recovery workers."""
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id FROM rps_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        return [str(row["game_id"]) for row in rows]
+
+
 def charge_up_to(user_id, amount):
-    """Charge at most the available balance; return (charged, new_balance)."""
-    uid, amount = str(user_id), int(amount)
-    if amount <= 0 or amount > (1 << 63) - 1:
+    """Charge at most the available integer balance; return (charged, new_balance)."""
+    uid = str(user_id)
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0 or amount > SQLITE_MAX_INT:
         return 0, get_balance(uid)
     with _lock:
         c = _connect()
@@ -409,12 +644,23 @@ def charge_up_to(user_id, amount):
             raise
 
 def set_balance(user_id, amount):
+    """Set a wallet balance to a non-negative SQLite-safe integer."""
+    if isinstance(amount, bool) or not isinstance(amount, int):
+        raise TypeError("balance must be an integer")
+    if amount < 0 or amount > SQLITE_MAX_INT:
+        raise ValueError("balance must be within SQLite's non-negative integer range")
+
     uid = str(user_id)
     with _lock:
-        _ensure(uid)
-        _connect().execute("UPDATE users SET balance=? WHERE user_id=?", (int(amount), uid))
-        _connect().commit()
-
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            c.execute("UPDATE users SET balance=? WHERE user_id=?", (amount, uid))
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
 def get_daily(uid):
     uid = str(uid)
     with _lock:
@@ -423,12 +669,34 @@ def get_daily(uid):
         return float(row["last_daily"]), int(row["streak"])
 
 def set_daily(uid, last, streak):
+    """Persist a valid daily timestamp and non-negative integer streak."""
+    if isinstance(last, bool):
+        raise TypeError("Daily timestamp must be numeric")
+    try:
+        last_daily = float(last)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("Daily timestamp must be finite and non-negative") from None
+    if not math.isfinite(last_daily) or last_daily < 0:
+        raise ValueError("Daily timestamp must be finite and non-negative")
+    if isinstance(streak, bool) or not isinstance(streak, int) or streak < 0:
+        raise ValueError("Daily streak must be a non-negative integer")
+    if streak > SQLITE_MAX_INT:
+        raise ValueError("Daily streak exceeds SQLite's integer range")
+
     uid = str(uid)
     with _lock:
-        _ensure(uid)
-        _connect().execute("UPDATE users SET last_daily=?, streak=? WHERE user_id=?", (float(last), int(streak), uid))
-        _connect().commit()
-
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            c.execute(
+                "UPDATE users SET last_daily=?, streak=? WHERE user_id=?",
+                (last_daily, streak, uid),
+            )
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
 def get_item_count(user_id, item):
     with _lock:
         row = _connect().execute("SELECT qty FROM inventory WHERE user_id=? AND item=?", (str(user_id), item)).fetchone()
@@ -445,21 +713,46 @@ def top_balances(limit=10):
         return [(r["user_id"], int(r["balance"])) for r in rows]
 
 def add_item(user_id, item, amount=1):
+    """Add a strictly positive quantity without overflowing SQLite's integer range."""
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
+        raise ValueError("item quantity must be a positive SQLite-safe integer")
+    if not isinstance(item, str) or not item.strip():
+        raise ValueError("item name is required")
+
     uid = str(user_id)
     with _lock:
-        _ensure(uid)
-        row = _connect().execute("SELECT qty FROM inventory WHERE user_id=? AND item=?", (uid, item)).fetchone()
-        if row is None:
-            _connect().execute("INSERT INTO inventory (user_id, item, qty) VALUES (?,?,?)", (uid, item, int(amount)))
-        else:
-            _connect().execute("UPDATE inventory SET qty = qty + ? WHERE user_id=? AND item=?", (int(amount), uid, item))
-        _connect().commit()
-
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute(
+                "SELECT qty FROM inventory WHERE user_id=? AND item=?", (uid, item)
+            ).fetchone()
+            if row is None:
+                c.execute(
+                    "INSERT INTO inventory (user_id, item, qty) VALUES (?,?,?)",
+                    (uid, item, amount),
+                )
+            else:
+                current = int(row["qty"])
+                if current < 0 or current > SQLITE_MAX_INT - amount:
+                    raise OverflowError("inventory quantity would exceed SQLite's integer range")
+                c.execute(
+                    "UPDATE inventory SET qty=qty+? WHERE user_id=? AND item=?",
+                    (amount, uid, item),
+                )
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
 def remove_item(user_id, item, amount=1):
     """Atomically consume inventory only when sufficient quantity exists."""
-    uid, amount = str(user_id), int(amount)
-    if amount <= 0 or amount > (1 << 63) - 1:
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
         return False
+    if not isinstance(item, str) or not item.strip():
+        return False
+
+    uid = str(user_id)
     with _lock:
         c = _connect()
         try:
@@ -477,7 +770,6 @@ def remove_item(user_id, item, amount=1):
         except Exception:
             c.rollback()
             raise
-
 def get_whitelist():
     with _lock:
         rows = _connect().execute("SELECT kind, target_id FROM whitelist").fetchall()
@@ -510,10 +802,18 @@ def backup_database(destination):
 
 
 def reset_all():
+    """Reset wallets only when no persisted RPS wager needs those wallet rows."""
     with _lock:
         c = _connect()
         try:
             c.execute("BEGIN IMMEDIATE")
+            active_wager = c.execute(
+                "SELECT game_id FROM rps_wagers WHERE status='active' LIMIT 1"
+            ).fetchone()
+            if active_wager is not None:
+                raise RuntimeError(
+                    "cannot reset the economy while active RPS wagers exist"
+                )
             c.execute("DELETE FROM users")
             c.execute("DELETE FROM inventory")
             c.commit()
@@ -550,3 +850,40 @@ def migrate_from_json(data):
     return counts
 
 
+
+
+# --- SMALL PERSISTENT APPLICATION SETTINGS ---
+def get_setting(key, default=None):
+    """Read a non-sensitive application setting without performing schema writes."""
+    if not isinstance(key, str) or not key.strip():
+        raise ValueError("setting key must be a non-empty string")
+    with _lock:
+        row = _connect().execute(
+            "SELECT setting_value FROM app_settings WHERE setting_key=?", (key.strip(),)
+        ).fetchone()
+        return row["setting_value"] if row is not None else default
+
+
+def set_setting(key, value):
+    """Atomically persist a small application setting in the existing SQLite database."""
+    if not isinstance(key, str) or not key.strip():
+        raise ValueError("setting key must be a non-empty string")
+    value = str(value)
+    with _lock:
+        connection = _connect()
+        connection.execute(
+            "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(setting_key) DO UPDATE SET "
+            "setting_value=excluded.setting_value, updated_at=excluded.updated_at",
+            (key.strip(), value, time.time()),
+        )
+        connection.commit()
+
+
+def close_database():
+    """Close the process-local SQLite connection cleanly during shutdown."""
+    global _conn
+    with _lock:
+        if _conn is not None:
+            _conn.close()
+            _conn = None

@@ -28,13 +28,25 @@ An advanced casino and social-games Discord bot for the Çukur server.
 
 The bot uses the configured prefix `+`. See the in-bot help menu for the available commands and game rules.
 
+## Setup wizard
+
+Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set a separate allowed-channel list for each game, disable or reopen individual games, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.
+
+## Single-server configuration
+
+This bot is designed to run in one Discord server. `HOME_GUILD_ID` is required: the process refuses to start when it is missing. When configured, prefix commands and slash commands are restricted to that guild, slash commands are registered as guild commands, and the bot leaves other guilds. `AI_GUILD_ID` can override the AI guild separately. Configure `CURRENCY_LOG_CHANNEL_ID` and, when needed, `AI_ALLOWED_ROLE_IDS` as comma-separated Discord IDs.
+
 ## Data and persistence
 
-The economy's SQLite database is configured at the relative path `data/bank.db`. Start the process from the repository root and ensure that the host keeps the project's data directory on persistent storage between restarts and deployments.
+The economy and small application settings are stored in SQLite at the project-root `data/bank.db` by default. Set `BANK_DB_FILE` only if the host requires a custom path. Mount persistent storage at `/app/data` when using Docker. Keep only one bot process connected to a given SQLite file.
 
-Do not delete, replace, or recreate the live database as part of an ordinary code update. Before a deployment that could affect persistence, take a backup of the active database while the bot is stopped or through a consistent SQLite backup method. The files under `data/` and `archive-wrapper-files/` may represent different snapshots; do not assume an archived database is the currently active one.
+Never commit the live database, SQLite journal files, user histories, activity snapshots, runtime logs, backups, or real environment secrets. Archived source snapshots are excluded from Docker images. Static game content such as `data/database.json` and `data/fazoora.json` remains in the repository because the games need it.
 
-AI conversation/state data is stored in `data/ai_data.json`. Treat stored user data and backups as sensitive and restrict access to them.
+AI conversation history is kept **in memory only**, scoped by guild, channel, and user; it is not written to a JSON file and is cleared on restart. The bot no longer reads recent channel history to add other members' messages to an AI request. Only the invoking user's prompt and their own recent AI conversation are sent to the configured DeepSeek API. The `/ai-forget` or `+ai-forget` command clears that user's context in the current channel. Configure the AI role allowlist from `/wizard` (the host's `AI_ALLOWED_ROLE_IDS` is used until a server-specific override is saved) and provide the required API key only on the host. The wizard will not enable AI unless `DEEPSEEK_API_KEY` is present.
+
+The small AI-enabled setting is stored in the SQLite database. The Git repository's earlier commits may still contain deleted data files; deleting files from current branch snapshots does not remove historical Git objects. A coordinated history rewrite and post-rewrite verification are still needed before claiming the historical copies have been purged.
+
+The private `/wizard` also configures the economy-audit and command-error log channels independently for this server. Set each destination to a text/announcement channel the bot can view and send to, or explicitly disable that log type. Command and economy log delivery checks the destination guild before sending, and automated log panels disable mentions. Unexpected prefix and slash command errors use the same redacted, Components V2 reporting path.
 
 ## Docker deployment
 
@@ -62,11 +74,11 @@ python -m compileall -q main.py config.py cogs tests
 python -m unittest discover -s tests -v
 ```
 
-The tests use a temporary SQLite database and should not operate on the live economy database. GitHub Actions runs these checks on pushes and pull requests and builds the Docker image as a deployment smoke check.
+The tests use temporary SQLite databases and should not operate on the live economy database. RPS wagers are recorded in the economy database as escrow; unresolved settlements retry with bounded backoff while the process is alive, remaining orphaned wagers are refunded at startup, and settlement is idempotent. Run only one bot instance against a given economy database. GitHub Actions runs these checks on pushes and pull requests and builds the Docker image as a deployment smoke check.
 
 ## Deployment notes
 
 - Store tokens in environment variables, not in source code.
 - Preserve persistent storage across host redeployments.
 - Verify the bot's startup logs and test a small set of commands in a non-production channel after deploying a new version.
-- The automated suite cannot replace an end-to-end test against a real Discord server.
+- The automated suite cannot replace an end-to-end test against a real Discord server. Use [`PRODUCTION_CHECKLIST.md`](PRODUCTION_CHECKLIST.md) as the release gate before switching a live host to a new image.

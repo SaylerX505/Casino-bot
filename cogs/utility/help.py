@@ -1,5 +1,4 @@
 import asyncio
-import random
 
 import discord
 from discord import app_commands
@@ -8,11 +7,8 @@ from discord.ui import ActionRow, Container, LayoutView, Select, Separator, Text
 
 import config
 from cogs.casino.game_registry import release_game_task
+from cogs.casino.permissions import has_staff_access
 from cogs.utility.theme import StatusPanel
-from cogs.casino.permissions import (
-    has_admin_access,
-    has_staff_access,
-)
 
 
 def t(text: str) -> str:
@@ -210,13 +206,31 @@ class HelpPageView(LayoutView):
                 pass
 
 
-class HelpEntryView(discord.ui.View):
+class HelpEntryView(LayoutView):
     def __init__(self, bot):
         super().__init__(timeout=180)
         self.bot = bot
+        container = Container(
+            TextDisplay(
+                f"# Çukur • Help Center\n"
+                f"**Prefix:** `{config.PREFIX}`\n\n"
+                "افتح قائمة المساعدة الخاصة بيك عشان تشوف الأوامر المتاحة حسب صلاحياتك."
+            ),
+            Separator(),
+            accent_color=config.EMBED_COLOR,
+        )
+        row = ActionRow()
+        button = discord.ui.Button(
+            label="افتح المساعدة الخاصة",
+            emoji="📚",
+            style=discord.ButtonStyle.secondary,
+        )
+        button.callback = self.open_help
+        row.add_item(button)
+        container.add_item(row)
+        self.add_item(container)
 
-    @discord.ui.button(label="افتح المساعدة الخاصة", emoji="📚", style=discord.ButtonStyle.secondary)
-    async def open_help(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def open_help(self, interaction: discord.Interaction):
         latency = round(self.bot.latency * 1000)
         view = HelpLayout(interaction.user, latency, private_root=True)
         await interaction.response.send_message(view=view, ephemeral=True)
@@ -253,7 +267,7 @@ class HelpCommand(commands.Cog):
                     "❌ مقدرناش نشغّل الأمر ده. جرّب من قائمة المساعدة.",
                     ephemeral=True,
                 )
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - keep invocation failures on the normal command error path.
             if ctx is not None:
                 await command.dispatch_error(ctx, commands.CommandInvokeError(error))
             elif not interaction.response.is_done():
@@ -338,6 +352,14 @@ class HelpCommand(commands.Cog):
             )
         await interaction.response.send_message(view=ShopView(cog), ephemeral=True)
 
+    @app_commands.command(name="commands", description="عرض قائمة الأوامر المتاحة حسب صلاحياتك")
+    @app_commands.guild_only()
+    async def commands_menu(self, interaction: discord.Interaction):
+        latency = round(self.bot.latency * 1000)
+        view = HelpLayout(interaction.user, latency, private_root=True)
+        await interaction.response.send_message(view=view, ephemeral=True)
+        view.message = await interaction.original_response()
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -349,16 +371,8 @@ class HelpCommand(commands.Cog):
             view.message = await ctx.send(view=view, ephemeral=True)
             return
 
-        embed = discord.Embed(
-            title="Çukur • Help Center",
-            description=(
-                f"**Prefix:** `{config.PREFIX}`  ·  **Latency:** {latency}ms\n\n"
-                "افتح قائمة المساعدة الخاصة بيك من الزر تحت."
-            ),
-            color=config.EMBED_COLOR,
-        )
-        embed.set_thumbnail(url=config.SERVER_LOGO_URL)
-        await ctx.send(embed=embed, view=HelpEntryView(self.bot))
+        view = HelpEntryView(self.bot)
+        view.message = await ctx.send(view=view)
 
     @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
     async def stop_game(self, ctx):
@@ -395,9 +409,9 @@ class HelpCommand(commands.Cog):
             view.stop()
         try:
             await asyncio.wait_for(asyncio.shield(game_task), timeout=5)
-        except (asyncio.CancelledError, asyncio.TimeoutError):
+        except (asyncio.CancelledError, TimeoutError):
             pass
-        except Exception:
+        except Exception:  # noqa: BLE001 - cancellation cleanup must not skip registry release.
             self.bot.dispatch("game_shutdown_error", ctx.channel.id, game_task)
         finally:
             release_game_task(self.bot, ctx.channel.id, game_task)
