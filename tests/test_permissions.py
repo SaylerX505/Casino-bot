@@ -7,9 +7,9 @@ import config
 from cogs.casino import bank
 from cogs.casino.permissions import (
     ai_enabled_setting_key,
+    configured_ai_enabled_for_guild,
     has_admin_access,
     has_staff_access,
-    configured_ai_enabled_for_guild,
 )
 
 
@@ -72,17 +72,17 @@ class PermissionTierTests(unittest.TestCase):
         get_setting.assert_called_once_with(ai_enabled_setting_key(123))
 
         with patch("cogs.casino.permissions.bank.get_setting", return_value="false"):
-            self.assertFalse(is_ai_enabled_for_guild(123, default=True))
+            self.assertFalse(configured_ai_enabled_for_guild(123, default=True))
 
         with patch("cogs.casino.permissions.bank.get_setting", return_value="true"):
-            self.assertTrue(is_ai_enabled_for_guild(123, default=False))
+            self.assertTrue(configured_ai_enabled_for_guild(123, default=False))
 
     def test_ai_enablement_fails_closed_when_override_cannot_be_read(self):
         with patch(
             "cogs.casino.permissions.bank.get_setting",
             side_effect=OSError("simulated database fault"),
         ):
-            self.assertFalse(is_ai_enabled_for_guild(123, default=True))
+            self.assertFalse(configured_ai_enabled_for_guild(123, default=True))
 
 
 if __name__ == "__main__":
