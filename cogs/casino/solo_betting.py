@@ -81,6 +81,105 @@ def _spin_slots(_choice: str, stake: int) -> tuple[str, bool, int]:
     return result, False, 0
 
 
+_STARTUP_PANEL_TASKS: set[asyncio.Task] = set()
+_GAME_TITLES = {
+    "coinflip": "رمي العملة",
+    "dice": "رمي النرد",
+    "slots": "ماكينة الحظ",
+    "blackjack": "Blackjack",
+}
+
+
+async def _publish_interrupted_wager_panel(bot, record, receipt):
+    """Replace a stale game panel after the matching wager has been safely refunded."""
+    if (
+        receipt.get("status") != "refunded"
+        or receipt.get("outcome") != "refund"
+    ):
+        return
+    channel_id = record.get("channel_id")
+    message_id = record.get("message_id")
+    if not channel_id or not message_id:
+        return
+
+    try:
+        await bot.wait_until_ready()
+        channel = bot.get_channel(int(channel_id))
+        if channel is None:
+            channel = await bot.fetch_channel(int(channel_id))
+        message = await channel.fetch_message(int(message_id))
+        title = _GAME_TITLES.get(str(record.get("game_type")), "اللعبة")
+        stake = int(record.get("stake", receipt.get("stake", 0)))
+        await message.edit(
+            view=StatusPanel(
+                "الجولة اتوقفت بعد إعادة التشغيل",
+                (
+                    f"الجولة السابقة من **{title}** ماكملتش قبل ما البوت يقفل. "
+                    f"اترد رهانك بالكامل: **{stake:,}** {COIN}. "
+                    "تقدر تبدأ جولة جديدة؛ مفيش مكسب أو خسارة اتحسبت من غير نتيجة مؤكدة."
+                ),
+                "warning",
+            )
+        )
+    except asyncio.CancelledError:
+        raise
+    except discord.NotFound:
+        logger.info(
+            "Interrupted wager refunded but original panel no longer exists game_id=%s",
+            record.get("game_id"),
+        )
+    except discord.Forbidden:
+        logger.warning(
+            "Interrupted wager refunded but the bot cannot access its panel game_id=%s",
+            record.get("game_id"),
+        )
+    except discord.HTTPException:
+        logger.warning(
+            "Interrupted wager refunded but its old panel could not be updated game_id=%s",
+            record.get("game_id"),
+            exc_info=True,
+        )
+
+
+async def recover_orphaned_casino_wagers(bot, schedule_recovery):
+    """Refund unfinished solo bets at startup and close their stale Discord panels."""
+    records = await asyncio.to_thread(bank.active_casino_wager_records)
+    refunded = await asyncio.to_thread(bank.refund_orphaned_casino_wagers)
+    active_ids = await asyncio.to_thread(bank.active_casino_wager_ids)
+    active_set = set(active_ids)
+    records_by_id = {str(record["game_id"]): record for record in records}
+
+    for game_id, record in records_by_id.items():
+        has_panel = bool(record.get("channel_id") and record.get("message_id"))
+        if game_id in active_set:
+            callback = (
+                partial(_publish_interrupted_wager_panel, bot, record)
+                if has_panel
+                else None
+            )
+            schedule_recovery(game_id, force_refund=True, callback=callback)
+            continue
+
+        receipt = await asyncio.to_thread(bank.casino_wager_status, game_id)
+        if (
+            has_panel
+            and receipt is not None
+            and receipt.get("status") == "refunded"
+            and receipt.get("outcome") == "refund"
+        ):
+            task = asyncio.create_task(
+                _publish_interrupted_wager_panel(bot, record, receipt)
+            )
+            _STARTUP_PANEL_TASKS.add(task)
+            task.add_done_callback(_STARTUP_PANEL_TASKS.discard)
+
+    for game_id in active_ids:
+        if str(game_id) not in records_by_id:
+            schedule_recovery(game_id, force_refund=True)
+
+    return refunded, active_ids
+
+
 class SoloWagerView(LayoutView):
     """One-message solo game with requester-bound controls and durable settlement."""
 
@@ -244,8 +343,7 @@ class SoloWagerView(LayoutView):
         self.game_id = game_id
 
         try:
-            created = await asyncio.to_thread(
-                bank.create_casino_wager,
+            wager_args = (
                 game_id,
                 self.requester.id,
                 self.game_type,
@@ -255,6 +353,20 @@ class SoloWagerView(LayoutView):
                 won,
                 payout,
             )
+            channel_id = getattr(interaction, "channel_id", None)
+            message_id = getattr(self.message, "id", None)
+            if isinstance(channel_id, int) and isinstance(message_id, int):
+                created = await asyncio.to_thread(
+                    bank.create_casino_wager,
+                    *wager_args,
+                    channel_id=channel_id,
+                    message_id=message_id,
+                )
+            else:
+                created = await asyncio.to_thread(
+                    bank.create_casino_wager,
+                    *wager_args,
+                )
         except asyncio.CancelledError:
             self.cog._schedule_recovery(game_id, force_refund=True, callback=self._recovered)
             raise
@@ -402,8 +514,10 @@ class SoloBetting(commands.Cog):
 
     async def cog_load(self):
         try:
-            await asyncio.to_thread(bank.refund_orphaned_casino_wagers)
-            active_ids = await asyncio.to_thread(bank.active_casino_wager_ids)
+            refunded, active_ids = await recover_orphaned_casino_wagers(
+                self.bot,
+                self._schedule_recovery,
+            )
         except Exception:
             self._wagers_ready = False
             logger.exception(
@@ -412,10 +526,10 @@ class SoloBetting(commands.Cog):
             return
 
         self._wagers_ready = True
-        for game_id in active_ids:
-            self._schedule_recovery(game_id, force_refund=True)
+        if refunded:
+            logger.warning("Refunded %s interrupted solo casino wager(s) during startup", refunded)
         if active_ids:
-            logger.warning("Scheduled refunds for %s unfinished solo casino wager(s)", len(active_ids))
+            logger.warning("Scheduled recovery for %s unresolved solo casino wager(s)", len(active_ids))
 
     async def _settle_with_retries(self, game_id: str, *, force_refund: bool = False) -> dict:
         for attempt in range(3):
