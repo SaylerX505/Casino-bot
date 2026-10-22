@@ -333,14 +333,37 @@ async def on_app_command_error(interaction, error):
 
 
 # --- EXTENSION LOADER ---
+NON_COG_MODULES = frozenset({
+    "bank.py",
+    "permissions.py",
+    "game_registry.py",
+    "game_assets.py",
+    "currency_catalog.py",
+    "currency_views.py",
+    "geoguessr_art.py",
+    "geoguessr_storage.py",
+    "geoguessr_views.py",
+    "mafia_art.py",
+})
+UTILITY_EXTENSION_ALLOWLIST = frozenset({"help.py", "ai.py", "admin.py", "wizard.py"})
+
+
+def should_load_extension(directory: str, filename: str) -> bool:
+    """Return whether a Python file is a Discord extension rather than a helper module."""
+    if not filename.endswith(".py") or filename.startswith("__"):
+        return False
+    if directory == "cogs.casino":
+        return filename not in NON_COG_MODULES
+    if directory == "cogs.utility":
+        return filename in UTILITY_EXTENSION_ALLOWLIST
+    return False
+
+
 async def load_cogs():
     """Automatically loads all python files inside the cogs subfolders"""
     import pathlib
     base_dir = pathlib.Path(__file__).parent
     cog_directories = ['cogs.casino', 'cogs.utility']
-    # --- HELPER MODULE FILTER ---
-    utility_allow = {'help.py', 'ai.py', 'admin.py', 'wizard.py'}
-
     failures = []
     logger = logging.getLogger("casino.extensions")
     for directory in cog_directories:
@@ -350,19 +373,10 @@ async def load_cogs():
             continue
 
         for filename in sorted(os.listdir(folder_path)):
-            if filename.endswith('.py') and not filename.startswith('__'):
-                if directory == 'cogs.casino':
-                    # --- NON-COG MODULES ---
-                    allowed = filename not in {'bank.py', 'permissions.py', 'game_registry.py'}
-                elif directory == 'cogs.utility':
-                    allowed = filename in utility_allow
-                else:
-                    allowed = False
+            if not should_load_extension(directory, filename):
+                continue
 
-                if not allowed:
-                    continue
-
-                cog_path = f"{directory}.{filename[:-3]}"
+            cog_path = f"{directory}.{filename[:-3]}"
                 try:
                     await bot.load_extension(cog_path)
                     logger.info("Loaded extension %s", cog_path)
