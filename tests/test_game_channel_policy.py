@@ -87,6 +87,13 @@ class GameChannelPolicyTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(permissions.game_key_from_command_name(name), expected)
 
+    def test_blackjack_slash_command_uses_its_configured_game_key(self):
+        interaction = SimpleNamespace(
+            command=SimpleNamespace(name="blackjack", qualified_name="blackjack"),
+            data={"name": "blackjack", "options": [{"name": "bet", "type": 3, "value": "100"}]},
+        )
+        self.assertEqual(permissions.game_key_from_interaction(interaction), "blackjack")
+
     def test_nested_slash_game_command_is_resolved(self):
         interaction = SimpleNamespace(
             command=SimpleNamespace(name="games", qualified_name="games mafia"),
