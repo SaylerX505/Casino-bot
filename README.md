@@ -33,7 +33,8 @@ The bot uses the configured prefix `+`. See the in-bot help menu for the availab
 - `/coinflip bet:100` or `+coinflip 100` opens a choice panel in the channel; only the requester can use its controls.
 - `+coinflip 100` / `/coinflip bet:100`: the player chooses Heads or Tails. A correct guess receives a **1.9x gross return** (0.9x net profit); a miss loses the stake.
 - `+dice 100` / `/dice bet:100`: the player chooses a number from 1 to 6. The odds are 1 in 6 and a correct guess receives a **5.7x gross return** (4.7x net profit).
-- Both games share one configurable V2 betting panel and edit in place instead of posting a second result message. The bet is debited only after the player chooses.
+- `+slots 100` / `/slots bet:100`: spin three independent reels. One matching pair returns **1.7x gross**; a triple returns **5x–15x gross**, depending on the symbol.
+- All three games share one configurable V2 betting panel and edit in place instead of posting a second result message. The bet is debited only after the player chooses/spins.
 - Solo wagers and their outcomes are recorded transactionally with economy ledger entries. Settlement is idempotent; an interrupted active session is refunded during startup recovery.
 - Configure the permitted channels through `/wizard`, just like the other games.
 
