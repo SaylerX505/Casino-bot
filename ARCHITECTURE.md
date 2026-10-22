@@ -13,6 +13,9 @@ The bot remains a single-process Discord application, but each subsystem should 
 - `cogs/casino/geoguessr_views.py`: Components V2 lobby, round, and results panels. The lobby receives its game-loop callable by dependency injection and does not import the coordinator.
 - `cogs/casino/mafia.py`: Mafia game state, role actions, votes, and Discord flow.
 - `cogs/casino/mafia_art.py`: Mafia image generation, separate from role and round logic.
+- `cogs/casino/currency.py`: economy command handlers and the cog-facing bank adapter.
+- `cogs/casino/currency_catalog.py`: the item catalog and shared currency formatting.
+- `cogs/casino/currency_views.py`: shop, inventory, transfer modal, and persistent economy hub components; views use a narrow cog-facing interface instead of owning wallet storage.
 - `cogs/casino/game_assets.py`: shared static asset URLs referenced by multiple games.
 
 ## Rules for new game work
