@@ -1,10 +1,12 @@
 # --- SQLITE BANK ---
 """SQLite bank: balances, daily, streaks, inventory, whitelist. Thread-safe + atomic."""
+import json
 import math
 import os
 import sqlite3
 import threading
 import time
+import uuid
 from pathlib import Path
 
 # Resolve storage from the project root, not the process working directory.
@@ -13,39 +15,135 @@ _lock = threading.RLock()
 _conn = None
 SQLITE_MAX_INT = (1 << 63) - 1
 
+def _migration_1_core_schema(connection):
+    """Create or adopt the original bank tables without replacing existing user data."""
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS users ("
+        "user_id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0, "
+        "last_daily REAL NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0)"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS inventory ("
+        "user_id TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 0, "
+        "PRIMARY KEY (user_id, item))"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS whitelist ("
+        "kind TEXT NOT NULL, target_id INTEGER NOT NULL, PRIMARY KEY (kind, target_id))"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS guild_admins ("
+        "guild_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (guild_id, user_id))"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS rps_wagers ("
+        "game_id TEXT PRIMARY KEY, player_a TEXT NOT NULL, player_b TEXT NOT NULL, "
+        "amount INTEGER NOT NULL CHECK(amount > 0), "
+        "status TEXT NOT NULL CHECK(status IN ('active', 'settled', 'refunded')), "
+        "outcome TEXT, created_at REAL NOT NULL, settled_at REAL)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rps_wagers_active "
+        "ON rps_wagers(created_at) WHERE status='active'"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS app_settings ("
+        "setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at REAL NOT NULL)"
+    )
+
+
+def _migration_2_economy_ledger(connection):
+    """Add a durable, append-only record of economy balance transitions."""
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS economy_ledger ("
+        "entry_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "transaction_id TEXT NOT NULL, created_at REAL NOT NULL, "
+        "event_type TEXT NOT NULL, user_id TEXT NOT NULL, "
+        "delta INTEGER NOT NULL, balance_after INTEGER NOT NULL, "
+        "reference TEXT, metadata_json TEXT)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_economy_ledger_user_created "
+        "ON economy_ledger(user_id, entry_id DESC)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_economy_ledger_transaction "
+        "ON economy_ledger(transaction_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_economy_ledger_reference "
+        "ON economy_ledger(reference)"
+    )
+    connection.execute(
+        "CREATE TRIGGER IF NOT EXISTS economy_ledger_no_update "
+        "BEFORE UPDATE ON economy_ledger BEGIN "
+        "SELECT RAISE(ABORT, 'economy_ledger is append-only'); END"
+    )
+    connection.execute(
+        "CREATE TRIGGER IF NOT EXISTS economy_ledger_no_delete "
+        "BEFORE DELETE ON economy_ledger BEGIN "
+        "SELECT RAISE(ABORT, 'economy_ledger is append-only'); END"
+    )
+
+
+_SCHEMA_MIGRATIONS = (
+    (1, "core_schema", _migration_1_core_schema),
+    (2, "economy_ledger", _migration_2_economy_ledger),
+)
+
+
+def _run_migrations(connection):
+    """Apply ordered, transactional schema migrations while retaining legacy data."""
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        "version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at REAL NOT NULL)"
+    )
+    connection.commit()
+    applied = {
+        int(row["version"])
+        for row in connection.execute("SELECT version FROM schema_migrations").fetchall()
+    }
+    latest_supported = max(version for version, _name, _migration in _SCHEMA_MIGRATIONS)
+    if applied and max(applied) > latest_supported:
+        raise RuntimeError(
+            f"Database schema version {max(applied)} is newer than supported "
+            f"version {latest_supported}"
+        )
+
+    for version, name, migration in _SCHEMA_MIGRATIONS:
+        if version in applied:
+            continue
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            migration(connection)
+            connection.execute(
+                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                (version, name, time.time()),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+
 def _connect():
     global _conn
     if _conn is None:
         os.makedirs(os.path.dirname(os.path.abspath(DB_FILE)), exist_ok=True)
-        _conn = sqlite3.connect(DB_FILE, timeout=30, check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _conn.execute("PRAGMA journal_mode=WAL")
-        _conn.execute("PRAGMA synchronous=NORMAL")
-        _conn.execute("PRAGMA busy_timeout=30000")
-        _conn.execute("CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0, last_daily REAL NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0)")
-        _conn.execute("CREATE TABLE IF NOT EXISTS inventory (user_id TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, item))")
-        _conn.execute("CREATE TABLE IF NOT EXISTS whitelist (kind TEXT NOT NULL, target_id INTEGER NOT NULL, PRIMARY KEY (kind, target_id))")
-        _conn.execute("CREATE TABLE IF NOT EXISTS guild_admins (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (guild_id, user_id))")
-        _conn.execute("""CREATE TABLE IF NOT EXISTS rps_wagers (
-            game_id TEXT PRIMARY KEY,
-            player_a TEXT NOT NULL,
-            player_b TEXT NOT NULL,
-            amount INTEGER NOT NULL CHECK(amount > 0),
-            status TEXT NOT NULL CHECK(status IN ('active', 'settled', 'refunded')),
-            outcome TEXT,
-            created_at REAL NOT NULL,
-            settled_at REAL
-        )""")
-        _conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_rps_wagers_active "
-            "ON rps_wagers(created_at) WHERE status='active'"
-        )
-        _conn.execute(
-            "CREATE TABLE IF NOT EXISTS app_settings ("
-            "setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at REAL NOT NULL)"
-        )
-        _conn.commit()
+        connection = sqlite3.connect(DB_FILE, timeout=30, check_same_thread=False)
+        connection.row_factory = sqlite3.Row
+        _conn = connection
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=NORMAL")
+            connection.execute("PRAGMA busy_timeout=30000")
+            _run_migrations(connection)
+        except Exception:
+            connection.close()
+            _conn = None
+            raise
     return _conn
+
 
 def _ensure(uid):
     c = _connect()
@@ -60,6 +158,112 @@ def fmt(n):
 
 def now():
     return time.time()
+
+
+def schema_version() -> int:
+    """Return the highest successfully applied SQLite schema migration."""
+    with _lock:
+        row = _connect().execute("SELECT MAX(version) AS version FROM schema_migrations").fetchone()
+        return int(row["version"] or 0) if row is not None else 0
+
+
+def _record_ledger(
+    connection,
+    *,
+    event_type,
+    user_id,
+    delta,
+    balance_after,
+    transaction_id=None,
+    reference=None,
+    metadata=None,
+):
+    """Append an economy event on the caller's open transaction; never commits."""
+    if not isinstance(event_type, str) or not event_type.strip():
+        raise ValueError("ledger event_type must be non-empty")
+    if isinstance(delta, bool) or not isinstance(delta, int):
+        raise TypeError("ledger delta must be an integer")
+    if (
+        isinstance(balance_after, bool)
+        or not isinstance(balance_after, int)
+        or balance_after < 0
+        or balance_after > SQLITE_MAX_INT
+    ):
+        raise ValueError("ledger balance_after must be a non-negative SQLite-safe integer")
+    metadata_json = (
+        json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if metadata is not None
+        else None
+    )
+    txid = str(transaction_id or uuid.uuid4().hex)
+    connection.execute(
+        "INSERT INTO economy_ledger "
+        "(transaction_id,created_at,event_type,user_id,delta,balance_after,reference,metadata_json) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (
+            txid,
+            time.time(),
+            event_type.strip(),
+            str(user_id),
+            delta,
+            balance_after,
+            str(reference) if reference is not None else None,
+            metadata_json,
+        ),
+    )
+    return txid
+
+
+def get_economy_ledger(
+    *,
+    user_id=None,
+    event_type=None,
+    reference=None,
+    limit=100,
+):
+    """Read ledger rows newest-first. Results are audit records, not mutable wallet state."""
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+        raise ValueError("ledger limit must be an integer between 1 and 1000")
+
+    conditions = []
+    parameters = []
+    if user_id is not None:
+        conditions.append("user_id = ?")
+        parameters.append(str(user_id))
+    if event_type is not None:
+        if not isinstance(event_type, str) or not event_type.strip():
+            raise ValueError("event_type must be a non-empty string")
+        conditions.append("event_type = ?")
+        parameters.append(event_type.strip())
+    if reference is not None:
+        conditions.append("reference = ?")
+        parameters.append(str(reference))
+
+    where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    parameters.append(limit)
+    with _lock:
+        rows = _connect().execute(
+            "SELECT entry_id,transaction_id,created_at,event_type,user_id,delta,"
+            "balance_after,reference,metadata_json FROM economy_ledger"
+            + where_clause
+            + " ORDER BY entry_id DESC LIMIT ?",
+            parameters,
+        ).fetchall()
+
+    entries = []
+    for row in rows:
+        entry = dict(row)
+        raw_metadata = entry.pop("metadata_json")
+        if raw_metadata is None:
+            entry["metadata"] = None
+        else:
+            try:
+                entry["metadata"] = json.loads(raw_metadata)
+            except (TypeError, json.JSONDecodeError):
+                entry["metadata"] = None
+        entries.append(entry)
+    return entries
+
 
 def get_balance(user_id):
     uid = str(user_id)
@@ -105,9 +309,17 @@ def debit_balance(user_id, amount):
                 balance = int(row["balance"]) if row else 0
                 c.rollback()
                 return False, balance
-            c.commit()
             row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
-            return True, int(row["balance"]) if row else 0
+            balance_after = int(row["balance"]) if row else 0
+            _record_ledger(
+                c,
+                event_type="balance_debit",
+                user_id=uid,
+                delta=-amount,
+                balance_after=balance_after,
+            )
+            c.commit()
+            return True, balance_after
         except Exception:
             c.rollback()
             raise
@@ -136,9 +348,17 @@ def credit_balance(user_id, amount):
                 balance = int(row["balance"]) if row else 0
                 c.rollback()
                 return False, balance
-            c.commit()
             row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
-            return True, int(row["balance"]) if row else 0
+            balance_after = int(row["balance"]) if row else 0
+            _record_ledger(
+                c,
+                event_type="balance_credit",
+                user_id=uid,
+                delta=amount,
+                balance_after=balance_after,
+            )
+            c.commit()
+            return True, balance_after
         except Exception:
             c.rollback()
             raise
@@ -184,9 +404,35 @@ def transfer_balance(sender_id, recipient_id, amount):
                 c.rollback()
                 row = c.execute("SELECT balance FROM users WHERE user_id=?", (sender,)).fetchone()
                 return False, int(row["balance"]) if row else 0
+            sender_row = c.execute(
+                "SELECT balance FROM users WHERE user_id=?", (sender,)
+            ).fetchone()
+            recipient_row = c.execute(
+                "SELECT balance FROM users WHERE user_id=?", (recipient,)
+            ).fetchone()
+            sender_after = int(sender_row["balance"]) if sender_row else 0
+            recipient_after = int(recipient_row["balance"]) if recipient_row else 0
+            transaction_id = uuid.uuid4().hex
+            _record_ledger(
+                c,
+                event_type="balance_transfer",
+                user_id=sender,
+                delta=-amount,
+                balance_after=sender_after,
+                transaction_id=transaction_id,
+                metadata={"direction": "outgoing", "counterparty": recipient},
+            )
+            _record_ledger(
+                c,
+                event_type="balance_transfer",
+                user_id=recipient,
+                delta=amount,
+                balance_after=recipient_after,
+                transaction_id=transaction_id,
+                metadata={"direction": "incoming", "counterparty": sender},
+            )
             c.commit()
-            row = c.execute("SELECT balance FROM users WHERE user_id=?", (sender,)).fetchone()
-            return True, int(row["balance"]) if row else 0
+            return True, sender_after
         except Exception:
             c.rollback()
             raise
@@ -227,6 +473,20 @@ def settle_wheel(user_id, entry_fee, payout=0, target_loss=None):
                 return {"played": False, "reason": "balance_limit", "before": before, "after": before, "net": 0, "refund": 0}
 
             c.execute("UPDATE users SET balance=? WHERE user_id=?", (after, uid))
+            _record_ledger(
+                c,
+                event_type="wheel_settlement",
+                user_id=uid,
+                delta=after - before,
+                balance_after=after,
+                metadata={
+                    "before": before,
+                    "entry_fee": entry_fee,
+                    "payout": payout,
+                    "target_loss": target_loss,
+                    "refund": max(0, after - after_fee),
+                },
+            )
             c.commit()
             return {
                 "played": True,
@@ -315,9 +575,18 @@ def purchase_item(user_id, item, quantity, unit_price):
                 "ON CONFLICT(user_id,item) DO UPDATE SET qty=qty+excluded.qty",
                 (uid, str(item), quantity),
             )
-            c.commit()
             row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
-            return True, int(row["balance"]) if row else 0
+            balance_after = int(row["balance"]) if row else 0
+            _record_ledger(
+                c,
+                event_type="shop_purchase",
+                user_id=uid,
+                delta=-total,
+                balance_after=balance_after,
+                metadata={"item": str(item), "quantity": quantity, "unit_price": unit_price},
+            )
+            c.commit()
+            return True, balance_after
         except Exception:
             c.rollback()
             raise
@@ -353,10 +622,18 @@ def claim_daily(user_id, now_ts, base_reward):
                 "UPDATE users SET balance=balance+?,last_daily=?,streak=? WHERE user_id=?",
                 (reward, now_ts, new_streak, uid),
             )
+            balance_after = balance + reward
+            _record_ledger(
+                c,
+                event_type="daily_reward",
+                user_id=uid,
+                delta=reward,
+                balance_after=balance_after,
+                metadata={"base_reward": base_reward, "streak": new_streak},
+            )
             c.commit()
-            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
             return {"claimed": True, "last_daily": now_ts, "streak": new_streak,
-                    "amount": reward, "balance": int(row["balance"]) if row else 0}
+                    "amount": reward, "balance": balance_after}
         except Exception:
             c.rollback()
             raise
@@ -385,9 +662,17 @@ def redeem_item(user_id, item, reward):
                 c.rollback()
                 return False, balance
             c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (reward, uid))
+            balance_after = balance + reward
+            _record_ledger(
+                c,
+                event_type="consumable_redemption",
+                user_id=uid,
+                delta=reward,
+                balance_after=balance_after,
+                metadata={"item": item},
+            )
             c.commit()
-            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
-            return True, int(row["balance"]) if row else 0
+            return True, balance_after
         except Exception:
             c.rollback()
             raise
@@ -414,6 +699,25 @@ def place_bet(player_a, player_b, amount):
                 return False
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
+            transaction_id = uuid.uuid4().hex
+            _record_ledger(
+                c,
+                event_type="pvp_bet_stake",
+                user_id=a,
+                delta=-amount,
+                balance_after=int(row_a["balance"]) - amount,
+                transaction_id=transaction_id,
+                metadata={"counterparty": b, "stake": amount},
+            )
+            _record_ledger(
+                c,
+                event_type="pvp_bet_stake",
+                user_id=b,
+                delta=-amount,
+                balance_after=int(row_b["balance"]) - amount,
+                transaction_id=transaction_id,
+                metadata={"counterparty": a, "stake": amount},
+            )
             c.commit()
             return True
         except Exception:
@@ -453,6 +757,27 @@ def create_rps_wager(game_id, player_a, player_b, amount):
 
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
+            transaction_id = uuid.uuid4().hex
+            _record_ledger(
+                c,
+                event_type="rps_wager_stake",
+                user_id=a,
+                delta=-amount,
+                balance_after=int(row_a["balance"]) - amount,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={"counterparty": b, "stake": amount},
+            )
+            _record_ledger(
+                c,
+                event_type="rps_wager_stake",
+                user_id=b,
+                delta=-amount,
+                balance_after=int(row_b["balance"]) - amount,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={"counterparty": a, "stake": amount},
+            )
             c.execute(
                 "INSERT INTO rps_wagers "
                 "(game_id,player_a,player_b,amount,status,created_at) VALUES (?,?,?,?,'active',?)",
@@ -524,12 +849,33 @@ def settle_rps_wager(game_id, winner_id=None):
             reason = None
             payout = 0
             tax = 0
+            settlement_transaction_id = uuid.uuid4().hex
 
             def refund_stakes():
                 if balances[a] > sqlite_max_int - amount or balances[b] > sqlite_max_int - amount:
                     return False
                 c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amount, a))
                 c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amount, b))
+                _record_ledger(
+                    c,
+                    event_type="rps_wager_refund",
+                    user_id=a,
+                    delta=amount,
+                    balance_after=balances[a] + amount,
+                    transaction_id=settlement_transaction_id,
+                    reference=game_id,
+                    metadata={"stake": amount},
+                )
+                _record_ledger(
+                    c,
+                    event_type="rps_wager_refund",
+                    user_id=b,
+                    delta=amount,
+                    balance_after=balances[b] + amount,
+                    transaction_id=settlement_transaction_id,
+                    reference=game_id,
+                    metadata={"stake": amount},
+                )
                 return True
 
             if winner_id is not None:
@@ -539,6 +885,16 @@ def settle_rps_wager(game_id, winner_id=None):
                 tax = pot - payout
                 if balances[winner] <= sqlite_max_int - payout:
                     c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (payout, winner))
+                    _record_ledger(
+                        c,
+                        event_type="rps_wager_payout",
+                        user_id=winner,
+                        delta=payout,
+                        balance_after=balances[winner] + payout,
+                        transaction_id=settlement_transaction_id,
+                        reference=game_id,
+                        metadata={"stake": amount, "pot": pot, "tax": tax},
+                    )
                     status = "settled"
                     outcome = "winner:" + winner
                 else:
@@ -637,8 +993,18 @@ def charge_up_to(user_id, amount):
             balance = max(0, int(row["balance"])) if row else 0
             charged = min(balance, amount)
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (charged, uid))
+            balance_after = balance - charged
+            if charged:
+                _record_ledger(
+                    c,
+                    event_type="balance_charge",
+                    user_id=uid,
+                    delta=-charged,
+                    balance_after=balance_after,
+                    metadata={"requested_amount": amount},
+                )
             c.commit()
-            return charged, balance - charged
+            return charged, balance_after
         except Exception:
             c.rollback()
             raise
@@ -656,7 +1022,17 @@ def set_balance(user_id, amount):
         try:
             c.execute("BEGIN IMMEDIATE")
             c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            previous_balance = int(row["balance"]) if row else 0
             c.execute("UPDATE users SET balance=? WHERE user_id=?", (amount, uid))
+            _record_ledger(
+                c,
+                event_type="balance_set",
+                user_id=uid,
+                delta=amount - previous_balance,
+                balance_after=amount,
+                metadata={"previous_balance": previous_balance},
+            )
             c.commit()
         except Exception:
             c.rollback()
@@ -813,6 +1189,18 @@ def reset_all():
             if active_wager is not None:
                 raise RuntimeError(
                     "cannot reset the economy while active RPS wagers exist"
+                )
+            transaction_id = uuid.uuid4().hex
+            for row in c.execute("SELECT user_id,balance FROM users").fetchall():
+                _record_ledger(
+                    c,
+                    event_type="economy_reset",
+                    user_id=str(row["user_id"]),
+                    delta=-int(row["balance"]),
+                    balance_after=0,
+                    transaction_id=transaction_id,
+                    reference="reset_all",
+                    metadata={"previous_balance": int(row["balance"])},
                 )
             c.execute("DELETE FROM users")
             c.execute("DELETE FROM inventory")
