@@ -335,6 +335,8 @@ async def on_app_command_error(interaction, error):
 # --- EXTENSION LOADER ---
 NON_COG_MODULES = frozenset({
     "bank.py",
+    "bank_ledger.py",
+    "bank_schema.py",
     "permissions.py",
     "game_registry.py",
     "game_assets.py",

@@ -1,6 +1,5 @@
 # --- SQLITE BANK ---
 """SQLite bank: balances, daily, streaks, inventory, whitelist. Thread-safe + atomic."""
-import json
 import math
 import os
 import sqlite3
@@ -9,122 +8,15 @@ import time
 import uuid
 from pathlib import Path
 
+from cogs.casino.bank_ledger import record_economy_event as _record_ledger
+from cogs.casino.bank_ledger import read_entries as _read_ledger
+from cogs.casino.bank_schema import run_migrations
+
 # Resolve storage from the project root, not the process working directory.
 DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
 _lock = threading.RLock()
 _conn = None
 SQLITE_MAX_INT = (1 << 63) - 1
-
-def _migration_1_core_schema(connection):
-    """Create or adopt the original bank tables without replacing existing user data."""
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS users ("
-        "user_id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0, "
-        "last_daily REAL NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0)"
-    )
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS inventory ("
-        "user_id TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 0, "
-        "PRIMARY KEY (user_id, item))"
-    )
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS whitelist ("
-        "kind TEXT NOT NULL, target_id INTEGER NOT NULL, PRIMARY KEY (kind, target_id))"
-    )
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS guild_admins ("
-        "guild_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (guild_id, user_id))"
-    )
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS rps_wagers ("
-        "game_id TEXT PRIMARY KEY, player_a TEXT NOT NULL, player_b TEXT NOT NULL, "
-        "amount INTEGER NOT NULL CHECK(amount > 0), "
-        "status TEXT NOT NULL CHECK(status IN ('active', 'settled', 'refunded')), "
-        "outcome TEXT, created_at REAL NOT NULL, settled_at REAL)"
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_rps_wagers_active "
-        "ON rps_wagers(created_at) WHERE status='active'"
-    )
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS app_settings ("
-        "setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at REAL NOT NULL)"
-    )
-
-
-def _migration_2_economy_ledger(connection):
-    """Add a durable, append-only record of economy balance transitions."""
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS economy_ledger ("
-        "entry_id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "transaction_id TEXT NOT NULL, created_at REAL NOT NULL, "
-        "event_type TEXT NOT NULL, user_id TEXT NOT NULL, "
-        "delta INTEGER NOT NULL, balance_after INTEGER NOT NULL, "
-        "reference TEXT, metadata_json TEXT)"
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_economy_ledger_user_created "
-        "ON economy_ledger(user_id, entry_id DESC)"
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_economy_ledger_transaction "
-        "ON economy_ledger(transaction_id)"
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_economy_ledger_reference "
-        "ON economy_ledger(reference)"
-    )
-    connection.execute(
-        "CREATE TRIGGER IF NOT EXISTS economy_ledger_no_update "
-        "BEFORE UPDATE ON economy_ledger BEGIN "
-        "SELECT RAISE(ABORT, 'economy_ledger is append-only'); END"
-    )
-    connection.execute(
-        "CREATE TRIGGER IF NOT EXISTS economy_ledger_no_delete "
-        "BEFORE DELETE ON economy_ledger BEGIN "
-        "SELECT RAISE(ABORT, 'economy_ledger is append-only'); END"
-    )
-
-
-_SCHEMA_MIGRATIONS = (
-    (1, "core_schema", _migration_1_core_schema),
-    (2, "economy_ledger", _migration_2_economy_ledger),
-)
-
-
-def _run_migrations(connection):
-    """Apply ordered, transactional schema migrations while retaining legacy data."""
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS schema_migrations ("
-        "version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at REAL NOT NULL)"
-    )
-    connection.commit()
-    applied = {
-        int(row["version"])
-        for row in connection.execute("SELECT version FROM schema_migrations").fetchall()
-    }
-    latest_supported = max(version for version, _name, _migration in _SCHEMA_MIGRATIONS)
-    if applied and max(applied) > latest_supported:
-        raise RuntimeError(
-            f"Database schema version {max(applied)} is newer than supported "
-            f"version {latest_supported}"
-        )
-
-    for version, name, migration in _SCHEMA_MIGRATIONS:
-        if version in applied:
-            continue
-        connection.execute("BEGIN IMMEDIATE")
-        try:
-            migration(connection)
-            connection.execute(
-                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-                (version, name, time.time()),
-            )
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-
 
 def _connect():
     global _conn
@@ -137,7 +29,7 @@ def _connect():
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=NORMAL")
             connection.execute("PRAGMA busy_timeout=30000")
-            _run_migrations(connection)
+            run_migrations(connection)
         except Exception:
             connection.close()
             _conn = None
@@ -167,53 +59,6 @@ def schema_version() -> int:
         return int(row["version"] or 0) if row is not None else 0
 
 
-def _record_ledger(
-    connection,
-    *,
-    event_type,
-    user_id,
-    delta,
-    balance_after,
-    transaction_id=None,
-    reference=None,
-    metadata=None,
-):
-    """Append an economy event on the caller's open transaction; never commits."""
-    if not isinstance(event_type, str) or not event_type.strip():
-        raise ValueError("ledger event_type must be non-empty")
-    if isinstance(delta, bool) or not isinstance(delta, int):
-        raise TypeError("ledger delta must be an integer")
-    if (
-        isinstance(balance_after, bool)
-        or not isinstance(balance_after, int)
-        or balance_after < 0
-        or balance_after > SQLITE_MAX_INT
-    ):
-        raise ValueError("ledger balance_after must be a non-negative SQLite-safe integer")
-    metadata_json = (
-        json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        if metadata is not None
-        else None
-    )
-    txid = str(transaction_id or uuid.uuid4().hex)
-    connection.execute(
-        "INSERT INTO economy_ledger "
-        "(transaction_id,created_at,event_type,user_id,delta,balance_after,reference,metadata_json) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (
-            txid,
-            time.time(),
-            event_type.strip(),
-            str(user_id),
-            delta,
-            balance_after,
-            str(reference) if reference is not None else None,
-            metadata_json,
-        ),
-    )
-    return txid
-
-
 def get_economy_ledger(
     *,
     user_id=None,
@@ -221,48 +66,15 @@ def get_economy_ledger(
     reference=None,
     limit=100,
 ):
-    """Read ledger rows newest-first. Results are audit records, not mutable wallet state."""
-    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
-        raise ValueError("ledger limit must be an integer between 1 and 1000")
-
-    conditions = []
-    parameters = []
-    if user_id is not None:
-        conditions.append("user_id = ?")
-        parameters.append(str(user_id))
-    if event_type is not None:
-        if not isinstance(event_type, str) or not event_type.strip():
-            raise ValueError("event_type must be a non-empty string")
-        conditions.append("event_type = ?")
-        parameters.append(event_type.strip())
-    if reference is not None:
-        conditions.append("reference = ?")
-        parameters.append(str(reference))
-
-    where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-    parameters.append(limit)
+    """Read append-only ledger records newest-first."""
     with _lock:
-        rows = _connect().execute(
-            "SELECT entry_id,transaction_id,created_at,event_type,user_id,delta,"
-            "balance_after,reference,metadata_json FROM economy_ledger"
-            + where_clause
-            + " ORDER BY entry_id DESC LIMIT ?",
-            parameters,
-        ).fetchall()
-
-    entries = []
-    for row in rows:
-        entry = dict(row)
-        raw_metadata = entry.pop("metadata_json")
-        if raw_metadata is None:
-            entry["metadata"] = None
-        else:
-            try:
-                entry["metadata"] = json.loads(raw_metadata)
-            except (TypeError, json.JSONDecodeError):
-                entry["metadata"] = None
-        entries.append(entry)
-    return entries
+        return _read_ledger(
+            _connect(),
+            user_id=user_id,
+            event_type=event_type,
+            reference=reference,
+            limit=limit,
+        )
 
 
 def get_balance(user_id):

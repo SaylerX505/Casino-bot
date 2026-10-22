@@ -9,6 +9,8 @@ class ExtensionLoaderClassificationTests(unittest.TestCase):
     def test_game_helpers_are_not_loaded_as_discord_extensions(self):
         helper_modules = {
             "bank.py",
+            "bank_ledger.py",
+            "bank_schema.py",
             "permissions.py",
             "game_registry.py",
             "game_assets.py",

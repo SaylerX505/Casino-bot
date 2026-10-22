@@ -6,8 +6,9 @@ The bot remains a single-process Discord application, but each subsystem should 
 
 - `main.py`: Discord client setup, guild policy, command-error reporting, and extension loading.
 - `cogs/casino/game_registry.py`: ownership of active lobby/game tasks by channel. A game must release only the entry it owns.
-- `cogs/casino/bank.py`: SQLite persistence and atomic economy transitions. Game modules should use domain operations instead of editing tables directly.
-- Bank schema changes use ordered, transactional migrations in `schema_migrations`; version 2 adds an append-only `economy_ledger` with per-operation and correlated multi-player receipts.
+- `cogs/casino/bank.py`: atomic economy operations and the public persistence-facing API. Game modules should use domain operations instead of editing tables directly.
+- `cogs/casino/bank_schema.py`: ordered, transactional SQLite migrations applied from `schema_migrations`; legacy tables are adopted with `CREATE TABLE IF NOT EXISTS` rather than replaced.
+- `cogs/casino/bank_ledger.py`: append-only economy audit records and read queries, isolated from balance business operations; correlated multi-player actions share a transaction ID.
 - `cogs/casino/geoguessr.py`: GeoGuessr round orchestration and Discord message flow; composes storage, artwork, and view modules.
 - `cogs/casino/geoguessr_storage.py`: path-based read/write/validation for static round data and used-image tracking. It does not import Discord.
 - `cogs/casino/geoguessr_art.py`: image-rendering helpers and optional avatar downloads. It does not manage lobbies, scoring, or Discord views.
