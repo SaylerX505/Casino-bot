@@ -210,10 +210,17 @@ class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             edit_message=AsyncMock(),
             is_done=lambda: False,
         )
+        second_state = {"done": False}
+
+        async def defer_second(*args, **kwargs):
+            second_state["done"] = True
+
         second_response = SimpleNamespace(
             send_message=AsyncMock(),
+            defer=AsyncMock(side_effect=defer_second),
             edit_message=AsyncMock(),
-            is_done=lambda: False,
+            edit_original_response=AsyncMock(),
+            is_done=lambda: second_state["done"],
         )
         first_interaction = SimpleNamespace(user=player, response=first_response)
         second_interaction = SimpleNamespace(user=opponent, response=second_response)
@@ -241,8 +248,11 @@ class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
         settle.assert_awaited_once_with("race-game")
         first_response.send_message.assert_awaited_once()
-        message.edit.assert_awaited_once_with(view=view)
-        second_response.edit_message.assert_awaited_once_with(view=view)
+        second_response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+        message.edit.assert_has_awaits([unittest.mock.call(view=view), unittest.mock.call(view=view)])
+        self.assertEqual(message.edit.await_count, 2)
+        second_response.edit_message.assert_not_awaited()
+        second_response.edit_original_response.assert_awaited_once()
         self.assertTrue(view.done)
         self.assertIn("تعادل", view._panel_text.content)
         self.assertTrue(all(button.disabled for button in view._buttons))
