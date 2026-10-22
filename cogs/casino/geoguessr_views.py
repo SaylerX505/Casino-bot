@@ -1,10 +1,10 @@
 """Discord Components V2 views for GeoGuessr lobby, round, and results."""
 
-from functools import partial
-
 import asyncio
 import logging
 import time
+
+from functools import partial
 
 import discord
 from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
