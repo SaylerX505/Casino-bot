@@ -12,7 +12,10 @@ from discord.ext import commands
 
 import config
 from cogs.casino import bank
-from cogs.casino.permissions import configured_ai_enabled_for_guild, configured_ai_role_ids
+from cogs.casino.permissions import (
+    configured_ai_enabled_for_guild,
+    configured_ai_role_ids,
+)
 
 logger = logging.getLogger(__name__)
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
