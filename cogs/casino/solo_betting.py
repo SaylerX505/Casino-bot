@@ -454,9 +454,11 @@ class SoloWagerView(LayoutView):
         self.resolving = False
         self._panel_text.content = content
         self._disable_buttons()
-        await self._edit_message()
-        self._release_session()
-        self.stop()
+        try:
+            await self._edit_message()
+        finally:
+            self._release_session()
+            self.stop()
 
     async def _recovered(self, result: dict) -> None:
         if result.get("settled"):
@@ -512,9 +514,11 @@ class SoloWagerView(LayoutView):
                 f"{balance_line}"
             )
 
-        await self._edit_message()
-        self._release_session()
-        self.stop()
+        try:
+            await self._edit_message()
+        finally:
+            self._release_session()
+            self.stop()
 
 
     async def cancel(self, interaction: discord.Interaction) -> None:
@@ -554,8 +558,11 @@ class SoloWagerView(LayoutView):
             f"# انتهت صلاحية {self.game_title}\n"
             "الوقت خلص قبل ما تختار؛ مفيش أي رهان اتخصم."
         )
-        await self._edit_message()
-        self._release_session()
+        try:
+            await self._edit_message()
+        finally:
+            self._release_session()
+            self.stop()
 
 
 class SoloBetting(commands.Cog):

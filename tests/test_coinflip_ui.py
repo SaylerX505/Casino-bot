@@ -1,5 +1,6 @@
 """UI regression tests for the single-player coinflip session."""
 
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -205,6 +206,20 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.view.done)
         self.assertIn("تم إلغاء", self.view._panel_text.content)
         self.assertIn("مفيش أي رهان اتخصم", self.view._panel_text.content)
+
+    async def test_cancelled_panel_edit_still_releases_claimed_solo_session(self):
+        self.assertTrue(claim_solo_session(self.requester.id, self.view))
+        self.assertTrue(has_active_solo_session(self.requester.id))
+        with patch.object(
+            self.view,
+            "_edit_message",
+            new=AsyncMock(side_effect=asyncio.CancelledError),
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await self.view._finish_without_bet("# تم إلغاء الجولة")
+
+        self.assertFalse(has_active_solo_session(self.requester.id))
+        self.assertTrue(self.view.is_finished())
 
     async def test_cancel_api_failure_still_releases_session_without_a_bet(self):
         self.assertTrue(claim_solo_session(self.requester.id, self.view))
