@@ -129,6 +129,18 @@ class KickView(LayoutView):
                 ephemeral=True,
             )
 
+        # This state must be checked before the first await. A second click can
+        # arrive while Discord is still acknowledging the first interaction.
+        if self.double_shot_active or self.weapon_btn is None or self.weapon_btn.disabled:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "السلاح اتفعل بالفعل",
+                    "سلاح الحفرة بيتستخدم مرة واحدة في الجولة دي؛ مفيش أداة إضافية اتخصمت.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+
         success = self.currency_cog is not None and self.currency_cog.remove_item(
             self.chosen_player.id, "double_shot", 1
         )
