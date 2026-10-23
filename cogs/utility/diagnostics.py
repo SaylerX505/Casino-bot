@@ -227,7 +227,7 @@ class DiagnosticViewMixin:
                 await recovery(incident_id)
             except asyncio.CancelledError:
                 raise
-            except Exception as recovery_error:
+            except Exception as recovery_error:  # noqa: BLE001 - log recovery failure and still acknowledge user.
                 log_unhandled_exception(
                     logger,
                     incident_id=incident_id,
