@@ -171,6 +171,43 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         finally:
             view.stop()
 
+    async def test_unhandled_view_error_closes_shared_controls(self):
+        class BasicView(DiagnosticViewMixin, LayoutView):
+            def __init__(self):
+                super().__init__(timeout=30)
+                button = discord.ui.Button(label="Continue")
+                self.add_item(button)
+
+        message = SimpleNamespace(edit=AsyncMock())
+        response = SimpleNamespace(is_done=Mock(return_value=False), send_message=AsyncMock())
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=101),
+            guild_id=202,
+            channel_id=303,
+            client=SimpleNamespace(dispatch=Mock()),
+            response=response,
+            followup=SimpleNamespace(send=AsyncMock()),
+            message=message,
+        )
+        view = BasicView()
+        try:
+            with self.assertLogs("casino.components", level="ERROR") as captured:
+                await view.on_error(interaction, RuntimeError("unexpected view failure"), item=None)
+
+            message.edit.assert_awaited_once()
+            edit_kwargs = message.edit.await_args.kwargs
+            self.assertIsInstance(edit_kwargs["view"], StatusPanel)
+            self.assertNotIn("unexpected view failure", "\\n".join(
+                item.content for item in edit_kwargs["view"].walk_children()
+                if isinstance(item, discord.ui.TextDisplay)
+            ))
+            self.assertTrue(view.is_finished())
+            response.send_message.assert_awaited_once()
+            self.assertTrue(response.send_message.await_args.kwargs["ephemeral"])
+            self.assertIn("incident_id=", captured.output[0])
+        finally:
+            view.stop()
+
     def test_asyncio_exception_handler_logs_incident_context(self):
         loop = asyncio.new_event_loop()
         previous_handler = loop.get_exception_handler()

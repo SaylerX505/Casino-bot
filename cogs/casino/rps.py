@@ -14,6 +14,7 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
+from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.utility.theme import THEME, StatusPanel, base_embed, embed_to_v2, get_currency
 
 COIN = "<:ckrcoin:1513743032124575784>"
@@ -165,7 +166,7 @@ def _schedule_wager_recovery(game_id, winner_id=None, on_recovered=None):
 
 
 # --- CHALLENGE VIEW ---
-class RPSView(LayoutView):
+class RPSView(DiagnosticViewMixin, LayoutView):
     def __init__(self, ctx, player, opponent, bet, game_id):
         super().__init__(timeout=60)
         self.ctx = ctx
@@ -259,7 +260,44 @@ class RPSView(LayoutView):
             self._publish_recovered_settlement,
         )
 
-    async def _publish_recovered_settlement(self, result):
+    async def _recover_after_component_error(self, incident_id: str) -> None:
+        """Refund an interrupted challenge; already-settled challenges remain immutable."""
+        async with self._choice_lock:
+            self.done = True
+            self._disable_buttons()
+
+        result = await _settle_wager(self.game_id)
+        if result.get("settled"):
+            await self._publish_recovered_settlement(result, incident_id=incident_id)
+        else:
+            self._refresh_panel(
+                base_embed(
+                    title="⚠️ التحدي متوقف مؤقتًا",
+                    description=(
+                        f"حصل عطل أثناء التفاعل. رقم المتابعة: **{incident_id}**.\n"
+                        "الرهان لسه محفوظ؛ هنحاول إرجاعه بأمان، ومش هنحسب نتيجة غير مؤكدة."
+                    ),
+                    color=THEME["orange"],
+                )
+            )
+            if self.message is not None:
+                try:
+                    await self.message.edit(view=self)
+                except discord.HTTPException:
+                    logging.getLogger(__name__).warning(
+                        "Could not show interrupted RPS challenge incident_id=%s",
+                        incident_id,
+                        exc_info=True,
+                    )
+            if result.get("reason") != "not_found":
+                _schedule_wager_recovery(
+                    self.game_id,
+                    None,
+                    partial(self._publish_recovered_settlement, incident_id=incident_id),
+                )
+            self.stop()
+
+    async def _publish_recovered_settlement(self, result, *, incident_id=None):
         if self.message is None:
             return
         if result.get("status") == "settled":
@@ -275,6 +313,8 @@ class RPSView(LayoutView):
             description = "اكتملت التسوية بإرجاع الرهان للطرفين بالكامل."
         else:
             description = "تمت معالجة الرهان بأمان."
+        if incident_id:
+            description += f"\n-# رقم المتابعة: {incident_id}"
         self._refresh_panel(
             base_embed(
                 title="✅ تم تحديث حالة الرهان",

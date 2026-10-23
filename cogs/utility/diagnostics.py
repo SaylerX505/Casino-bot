@@ -222,9 +222,11 @@ class DiagnosticViewMixin:
                 )
 
         recovery = getattr(self, "_recover_after_component_error", None)
+        recovery_succeeded = False
         if callable(recovery):
             try:
                 await recovery(incident_id)
+                recovery_succeeded = True
             except asyncio.CancelledError:
                 raise
             except Exception as recovery_error:  # noqa: BLE001 - log recovery failure and still acknowledge user.
@@ -238,6 +240,38 @@ class DiagnosticViewMixin:
                     channel_id=channel_id,
                     error=recovery_error,
                 )
+
+        # Views without a domain recovery hook must fail closed. Replace their
+        # shared control panel instead of leaving buttons that can re-trigger a bad state.
+        if not recovery_succeeded:
+            for child in self.walk_children():
+                if hasattr(child, "disabled"):
+                    child.disabled = True
+            self.stop()
+            from cogs.utility.theme import StatusPanel
+
+            panel = StatusPanel(
+                "التفاعل اتوقف بأمان",
+                f"حصل عطل غير متوقع. رقم المتابعة **{incident_id}**. "
+                "الأزرار اتقفلت لتجنب تكرار المشكلة؛ افتح لعبة جديدة بعد مراجعة الحالة.",
+                "warning",
+            )
+            message = getattr(interaction, "message", None) or getattr(self, "message", None)
+            if message is not None:
+                try:
+                    await message.edit(
+                        content=None,
+                        embeds=[],
+                        attachments=[],
+                        view=panel,
+                        allowed_mentions=__import__("discord").AllowedMentions.none(),
+                    )
+                except Exception as panel_error:  # noqa: BLE001 - preserve original incident and continue acknowledgement.
+                    logger.warning(
+                        "Could not replace failed component panel incident_id=%s",
+                        incident_id,
+                        exc_info=True,
+                    )
 
         try:
             from cogs.utility.theme import StatusPanel
