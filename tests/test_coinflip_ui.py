@@ -105,21 +105,8 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         finally:
             view.stop()
 
-    async def test_winning_coinflip_edits_the_original_message_with_a_receipt(self):
+    async def test_winning_coinflip_edits_the_original_message_with_atomic_receipt(self):
         self.cog._schedule_recovery = Mock()
-        self.cog._settle_with_retries = AsyncMock(
-            return_value={
-                "settled": True,
-                "already_settled": False,
-                "status": "settled",
-                "outcome": "win",
-                "choice": "heads",
-                "result": "heads",
-                "stake": 100,
-                "payout": 190,
-                "balance_after": 1_090,
-            }
-        )
         message = SimpleNamespace(id=555, edit=AsyncMock())
         interaction = SimpleNamespace(
             user=self.requester,
@@ -127,13 +114,29 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             message=message,
             response=SimpleNamespace(edit_message=AsyncMock(), send_message=AsyncMock()),
         )
+        receipt = {
+            "created": True,
+            "settled": True,
+            "already_settled": False,
+            "status": "settled",
+            "outcome": "win",
+            "choice": "heads",
+            "result": "heads",
+            "stake": 100,
+            "payout": 190,
+            "balance_after": 1_090,
+        }
         with (
             patch.object(solo_betting_module.secrets, "choice", return_value="heads"),
-            patch.object(solo_betting_module.bank, "create_casino_wager", return_value={"created": True}) as create_wager,
+            patch.object(
+                solo_betting_module.bank,
+                "play_casino_wager",
+                return_value=receipt,
+            ) as play_wager,
         ):
             await self.view.choose(interaction, side="heads")
 
-        create_wager.assert_called_once_with(
+        play_wager.assert_called_once_with(
             self.view.game_id,
             self.requester.id,
             "coinflip",

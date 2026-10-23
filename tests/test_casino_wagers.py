@@ -218,6 +218,118 @@ class CasinoWagerTests(unittest.TestCase):
         self.assertEqual(bank.get_balance(101), 900)
         self.assertEqual(bank.active_casino_wager_ids(), ["blackjack-invalid"])
 
+
+    def test_instant_wager_commits_stake_result_and_payout_atomically(self):
+        receipt = bank.play_casino_wager(
+            "atomic-win",
+            101,
+            "coinflip",
+            100,
+            "heads",
+            "heads",
+            True,
+            190,
+            channel_id=303,
+            message_id=404,
+        )
+
+        self.assertTrue(receipt["created"])
+        self.assertTrue(receipt["settled"])
+        self.assertFalse(receipt["already_settled"])
+        self.assertEqual(receipt["outcome"], "win")
+        self.assertEqual(receipt["payout"], 190)
+        self.assertEqual(receipt["balance_after"], 1_090)
+        self.assertEqual(bank.get_balance(101), 1_090)
+        self.assertEqual(bank.active_casino_wager_ids(), [])
+        self.assertEqual(bank.active_casino_wager_records(), [])
+        self.assertEqual(bank.casino_wager_status("atomic-win")["status"], "settled")
+
+        stake_entries = bank.get_economy_ledger(
+            event_type="casino_wager_stake", reference="atomic-win"
+        )
+        payout_entries = bank.get_economy_ledger(
+            event_type="casino_wager_payout", reference="atomic-win"
+        )
+        self.assertEqual(len(stake_entries), 1)
+        self.assertEqual(len(payout_entries), 1)
+        self.assertEqual(
+            {entry["transaction_id"] for entry in stake_entries + payout_entries},
+            {stake_entries[0]["transaction_id"]},
+        )
+        self.assertEqual(stake_entries[0]["balance_after"], 900)
+        self.assertEqual(payout_entries[0]["balance_after"], 1_090)
+
+    def test_instant_loss_never_leaves_recoverable_active_escrow(self):
+        receipt = bank.play_casino_wager(
+            "atomic-loss", 101, "dice", 100, "2", "6", False, 0
+        )
+
+        self.assertEqual(receipt["outcome"], "loss")
+        self.assertEqual(receipt["balance_after"], 900)
+        self.assertEqual(bank.get_balance(101), 900)
+        self.assertEqual(bank.active_casino_wager_ids(), [])
+        self.assertEqual(bank.casino_wager_status("atomic-loss")["status"], "settled")
+        self.assertEqual(
+            len(
+                bank.get_economy_ledger(
+                    event_type="casino_wager_loss", reference="atomic-loss"
+                )
+            ),
+            1,
+        )
+
+    def test_duplicate_instant_game_id_cannot_debit_or_pay_twice(self):
+        first = bank.play_casino_wager(
+            "atomic-duplicate", 101, "coinflip", 100, "heads", "heads", True, 190
+        )
+        second = bank.play_casino_wager(
+            "atomic-duplicate", 101, "coinflip", 100, "heads", "heads", True, 190
+        )
+
+        self.assertTrue(first["created"])
+        self.assertFalse(second["created"])
+        self.assertEqual(second["reason"], "duplicate_game")
+        self.assertEqual(bank.get_balance(101), 1_090)
+        self.assertEqual(
+            len(
+                bank.get_economy_ledger(
+                    event_type="casino_wager_stake", reference="atomic-duplicate"
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                bank.get_economy_ledger(
+                    event_type="casino_wager_payout", reference="atomic-duplicate"
+                )
+            ),
+            1,
+        )
+
+    def test_instant_winner_at_wallet_limit_receives_full_refund_atomically(self):
+        bank.set_balance(101, bank.SQLITE_MAX_INT - 5)
+        receipt = bank.play_casino_wager(
+            "atomic-overflow", 101, "coinflip", 10, "heads", "heads", True, 20
+        )
+
+        self.assertTrue(receipt["created"])
+        self.assertTrue(receipt["settled"])
+        self.assertEqual(receipt["status"], "refunded")
+        self.assertEqual(receipt["outcome"], "balance_limit")
+        self.assertEqual(receipt["payout"], 0)
+        self.assertEqual(receipt["balance_after"], bank.SQLITE_MAX_INT - 5)
+        self.assertEqual(bank.get_balance(101), bank.SQLITE_MAX_INT - 5)
+        self.assertEqual(bank.active_casino_wager_ids(), [])
+        self.assertEqual(
+            len(
+                bank.get_economy_ledger(
+                    event_type="casino_wager_refund", reference="atomic-overflow"
+                )
+            ),
+            1,
+        )
+
     def test_economy_reset_is_blocked_while_solo_wager_is_active(self):
         self.create_wager()
         with self.assertRaisesRegex(RuntimeError, "active casino wagers"):

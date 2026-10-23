@@ -900,6 +900,216 @@ def create_casino_wager(
             raise
 
 
+
+def play_casino_wager(
+    game_id,
+    user_id,
+    game_type,
+    amount,
+    choice,
+    result,
+    won,
+    win_payout,
+    *,
+    channel_id=None,
+    message_id=None,
+):
+    """Create and settle a single-step wager in one transaction.
+
+    Unlike create_casino_wager(), this API never commits an active wager. The
+    stake, final outcome, balance receipt, wager row, and ledger entries either
+    commit together or do not happen. Multi-step games such as Blackjack should
+    continue to use create_casino_wager() followed by settle_casino_wager().
+    """
+    game_id = str(game_id).strip()
+    uid = str(user_id).strip()
+    game_type = str(game_type).strip()
+    choice = str(choice).strip()
+    result = str(result).strip()
+    if not game_id or not uid or not game_type or not choice or not result:
+        raise ValueError("casino wager identifiers and outcome fields are required")
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
+        raise ValueError("casino wager stake must be a positive SQLite-safe integer")
+    if not isinstance(won, bool):
+        raise TypeError("casino wager won flag must be a boolean")
+    if (
+        isinstance(win_payout, bool)
+        or not isinstance(win_payout, int)
+        or not 0 <= win_payout <= SQLITE_MAX_INT
+    ):
+        raise ValueError("casino wager payout must be a non-negative SQLite-safe integer")
+    if won and win_payout < amount:
+        raise ValueError("winning casino wager gross payout cannot be smaller than its stake")
+    if not won and win_payout != 0:
+        raise ValueError("losing casino wagers cannot carry a payout")
+    for field_name, field_value in (("channel_id", channel_id), ("message_id", message_id)):
+        if field_value is not None and (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, int)
+            or not 0 < field_value <= SQLITE_MAX_INT
+        ):
+            raise ValueError(f"{field_name} must be a positive integer when provided")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            if c.execute(
+                "SELECT 1 FROM casino_wagers WHERE game_id=?", (game_id,)
+            ).fetchone():
+                c.rollback()
+                return {"created": False, "reason": "duplicate_game"}
+
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            balance = int(row["balance"]) if row is not None else 0
+            if balance < amount:
+                c.rollback()
+                return {
+                    "created": False,
+                    "reason": "insufficient_funds",
+                    "balance": balance,
+                }
+
+            balance_after_stake = balance - amount
+            transaction_id = uuid.uuid4().hex
+            c.execute(
+                "UPDATE users SET balance=? WHERE user_id=?",
+                (balance_after_stake, uid),
+            )
+            _record_ledger(
+                c,
+                event_type="casino_wager_stake",
+                user_id=uid,
+                delta=-amount,
+                balance_after=balance_after_stake,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={
+                    "game_type": game_type,
+                    "stake": amount,
+                    "choice": choice,
+                    "result": result,
+                    "won": won,
+                    "win_payout": win_payout,
+                    "settlement_mode": "atomic",
+                },
+            )
+
+            reason = None
+            if won and balance_after_stake > SQLITE_MAX_INT - win_payout:
+                # Do not partially settle a winning round when the wallet is full.
+                balance_after = balance
+                c.execute(
+                    "UPDATE users SET balance=? WHERE user_id=?",
+                    (balance_after, uid),
+                )
+                _record_ledger(
+                    c,
+                    event_type="casino_wager_refund",
+                    user_id=uid,
+                    delta=amount,
+                    balance_after=balance_after,
+                    transaction_id=transaction_id,
+                    reference=game_id,
+                    metadata={
+                        "game_type": game_type,
+                        "stake": amount,
+                        "reason": "payout_balance_limit",
+                    },
+                )
+                status, outcome, payout = "refunded", "balance_limit", 0
+                reason = "balance_limit"
+            elif won:
+                payout = win_payout
+                balance_after = balance_after_stake + payout
+                c.execute(
+                    "UPDATE users SET balance=? WHERE user_id=?",
+                    (balance_after, uid),
+                )
+                _record_ledger(
+                    c,
+                    event_type="casino_wager_payout",
+                    user_id=uid,
+                    delta=payout,
+                    balance_after=balance_after,
+                    transaction_id=transaction_id,
+                    reference=game_id,
+                    metadata={
+                        "game_type": game_type,
+                        "stake": amount,
+                        "gross_payout": payout,
+                        "net_profit": payout - amount,
+                        "settlement_mode": "atomic",
+                    },
+                )
+                status, outcome = "settled", "win"
+            else:
+                payout = 0
+                balance_after = balance_after_stake
+                _record_ledger(
+                    c,
+                    event_type="casino_wager_loss",
+                    user_id=uid,
+                    delta=0,
+                    balance_after=balance_after,
+                    transaction_id=transaction_id,
+                    reference=game_id,
+                    metadata={
+                        "game_type": game_type,
+                        "stake": amount,
+                        "settlement_mode": "atomic",
+                    },
+                )
+                status, outcome = "settled", "loss"
+
+            timestamp = now()
+            c.execute(
+                "INSERT INTO casino_wagers "
+                "(game_id,user_id,game_type,stake,choice,result,won,win_payout,"
+                "status,outcome,payout,created_at,settled_at,channel_id,message_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    game_id,
+                    uid,
+                    game_type,
+                    amount,
+                    choice,
+                    result,
+                    int(won),
+                    win_payout,
+                    status,
+                    outcome,
+                    payout,
+                    timestamp,
+                    timestamp,
+                    channel_id,
+                    message_id,
+                ),
+            )
+            c.commit()
+            return {
+                "created": True,
+                "settled": True,
+                "already_settled": False,
+                "status": status,
+                "outcome": outcome,
+                "reason": reason,
+                "game_id": game_id,
+                "user_id": uid,
+                "game_type": game_type,
+                "stake": amount,
+                "choice": choice,
+                "result": result,
+                "won": won,
+                "payout": payout,
+                "balance_after": balance_after,
+            }
+        except Exception:
+            c.rollback()
+            raise
+
+
 def settle_casino_wager(
     game_id,
     *,

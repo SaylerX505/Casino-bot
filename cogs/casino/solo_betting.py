@@ -361,35 +361,41 @@ class SoloWagerView(LayoutView):
             channel_id = getattr(interaction, "channel_id", None)
             message_id = getattr(self.message, "id", None)
             if isinstance(channel_id, int) and isinstance(message_id, int):
-                created = await asyncio.to_thread(
-                    bank.create_casino_wager,
+                receipt = await asyncio.to_thread(
+                    bank.play_casino_wager,
                     *wager_args,
                     channel_id=channel_id,
                     message_id=message_id,
                 )
             else:
-                created = await asyncio.to_thread(
-                    bank.create_casino_wager,
+                receipt = await asyncio.to_thread(
+                    bank.play_casino_wager,
                     *wager_args,
                 )
         except asyncio.CancelledError:
-            self.cog._schedule_recovery(game_id, force_refund=True, callback=self._recovered)
+            # The database operation may have committed before cancellation arrived.
+            # Instant games never commit an active wager, so lookup cannot refund a win.
+            self.cog._schedule_recovery(
+                game_id, force_refund=False, callback=self._recovered
+            )
             raise
         except Exception:
-            logger.exception("Could not confirm solo wager game_id=%s", game_id)
+            logger.exception("Could not confirm atomic solo wager game_id=%s", game_id)
             self._panel_text.content = (
                 "# جاري التحقق من الرهان\n"
-                "حصل تأخير في قاعدة البيانات. حفظنا معرّف العملية، والبوت هيتأكد من حالتها "
-                "من غير ما يكرر الخصم أو الصرف."
+                "حصل تأخير في قاعدة البيانات. هنتأكد من معرّف العملية قبل عرض نتيجة، "
+                "من غير ما نكرر الخصم أو الصرف."
             )
             await self._edit_message()
-            self.cog._schedule_recovery(game_id, force_refund=True, callback=self._recovered)
+            self.cog._schedule_recovery(
+                game_id, force_refund=False, callback=self._recovered
+            )
             return
 
-        if not created.get("created"):
-            reason = created.get("reason")
+        if not receipt.get("created"):
+            reason = receipt.get("reason")
             if reason == "insufficient_funds":
-                balance = int(created.get("balance", 0))
+                balance = int(receipt.get("balance", 0))
                 message = f"رصيدك الحالي **{balance:,}** {COIN}، ومحتاج **{self.amount:,}**."
             elif reason == "duplicate_game":
                 message = "معرّف الجولة مستخدم بالفعل؛ لم نسحب أي مبلغ لجولة جديدة."
@@ -397,22 +403,20 @@ class SoloWagerView(LayoutView):
                 message = "تعذر قبول الرهان بأمان؛ لم يتم تسجيل خصم جديد."
             return await self._finish_without_bet("# الرهان مرفوض\n" + message)
 
-        try:
-            settled = await self.cog._settle_with_retries(game_id)
-        except asyncio.CancelledError:
-            self.cog._schedule_recovery(game_id, force_refund=True, callback=self._recovered)
-            raise
-        if not settled.get("settled"):
+        if not receipt.get("settled"):
+            # Defensive fail-closed guard: an instant bet must return a terminal receipt.
             self._panel_text.content = (
-                "# النتيجة محفوظة — التسوية قيد المعالجة\n"
-                "سجلنا الرهان والنتيجة، لكن تحديث الرصيد اتأخر. العملية محفوظة، "
-                "والبوت هيعيد المحاولة تلقائيًا من غير أي صرف مكرر."
+                "# التسوية قيد التحقق\n"
+                "لم يصل إيصال نهائي من قاعدة البيانات. هنتحقق من نفس معرّف العملية "
+                "قبل السماح بجولة جديدة."
             )
             await self._edit_message()
-            self.cog._schedule_recovery(game_id, force_refund=False, callback=self._recovered)
+            self.cog._schedule_recovery(
+                game_id, force_refund=False, callback=self._recovered
+            )
             return
 
-        await self._finalize(settled)
+        await self._finalize(receipt)
 
     async def _finish_without_bet(self, content: str) -> None:
         self.done = True
