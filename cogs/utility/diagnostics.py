@@ -215,7 +215,7 @@ class DiagnosticViewMixin:
                     type(original).__name__,
                     incident_id,
                 )
-            except Exception:  # noqa: BLE001 - diagnostics must not break recovery.
+            except Exception:
                 logger.exception(
                     "Could not dispatch component incident incident_id=%s",
                     incident_id,
@@ -227,7 +227,7 @@ class DiagnosticViewMixin:
                 await recovery(incident_id)
             except asyncio.CancelledError:
                 raise
-            except Exception as recovery_error:  # noqa: BLE001 - still attempt private acknowledgement.
+            except Exception as recovery_error:
                 log_unhandled_exception(
                     logger,
                     incident_id=incident_id,
@@ -256,7 +256,7 @@ class DiagnosticViewMixin:
                 await interaction.followup.send(view=panel, ephemeral=True)
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001 - acknowledgement failure must not hide the incident.
+        except Exception:
             logger.warning(
                 "Could not acknowledge component incident incident_id=%s",
                 incident_id,
