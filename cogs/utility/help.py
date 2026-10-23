@@ -360,7 +360,7 @@ class HelpCommand(commands.Cog):
             )
         await interaction.response.send_message(view=ShopView(cog), ephemeral=True)
 
-    @app_commands.command(name="commands", description="عرض قائمة الأوامر المتاحة حسب صلاحياتك")
+    @app_commands.command(name="commands", description="\u200b")
     @app_commands.guild_only()
     async def commands_menu(self, interaction: discord.Interaction):
         latency = round(self.bot.latency * 1000)
