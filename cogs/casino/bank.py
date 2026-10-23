@@ -443,6 +443,7 @@ def purchase_item(user_id, item, quantity, unit_price):
 def claim_daily(user_id, now_ts, base_reward):
     """Atomically enforce cooldown, update streak, and grant a validated reward."""
     uid = str(user_id)
+    sqlite_max_int = SQLITE_MAX_INT
     if isinstance(now_ts, bool) or not isinstance(now_ts, (int, float)):
         raise TypeError("now_ts must be a numeric timestamp")
     try:
