@@ -221,7 +221,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             await self.view._finish_without_bet("# تم إلغاء الجولة")
 
         self.assertFalse(has_active_solo_session(self.requester.id))
-        self.assertTrue(self.view.is_finished())
+        self.assertTrue(self.view.done)
 
     async def test_cancel_api_failure_still_releases_session_without_a_bet(self):
         self.assertTrue(claim_solo_session(self.requester.id, self.view))
