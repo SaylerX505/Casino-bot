@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -34,7 +34,7 @@ class JsonLogFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
-            "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(
+            "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(
                 timespec="milliseconds"
             ),
             "level": record.levelname,
@@ -173,6 +173,95 @@ def log_unhandled_exception(
         },
     )
     return original
+
+
+class DiagnosticViewMixin:
+    """Shared diagnostics for Discord UI callback failures."""
+
+    async def on_error(self, interaction, error: BaseException, item) -> None:
+        """Correlate UI failures, invoke game-specific recovery, and acknowledge privately."""
+        logger = logging.getLogger("casino.components")
+        user_id = getattr(getattr(interaction, "user", None), "id", None)
+        guild_id = getattr(interaction, "guild_id", None)
+        channel_id = getattr(interaction, "channel_id", None)
+        view_name = (
+            getattr(self, "game_type", None)
+            or getattr(self, "game_title", None)
+            or type(self).__name__
+        )
+        command_name = f"component:{view_name}"
+        incident_id = new_incident_id()
+        original = log_unhandled_exception(
+            logger,
+            incident_id=incident_id,
+            surface="component",
+            command_name=command_name,
+            user_id=user_id,
+            guild_id=guild_id,
+            channel_id=channel_id,
+            error=error,
+        )
+
+        client = getattr(interaction, "client", None)
+        dispatch = getattr(client, "dispatch", None)
+        if callable(dispatch):
+            try:
+                dispatch(
+                    "casino_component_error",
+                    command_name,
+                    user_id if user_id is not None else "unknown",
+                    guild_id,
+                    channel_id,
+                    type(original).__name__,
+                    incident_id,
+                )
+            except Exception:  # noqa: BLE001 - diagnostics must not break recovery.
+                logger.exception(
+                    "Could not dispatch component incident incident_id=%s",
+                    incident_id,
+                )
+
+        recovery = getattr(self, "_recover_after_component_error", None)
+        if callable(recovery):
+            try:
+                await recovery(incident_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as recovery_error:  # noqa: BLE001 - still attempt private acknowledgement.
+                log_unhandled_exception(
+                    logger,
+                    incident_id=incident_id,
+                    surface="component_recovery",
+                    command_name=command_name,
+                    user_id=user_id,
+                    guild_id=guild_id,
+                    channel_id=channel_id,
+                    error=recovery_error,
+                )
+
+        try:
+            from cogs.utility.theme import StatusPanel
+
+            response = getattr(interaction, "response", None)
+            is_done = getattr(response, "is_done", None)
+            panel = StatusPanel(
+                "حصل عطل في التفاعل",
+                f"اتسجل رقم المتابعة **{incident_id}**. "
+                "هنراجع حالة الجولة بأمان؛ متبدأش محاولة تانية من نفس اللوحة.",
+                "warning",
+            )
+            if response is not None and callable(is_done) and not is_done():
+                await response.send_message(view=panel, ephemeral=True)
+            else:
+                await interaction.followup.send(view=panel, ephemeral=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - acknowledgement failure must not hide the incident.
+            logger.warning(
+                "Could not acknowledge component incident incident_id=%s",
+                incident_id,
+                exc_info=True,
+            )
 
 
 def install_asyncio_exception_handler(loop: asyncio.AbstractEventLoop) -> None:

@@ -256,6 +256,32 @@ async def _forward_error_to_guild_log(
         )
 
 @bot.event
+async def on_casino_component_error(
+    command_name,
+    user_id,
+    guild_id,
+    channel_id,
+    error_type,
+    incident_id,
+):
+    """Forward component failures through the same-guild, redacted diagnostics path."""
+    try:
+        await _forward_error_to_guild_log(
+            command_name,
+            user_id,
+            guild_id,
+            channel_id,
+            error_type,
+            incident_id,
+        )
+    except Exception:  # noqa: BLE001 - telemetry failures must not interrupt game handling.
+        logging.getLogger("casino.error_forwarding").exception(
+            "Failed to forward component error incident_id=%s",
+            incident_id,
+        )
+
+
+@bot.event
 async def on_command_error(ctx, error):
     """Handle expected user errors quietly; correlate and report unexpected failures."""
     logger = logging.getLogger("casino.commands")

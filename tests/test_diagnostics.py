@@ -6,8 +6,14 @@ import logging
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+
+import discord
+from discord.ui import LayoutView
 
 from cogs.utility.diagnostics import (
+    DiagnosticViewMixin,
     JsonLogFormatter,
     configure_file_logging,
     install_asyncio_exception_handler,
@@ -115,6 +121,54 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertTrue(current_payloads)
             self.assertIn("message", current_payloads[-1])
             self.assertIn("timestamp", current_payloads[-1])
+
+    async def test_component_error_logs_incident_runs_recovery_and_acknowledges_privately(self):
+        class RecoverableView(DiagnosticViewMixin, LayoutView):
+            def __init__(self):
+                super().__init__(timeout=30)
+                self.recover = AsyncMock()
+
+            async def _recover_after_component_error(self, incident_id):
+                await self.recover(incident_id)
+
+        response = SimpleNamespace(is_done=Mock(return_value=False), send_message=AsyncMock())
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=101),
+            guild_id=202,
+            channel_id=303,
+            client=SimpleNamespace(dispatch=Mock()),
+            response=response,
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        view = RecoverableView()
+        try:
+            with self.assertLogs("casino.components", level="ERROR") as captured:
+                await view.on_error(interaction, RuntimeError("private component fault"), item=None)
+
+            response.send_message.assert_awaited_once()
+            kwargs = response.send_message.await_args.kwargs
+            self.assertTrue(kwargs["ephemeral"])
+            self.assertIsInstance(kwargs["view"], StatusPanel)
+            panel_text = "\n".join(
+                item.content
+                for item in kwargs["view"].walk_children()
+                if isinstance(item, discord.ui.TextDisplay)
+            )
+            self.assertNotIn("private component fault", panel_text)
+            self.assertIn("رقم المتابعة", panel_text)
+            incident_id = captured.output[0].split("incident_id=", 1)[1].split()[0]
+            view.recover.assert_awaited_once_with(incident_id)
+            interaction.client.dispatch.assert_called_once_with(
+                "casino_component_error",
+                "component:RecoverableView",
+                101,
+                202,
+                303,
+                "RuntimeError",
+                incident_id,
+            )
+        finally:
+            view.stop()
 
     def test_asyncio_exception_handler_logs_incident_context(self):
         loop = asyncio.new_event_loop()

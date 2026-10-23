@@ -13,6 +13,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
+from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.utility.theme import THEME, StatusPanel
 
 logger = logging.getLogger(__name__)
@@ -190,7 +191,7 @@ async def recover_orphaned_casino_wagers(bot, schedule_recovery):
     return refunded, active_ids
 
 
-class SoloWagerView(LayoutView):
+class SoloWagerView(DiagnosticViewMixin, LayoutView):
     """One-message solo game with requester-bound controls and durable settlement."""
 
     def __init__(
@@ -448,6 +449,30 @@ class SoloWagerView(LayoutView):
             return
 
         await self._finalize(receipt)
+
+    async def _recover_after_component_error(self, incident_id: str) -> None:
+        """Resolve a callback fault without refunding a successfully settled instant bet."""
+        self.resolving = True
+        self._disable_buttons()
+        if self.game_id is None:
+            await self._finish_without_bet(
+                "# الجولة اتقفلت بأمان\n"
+                f"رقم المتابعة: {incident_id}\n"
+                "الخطأ حصل قبل تسجيل الرهان؛ مفيش مبلغ اتخصم."
+            )
+            return
+
+        self._panel_text.content = (
+            "# جاري التحقق من حالة الرهان\n"
+            f"رقم المتابعة: {incident_id}\n"
+            "هنستعلم عن نفس معرّف العملية. لو الرهان اتسوى بالفعل، مش هيتكرر الصرف."
+        )
+        self.cog._schedule_recovery(
+            self.game_id,
+            force_refund=False,
+            callback=self._recovered,
+        )
+        await self._edit_message()
 
     async def _finish_without_bet(self, content: str) -> None:
         self.done = True

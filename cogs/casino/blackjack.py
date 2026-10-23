@@ -11,6 +11,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
+from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.casino.solo_betting import (
     COIN,
     MAX_BET,
@@ -89,7 +90,7 @@ def _cards_text(cards):
     return "  ".join(f"[{rank}{suit}]" for rank, suit in cards) or "—"
 
 
-class BlackjackView(LayoutView):
+class BlackjackView(DiagnosticViewMixin, LayoutView):
     """A one-message hand controlled only by its original player."""
 
     def __init__(self, cog, requester, amount, *, deck=None):
@@ -150,6 +151,27 @@ class BlackjackView(LayoutView):
                 self._button("stand", "قف", self.stand, "⏹"),
             ))
         self.add_item(Container(*elements, accent_color=THEME["gold"]))
+
+    async def _recover_after_component_error(self, incident_id: str) -> None:
+        """Refund an unfinished hand following an unexpected UI callback exception."""
+        if self.phase == "waiting" and not self.resolving:
+            await self._finish_without_bet(
+                f"الجولة اتقفلت بأمان. رقم المتابعة: {incident_id}. مفيش رهان اتخصم."
+            )
+            return
+
+        self.resolving = True
+        self.phase = "pending"
+        self.notice = (
+            f"حصل خطأ أثناء الجولة (رقم المتابعة {incident_id}). "
+            "بنراجع حالة الرهان؛ أي جولة غير مكتملة هيترد رهانها."
+        )
+        self.cog._schedule_recovery(
+            self.game_id,
+            force_refund=True,
+            callback=self._recovered,
+        )
+        await self._edit()
 
     def _content(self):
         if self.phase == "waiting":
