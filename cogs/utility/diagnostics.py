@@ -12,6 +12,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+import discord
+
 DEFAULT_LOG_PATH = "data/logs/casino-bot.log"
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_BACKUP_COUNT = 5
@@ -264,9 +266,9 @@ class DiagnosticViewMixin:
                         embeds=[],
                         attachments=[],
                         view=panel,
-                        allowed_mentions=__import__("discord").AllowedMentions.none(),
+                        allowed_mentions=discord.AllowedMentions.none(),
                     )
-                except Exception as panel_error:  # noqa: BLE001 - preserve original incident and continue acknowledgement.
+                except Exception:
                     logger.warning(
                         "Could not replace failed component panel incident_id=%s",
                         incident_id,
