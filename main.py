@@ -17,6 +17,7 @@ from cogs.casino.permissions import (
     is_game_channel_allowed,
 )
 from cogs.utility.diagnostics import (
+    configure_file_logging,
     install_asyncio_exception_handler,
     log_unhandled_exception,
     new_incident_id,
@@ -78,16 +79,37 @@ bot.remove_command('help')
 ERROR_LOG_CHANNEL_ID = config.LOG_CHANNELS.get("command_errors", 0)
 
 
+async def _send_interaction_error(interaction, message, *, title="تعذر تنفيذ الأمر"):
+    """Send one private V2 error panel, whether or not Discord already acknowledged."""
+    panel = StatusPanel(title, message, "warning")
+    response = getattr(interaction, "response", None)
+    is_done = getattr(response, "is_done", None)
+    if response is not None and callable(is_done) and not is_done():
+        await response.send_message(view=panel, ephemeral=True)
+        return
+
+    followup = getattr(interaction, "followup", None)
+    send_followup = getattr(followup, "send", None)
+    if callable(send_followup):
+        await send_followup(view=panel, ephemeral=True)
+        return
+    raise RuntimeError("interaction has no available response channel")
+
+
 async def _send_command_error(ctx, message):
-    """Send a styled, safe error panel without double-acknowledging interactions."""
-    view = StatusPanel("تعذر تنفيذ الأمر", message, "warning")
+    """Send a safe V2 error panel without double-acknowledging hybrid commands."""
+    panel = StatusPanel("تعذر تنفيذ الأمر", message, "warning")
     interaction = getattr(ctx, "interaction", None)
     if interaction is None:
-        await ctx.send(view=view)
-    elif interaction.response.is_done():
-        await interaction.followup.send(view=view, ephemeral=True)
-    else:
-        await interaction.response.send_message(view=view, ephemeral=True)
+        await ctx.send(view=panel)
+        return
+
+    response = getattr(interaction, "response", None)
+    if response is None:
+        # Defensive fallback for custom/fake hybrid contexts; never expose internals.
+        await ctx.send(view=panel, ephemeral=True)
+        return
+    await _send_interaction_error(interaction, message)
 
 @bot.check
 async def enforce_home_guild_for_prefix(ctx):
@@ -155,10 +177,10 @@ async def on_ready():
                 # scoped to the one configured server.
                 bot.tree.clear_commands(guild=None)
                 await bot.tree.sync()
-                print(f"✅ Synced {len(synced)} server-only slash command(s)")
+                logger.info("Synced %s server-only slash command(s)", len(synced))
             else:
                 synced = await bot.tree.sync()
-                print(f"✅ Synced {len(synced)} global slash command(s)")
+                logger.info("Synced %s global slash command(s)", len(synced))
             bot._slash_commands_synced = True
         except Exception:
             logging.getLogger("casino.startup").exception("Failed to sync slash commands")
@@ -372,13 +394,15 @@ async def on_app_command_error(interaction, error):
         message = f"حصل عطل أثناء تنفيذ الأمر. تم تسجيله؛ رقم المتابعة {incident_id}."
 
     try:
-        if interaction.response.is_done():
-            await interaction.followup.send(message, ephemeral=True)
-        else:
-            await interaction.response.send_message(message, ephemeral=True)
+        await _send_interaction_error(interaction, message)
     except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
-        logger.warning("Could not acknowledge app-command error command=%s user_id=%s guild_id=%s",
-                       command_name, user_id, guild_id, exc_info=True)
+        logger.warning(
+            "Could not acknowledge app-command error command=%s user_id=%s guild_id=%s",
+            command_name,
+            user_id,
+            guild_id,
+            exc_info=True,
+        )
 
 
 @bot.event
@@ -386,7 +410,14 @@ async def on_error(event_method, *args, **kwargs):
     """Capture exceptions escaping ordinary Discord event callbacks."""
     incident_id = new_incident_id()
     logging.getLogger("casino.events").exception(
-        "Uncaught event failure incident_id=%s event=%s", incident_id, event_method
+        "Uncaught event failure incident_id=%s event=%s",
+        incident_id,
+        event_method,
+        extra={
+            "incident_id": incident_id,
+            "surface": "event",
+            "event_name": str(event_method),
+        },
     )
 
 # --- EXTENSION LOADER ---
@@ -452,6 +483,8 @@ async def load_cogs():
 # --- APPLICATION STARTUP ---
 async def main():
     logger = logging.getLogger("casino.startup")
+    configure_file_logging()
+    install_asyncio_exception_handler(asyncio.get_running_loop())
     if not config.TOKEN:
         logger.error(
             "DISCORD_TOKEN is missing. Configure the host environment using .env.example."
@@ -464,8 +497,6 @@ async def main():
         )
         return
     try:
-        loop = asyncio.get_running_loop()
-        install_asyncio_exception_handler(loop)
         async with bot:
             await load_cogs()
             await bot.start(config.TOKEN)

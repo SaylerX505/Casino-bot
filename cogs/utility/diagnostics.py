@@ -1,11 +1,123 @@
-"""Privacy-aware diagnostics shared by command and asyncio error handlers."""
+"""Privacy-aware, correlated diagnostics and bounded local log persistence."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import uuid
+from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
+
+DEFAULT_LOG_PATH = "data/logs/casino-bot.log"
+DEFAULT_MAX_BYTES = 5 * 1024 * 1024
+DEFAULT_BACKUP_COUNT = 5
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Serialize each local log record as one searchable JSON line."""
+
+    _CONTEXT_FIELDS = (
+        "incident_id",
+        "surface",
+        "command_name",
+        "user_id",
+        "guild_id",
+        "channel_id",
+        "error_type",
+        "task_name",
+        "event_name",
+    )
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(
+                timespec="milliseconds"
+            ),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
+            "process": record.process,
+        }
+        for field in self._CONTEXT_FIELDS:
+            value = getattr(record, field, None)
+            if value is not None:
+                payload[field] = value
+
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            payload["stack"] = self.formatStack(record.stack_info)
+        return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def configure_file_logging(
+    log_file_path: str | os.PathLike[str] | None = None,
+    *,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    backup_count: int = DEFAULT_BACKUP_COUNT,
+) -> RotatingFileHandler | None:
+    """Attach a rotating JSON log file to the root logger, without duplicate handlers.
+
+    The file is private local diagnostics: it may contain exception tracebacks. It must
+    live on private persistent storage and never be forwarded verbatim to Discord.
+    Console logging remains available if the file cannot be opened.
+    """
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        raise ValueError("max_bytes must be a positive integer")
+    if isinstance(backup_count, bool) or not isinstance(backup_count, int) or backup_count < 0:
+        raise ValueError("backup_count must be a non-negative integer")
+
+    configured_path = (
+        str(log_file_path)
+        if log_file_path is not None
+        else os.getenv("CASINO_LOG_FILE", DEFAULT_LOG_PATH)
+    )
+    if configured_path.strip().lower() in {"", "off", "disabled", "none", "0"}:
+        return None
+
+    path = Path(configured_path).expanduser()
+    if not path.is_absolute():
+        project_root = Path(__file__).resolve().parents[2]
+        path = project_root / path
+    path = path.resolve()
+
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if getattr(handler, "_casino_log_file_path", None) == str(path):
+            return handler if isinstance(handler, RotatingFileHandler) else None
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            path,
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+            delay=True,
+        )
+        handler.setLevel(root_logger.getEffectiveLevel())
+        handler.setFormatter(JsonLogFormatter())
+        handler._casino_log_file_path = str(path)
+        root_logger.addHandler(handler)
+        logging.getLogger("casino.logging").info(
+            "Rotating diagnostics enabled path=%s max_bytes=%s backups=%s",
+            path,
+            max_bytes,
+            backup_count,
+        )
+        return handler
+    except (OSError, ValueError):
+        logging.getLogger("casino.logging").exception(
+            "Could not configure rotating diagnostics; console logging remains active"
+        )
+        return None
 
 
 def new_incident_id() -> str:
@@ -37,7 +149,7 @@ def log_unhandled_exception(
     channel_id: int | str | None,
     error: BaseException,
 ) -> BaseException:
-    """Log one full local traceback with stable, searchable, non-secret context."""
+    """Log a traceback locally with correlated metadata, never to the user's response."""
     original = unwrap_exception(error)
     logger.error(
         "Unhandled failure incident_id=%s surface=%s command=%s user_id=%s "
@@ -50,6 +162,15 @@ def log_unhandled_exception(
         channel_id if channel_id is not None else "unknown",
         type(original).__name__,
         exc_info=(type(original), original, original.__traceback__),
+        extra={
+            "incident_id": incident_id,
+            "surface": surface,
+            "command_name": command_name,
+            "user_id": user_id,
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "error_type": type(original).__name__,
+        },
     )
     return original
 
@@ -74,6 +195,12 @@ def install_asyncio_exception_handler(loop: asyncio.AbstractEventLoop) -> None:
                 task_name = type(future).__name__
 
         message = str(context.get("message") or "Unobserved asyncio failure")
+        message = " ".join(message.split())[:300]
+        common_extra = {
+            "incident_id": incident_id,
+            "surface": "asyncio",
+            "task_name": task_name,
+        }
         if isinstance(exception, BaseException):
             original = unwrap_exception(exception)
             logger.error(
@@ -83,6 +210,7 @@ def install_asyncio_exception_handler(loop: asyncio.AbstractEventLoop) -> None:
                 message,
                 type(original).__name__,
                 exc_info=(type(original), original, original.__traceback__),
+                extra={**common_extra, "error_type": type(original).__name__},
             )
         else:
             logger.error(
@@ -90,6 +218,7 @@ def install_asyncio_exception_handler(loop: asyncio.AbstractEventLoop) -> None:
                 incident_id,
                 task_name,
                 message,
+                extra=common_extra,
             )
 
     loop.set_exception_handler(handle)
