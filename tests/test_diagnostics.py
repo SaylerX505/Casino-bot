@@ -28,7 +28,7 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     def test_incident_ids_are_short_and_unique(self):
         ids = {new_incident_id() for _ in range(100)}
         self.assertEqual(len(ids), 100)
-        self.assertTrue(all(len(value) == 10 and value.isupper() for value in ids))
+        self.assertTrue(all(len(value) == 10 and all(char in "0123456789ABCDEF" for char in value) for value in ids))
 
     def test_wrapped_exceptions_unwrap_without_looping(self):
         original = ValueError("sensitive detail")
