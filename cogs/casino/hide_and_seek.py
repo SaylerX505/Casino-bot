@@ -549,14 +549,30 @@ class HideAndSeek(commands.Cog):
             return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
         try:
             view.message = await ctx.send(view=view)
-        except Exception as e:
+        except Exception:
             release_game_task(self.bot, ctx.channel.id, view.timer_task)
             view.timer_task.cancel()
-            embed = discord.Embed(
-                description=f"⚠️ حدث خطأ: {e}",
-                color=discord.Color.red()
+            logger.exception(
+                "Could not create hide-and-seek lobby requester_id=%s channel_id=%s",
+                ctx.author.id,
+                ctx.channel.id,
             )
-            await ctx.send(view=embed_to_v2(embed))
+            send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+            try:
+                await ctx.send(
+                    view=StatusPanel(
+                        "تعذر فتح لوبي الغميضة",
+                        "حصل عطل أثناء تجهيز واجهة اللعبة. سجلنا التفاصيل؛ جرّب تاني بعد شوية.",
+                        "warning",
+                    ),
+                    **send_kwargs,
+                )
+            except (discord.HTTPException, discord.InteractionResponded):
+                logger.exception(
+                    "Could not send hide-and-seek startup error panel requester_id=%s channel_id=%s",
+                    ctx.author.id,
+                    ctx.channel.id,
+                )
             return
         if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
             view._disable_buttons()
