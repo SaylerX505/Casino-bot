@@ -13,7 +13,7 @@ class SlotsOutcomeTests(unittest.TestCase):
             "cogs.casino.solo_betting.secrets.choice",
             side_effect=["🍒", "🍒", "🍋"],
         ):
-            _result, won, payout = _spin_slots("spin", 100)
+            result, won, payout = _spin_slots("spin", 100)
 
         self.assertEqual(result, "🍒 · 🍒 · 🍋")
         self.assertTrue(won)
@@ -55,7 +55,7 @@ class SlotsOutcomeTests(unittest.TestCase):
                 "cogs.casino.solo_betting.secrets.choice",
                 side_effect=symbols,
             ):
-                result, won, payout = _spin_slots("spin", 100)
+                _result, won, payout = _spin_slots("spin", 100)
 
             outcomes += 1
             total_gross_payout += payout
