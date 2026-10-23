@@ -21,9 +21,10 @@ from cogs.utility.diagnostics import (
     new_incident_id,
     unwrap_exception,
 )
+from cogs.utility.theme import StatusPanel
 
 
-class DiagnosticsTests(unittest.TestCase):
+class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     def test_incident_ids_are_short_and_unique(self):
         ids = {new_incident_id() for _ in range(100)}
         self.assertEqual(len(ids), 100)

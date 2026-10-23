@@ -11,7 +11,6 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
-from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.casino.solo_betting import (
     COIN,
     MAX_BET,
@@ -20,6 +19,7 @@ from cogs.casino.solo_betting import (
     recover_orphaned_casino_wagers,
     release_solo_session,
 )
+from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.utility.theme import THEME, StatusPanel
 
 logger = logging.getLogger(__name__)

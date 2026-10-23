@@ -274,7 +274,7 @@ async def on_casino_component_error(
             error_type,
             incident_id,
         )
-    except Exception:  # noqa: BLE001 - telemetry failures must not interrupt game handling.
+    except Exception:
         logging.getLogger("casino.error_forwarding").exception(
             "Failed to forward component error incident_id=%s",
             incident_id,
