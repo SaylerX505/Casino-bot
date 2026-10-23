@@ -27,6 +27,7 @@ from cogs.utility.theme import (
     get_currency,
     lobby_embed,
     report_game_failure,
+    try_edit_view,
 )
 
 logger = logging.getLogger(__name__)
@@ -230,7 +231,10 @@ class WheelLobby(LayoutView):
                     await self.start_game()
                 elif self.message:
                     self._refresh_panel()
-                    await self.message.edit(view=self)
+                    try:
+                        await self.message.edit(view=self)
+                    except discord.HTTPException:
+                        logger.debug("Could not refresh wheel lobby", exc_info=True)
         except asyncio.CancelledError:
             raise
 
@@ -242,8 +246,7 @@ class WheelLobby(LayoutView):
             self.started = True
             self._panel_text.content = "# انتهى التسجيل\nمحدش انضم للجولة دي. افتح لوبي جديد عشان تلعبوا."
             self._disable_buttons()
-            if self.message:
-                await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="wheel_lobby_empty")
             release_game_task(self.ctx.bot, self.ctx.channel.id, self.lobby_task)
             self.stop()
             return
@@ -251,8 +254,7 @@ class WheelLobby(LayoutView):
         self.started = True
         self._panel_text.content = "# الجولة بدأت\nاللوبي اتقفل. بنجهز نتائج العجلة."
         self._disable_buttons()
-        if self.message:
-            await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="wheel_lobby_start")
 
         task = self.ctx.bot.loop.create_task(self.play_rounds())
         registered = register_game_task(

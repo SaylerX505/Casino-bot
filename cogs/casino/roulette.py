@@ -34,6 +34,7 @@ from cogs.utility.theme import (
     lobby_embed,
     report_game_failure,
     result_embed,
+    try_edit_view,
 )
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
@@ -142,13 +143,13 @@ class RouletteLobby(LayoutView):
             )
             self._panel_text.content = "# تم إلغاء اللوبي\nمحتاجين لاعبين على الأقل عشان الروليت تبدأ."
             self._disable_buttons()
-            if self.message: await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="roulette_lobby_cancelled")
             return
 
         self.game_started = True
         self._panel_text.content = "# جاري تجهيز الأسلحة\nاللوبي اتقفل. الجولة هتبدأ دلوقتي."
         self._disable_buttons()
-        if self.message: await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="roulette_lobby_start")
         
         task = self.ctx.bot.loop.create_task(self.run_game_loop())
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Roulette", replace_task=self.timer_task):

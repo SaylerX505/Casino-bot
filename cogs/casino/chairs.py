@@ -23,6 +23,7 @@ from cogs.utility.theme import (
     lobby_embed,
     report_game_failure,
     result_embed,
+    try_edit_view,
 )
 
 logger = logging.getLogger(__name__)
@@ -249,13 +250,13 @@ class ChairsLobby(LayoutView):
             self.game_started = True
             self._panel_text.content = "# العدد غير كافي\nمحتاجين لاعبين على الأقل عشان الجولة تبدأ."
             self._disable_buttons()
-            if self.message: await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="chairs_lobby_cancelled")
             return
 
         self.game_started = True
         self._panel_text.content = "# جاري تجهيز الكراسي الموسيقية\nهنبدأ الجولة دلوقتي. جهّز نفسك."
         self._disable_buttons()
-        if self.message: await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="chairs_lobby_start")
         
         task = self.ctx.bot.loop.create_task(self.run_game_loop())
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Chairs", replace_task=self.timer_task):

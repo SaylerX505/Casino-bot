@@ -112,6 +112,27 @@ class StatusPanel(LayoutView):
         )
 
 
+async def try_edit_view(message, view, *, context: str) -> bool:
+    """Best-effort lobby update that never lets an HTTP edit failure strand a game.
+
+    A missing/deleted lobby message should not prevent the actual round from
+    starting or prevent an empty lobby from releasing its channel reservation.
+    The reason is logged locally; exception details are never sent to Discord.
+    """
+    if message is None:
+        return False
+    try:
+        await message.edit(view=view)
+    except discord.HTTPException:
+        logging.getLogger("casino.ui").warning(
+            "Could not update a game lobby panel context=%s",
+            context,
+            exc_info=True,
+        )
+        return False
+    return True
+
+
 async def report_game_failure(ctx, title: str, description: str, fallback_view=None) -> bool:
     """Report an unexpected game failure by editing the live panel when possible.
 

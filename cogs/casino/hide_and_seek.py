@@ -11,7 +11,7 @@ import random
 import config
 
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, try_edit_view
 
 
 logger = logging.getLogger(__name__)
@@ -284,13 +284,13 @@ class LobbyView(LayoutView):
             )
             self._panel_text.content = "# تم إلغاء اللوبي\nمحتاجين لاعبين على الأقل لبدء الغميضة."
             self._disable_buttons()
-            if self.message: await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="hide_seek_lobby_cancelled")
             return
 
         self.game_started = True
         self._panel_text.content = "# جاري بدء الغميضة\nاللوبي اتقفل. جهّز نفسك."
         self._disable_buttons()
-        if self.message: await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="hide_seek_lobby_start")
         
         task = self.ctx.bot.loop.create_task(run_game_loop(self.ctx, self.players))
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "HideAndSeek", replace_task=self.timer_task):

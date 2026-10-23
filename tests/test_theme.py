@@ -1,9 +1,9 @@
 """Regression tests for shared result presentation."""
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
-from cogs.utility.theme import THEME, StatusPanel, report_game_failure, result_embed
+from cogs.utility.theme import THEME, StatusPanel, report_game_failure, result_embed, try_edit_view
 
 
 class ResultEmbedTests(unittest.TestCase):
@@ -69,6 +69,32 @@ class GameFailureReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(reported)
         ctx.send.assert_awaited_once()
         self.assertIsInstance(ctx.send.await_args.kwargs["view"], StatusPanel)
+
+
+class SafeViewEditTests(unittest.IsolatedAsyncioTestCase):
+    async def test_http_edit_failure_is_logged_and_does_not_escape(self):
+        import discord
+
+        response = SimpleNamespace(status=503, reason="synthetic failure")
+        message = SimpleNamespace(
+            edit=AsyncMock(
+                side_effect=discord.HTTPException(response, "synthetic lobby edit failure")
+            )
+        )
+        view = StatusPanel("Lobby", "Safe fallback")
+
+        with patch("cogs.utility.theme.logging.getLogger") as get_logger:
+            logger = get_logger.return_value
+            updated = await try_edit_view(message, view, context="test_lobby_start")
+
+        self.assertFalse(updated)
+        message.edit.assert_awaited_once_with(view=view)
+        logger.warning.assert_called_once()
+
+    async def test_missing_lobby_message_is_a_safe_noop(self):
+        view = StatusPanel("Lobby", "Safe fallback")
+        updated = await try_edit_view(None, view, context="test_lobby_start")
+        self.assertFalse(updated)
 
 
 if __name__ == "__main__":

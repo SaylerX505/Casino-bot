@@ -18,7 +18,7 @@ from discord.ui import (
 import config
 from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.game_registry import register_game_task
-from cogs.utility.theme import THEME, StatusPanel, lobby_embed
+from cogs.utility.theme import THEME, StatusPanel, lobby_embed, try_edit_view
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ class GuessGameMenu(LayoutView):
             )
             self._refresh_panel(cancel_embed)
             self._disable_buttons()
-            if self.message: await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="geoguessr_lobby_cancelled")
             return
 
         self.game_started = True
@@ -116,7 +116,7 @@ class GuessGameMenu(LayoutView):
         start_embed.set_thumbnail(url=SERVER_LOGO_URL)
         self._refresh_panel(start_embed)
         self._disable_buttons()
-        if self.message: await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="geoguessr_lobby_start")
         
         task = self.ctx.bot.loop.create_task(self.start_game(self.ctx, list(self.players)))
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "GeoGuessr", replace_task=self.timer_task):
