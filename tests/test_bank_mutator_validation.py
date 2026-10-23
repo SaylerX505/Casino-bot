@@ -67,5 +67,85 @@ class BankMutatorValidationTests(unittest.TestCase):
                 bank.set_daily(101, 0, invalid_streak)
 
 
+
+    def test_purchase_rejects_implicit_integer_coercion_before_storage_access(self):
+        for quantity in (True, 1.5, "2"):
+            with self.subTest(quantity=quantity):
+                with (
+                    patch("cogs.casino.bank.get_balance", return_value=123),
+                    patch("cogs.casino.bank._connect", side_effect=AssertionError("invalid purchase touched storage")) as connect,
+                ):
+                    self.assertEqual(bank.purchase_item(101, "shield", quantity, 5), (False, 123))
+                    connect.assert_not_called()
+
+        for unit_price in (True, 1.5, "5"):
+            with self.subTest(unit_price=unit_price):
+                with (
+                    patch("cogs.casino.bank.get_balance", return_value=123),
+                    patch("cogs.casino.bank._connect", side_effect=AssertionError("invalid purchase touched storage")) as connect,
+                ):
+                    self.assertEqual(bank.purchase_item(101, "shield", 1, unit_price), (False, 123))
+                    connect.assert_not_called()
+
+    def test_daily_claim_rejects_invalid_timestamp_and_reward_types(self):
+        for timestamp, expected_error in (
+            (True, TypeError),
+            ("2000000000", TypeError),
+            (-1, ValueError),
+            (float("nan"), ValueError),
+            (float("inf"), ValueError),
+        ):
+            with (
+                self.subTest(timestamp=timestamp),
+                patch("cogs.casino.bank._connect", side_effect=AssertionError("invalid daily input touched storage")) as connect,
+                self.assertRaises(expected_error),
+            ):
+                bank.claim_daily(101, timestamp, 20)
+                connect.assert_not_called()
+
+        for reward in (True, 1.5, "20", -1, bank.SQLITE_MAX_INT + 1):
+            expected_error = TypeError if isinstance(reward, (bool, float, str)) else ValueError
+            with (
+                self.subTest(reward=reward),
+                patch("cogs.casino.bank._connect", side_effect=AssertionError("invalid daily input touched storage")) as connect,
+                self.assertRaises(expected_error),
+            ):
+                bank.claim_daily(101, 2_000_000_000.0, reward)
+                connect.assert_not_called()
+
+    def test_redemption_rejects_implicit_reward_coercion_before_storage_access(self):
+        for reward in (True, 1.5, "10", -1, bank.SQLITE_MAX_INT + 1):
+            with self.subTest(reward=reward):
+                with patch("cogs.casino.bank.get_balance", return_value=123), patch(
+                    "cogs.casino.bank._connect",
+                    side_effect=AssertionError("invalid redemption touched storage"),
+                ) as connect:
+                    self.assertEqual(bank.redeem_item(101, "loot_box", reward), (False, 123))
+                    connect.assert_not_called()
+
+    def test_simple_pvp_bet_rejects_implicit_integer_coercion(self):
+        for amount in (True, 1.5, "10", 0, -1, bank.SQLITE_MAX_INT + 1):
+            with self.subTest(amount=amount), patch(
+                "cogs.casino.bank._connect",
+                side_effect=AssertionError("invalid wager touched storage"),
+            ) as connect:
+                self.assertFalse(bank.place_bet(101, 202, amount))
+                connect.assert_not_called()
+
+    def test_wheel_settlement_rejects_coerced_amounts_before_storage_access(self):
+        invalid_cases = (
+            ((101, True, 0), {}),
+            ((101, 50, 1.5), {}),
+            ((101, 50, 0), {"target_loss": True}),
+            ((101, 50, 0), {"target_loss": "10"}),
+        )
+        for args, kwargs in invalid_cases:
+            with self.subTest(args=args, kwargs=kwargs), patch(
+                "cogs.casino.bank._connect",
+                side_effect=AssertionError("invalid wheel input touched storage"),
+            ) as connect, self.assertRaises(TypeError):
+                bank.settle_wheel(*args, **kwargs)
+                connect.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()

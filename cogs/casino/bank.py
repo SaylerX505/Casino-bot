@@ -254,14 +254,21 @@ def transfer_balance(sender_id, recipient_id, amount):
             raise
 
 
+
 def settle_wheel(user_id, entry_fee, payout=0, target_loss=None):
-    uid, entry_fee, payout = str(user_id), int(entry_fee), int(payout)
-    sqlite_max_int = (1 << 63) - 1
-    if entry_fee <= 0 or payout < 0 or payout > sqlite_max_int:
+    """Settle a wheel round atomically after validating all coin amounts."""
+    uid = str(user_id)
+    sqlite_max_int = SQLITE_MAX_INT
+    if isinstance(entry_fee, bool) or not isinstance(entry_fee, int):
+        raise TypeError("entry_fee must be an integer")
+    if isinstance(payout, bool) or not isinstance(payout, int):
+        raise TypeError("payout must be an integer")
+    if not 0 < entry_fee <= sqlite_max_int or not 0 <= payout <= sqlite_max_int:
         raise ValueError("invalid wheel settlement values")
     if target_loss is not None:
-        target_loss = int(target_loss)
-        if target_loss < 0 or target_loss > sqlite_max_int or payout:
+        if isinstance(target_loss, bool) or not isinstance(target_loss, int):
+            raise TypeError("target_loss must be an integer")
+        if not 0 <= target_loss <= sqlite_max_int or payout:
             raise ValueError("invalid wheel loss")
 
     with _lock:
@@ -318,8 +325,6 @@ def settle_wheel(user_id, entry_fee, payout=0, target_loss=None):
         except Exception:
             c.rollback()
             raise
-
-
 def add_guild_admin(guild_id, user_id):
     with _lock:
         c = _connect()
@@ -359,10 +364,22 @@ def is_guild_admin(guild_id, user_id):
         ).fetchone()
         return row is not None
 
+
 def purchase_item(user_id, item, quantity, unit_price):
-    """Charge coins and add inventory in one transaction."""
-    uid, quantity, unit_price = str(user_id), int(quantity), int(unit_price)
-    sqlite_max_int = (1 << 63) - 1
+    """Charge coins and add inventory atomically, guarding both integer bounds."""
+    uid = str(user_id)
+    if (
+        not isinstance(item, str)
+        or not item.strip()
+        or isinstance(quantity, bool)
+        or not isinstance(quantity, int)
+        or isinstance(unit_price, bool)
+        or not isinstance(unit_price, int)
+    ):
+        return False, get_balance(uid)
+
+    item = item.strip()
+    sqlite_max_int = SQLITE_MAX_INT
     if (
         quantity <= 0
         or unit_price < 0
@@ -377,6 +394,17 @@ def purchase_item(user_id, item, quantity, unit_price):
         try:
             c.execute("BEGIN IMMEDIATE")
             c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            inventory_row = c.execute(
+                "SELECT qty FROM inventory WHERE user_id=? AND item=?",
+                (uid, item),
+            ).fetchone()
+            current_qty = int(inventory_row["qty"]) if inventory_row else 0
+            if current_qty < 0 or current_qty > sqlite_max_int - quantity:
+                row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+                balance = int(row["balance"]) if row else 0
+                c.rollback()
+                return False, balance
+
             changed = c.execute(
                 "UPDATE users SET balance=balance-? WHERE user_id=? AND balance>=?",
                 (total, uid, total),
@@ -386,11 +414,16 @@ def purchase_item(user_id, item, quantity, unit_price):
                 balance = int(row["balance"]) if row else 0
                 c.rollback()
                 return False, balance
-            c.execute(
-                "INSERT INTO inventory (user_id,item,qty) VALUES (?,?,?) "
-                "ON CONFLICT(user_id,item) DO UPDATE SET qty=qty+excluded.qty",
-                (uid, str(item), quantity),
-            )
+            if inventory_row is None:
+                c.execute(
+                    "INSERT INTO inventory (user_id,item,qty) VALUES (?,?,?)",
+                    (uid, item, quantity),
+                )
+            else:
+                c.execute(
+                    "UPDATE inventory SET qty=qty+? WHERE user_id=? AND item=?",
+                    (quantity, uid, item),
+                )
             row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
             balance_after = int(row["balance"]) if row else 0
             _record_ledger(
@@ -399,7 +432,7 @@ def purchase_item(user_id, item, quantity, unit_price):
                 user_id=uid,
                 delta=-total,
                 balance_after=balance_after,
-                metadata={"item": str(item), "quantity": quantity, "unit_price": unit_price},
+                metadata={"item": item, "quantity": quantity, "unit_price": unit_price},
             )
             c.commit()
             return True, balance_after
@@ -407,12 +440,22 @@ def purchase_item(user_id, item, quantity, unit_price):
             c.rollback()
             raise
 
-
 def claim_daily(user_id, now_ts, base_reward):
-    """Atomically enforce cooldown, update streak, and grant the daily reward."""
-    uid, now_ts, base_reward = str(user_id), float(now_ts), int(base_reward)
-    if base_reward < 0:
-        raise ValueError("base_reward must not be negative")
+    """Atomically enforce cooldown, update streak, and grant a validated reward."""
+    uid = str(user_id)
+    if isinstance(now_ts, bool) or not isinstance(now_ts, (int, float)):
+        raise TypeError("now_ts must be a numeric timestamp")
+    try:
+        now_ts = float(now_ts)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("now_ts must be finite and non-negative") from None
+    if not math.isfinite(now_ts) or now_ts < 0:
+        raise ValueError("now_ts must be finite and non-negative")
+    if isinstance(base_reward, bool) or not isinstance(base_reward, int):
+        raise TypeError("base_reward must be an integer")
+    if not 0 <= base_reward <= SQLITE_MAX_INT:
+        raise ValueError("base_reward must be a non-negative SQLite-safe integer")
+
     with _lock:
         c = _connect()
         try:
@@ -429,7 +472,7 @@ def claim_daily(user_id, now_ts, base_reward):
             if last and (now_ts - last) > 86400 * 2:
                 streak = 0
             reward = base_reward + min(streak, 7) * 10
-            if balance > ((1 << 63) - 1) - reward:
+            if balance > sqlite_max_int - reward:
                 c.rollback()
                 return {"claimed": False, "reason": "balance_limit", "last_daily": last,
                         "streak": streak, "amount": 0, "balance": balance}
@@ -454,12 +497,20 @@ def claim_daily(user_id, now_ts, base_reward):
             c.rollback()
             raise
 
-
 def redeem_item(user_id, item, reward):
     """Consume one inventory item and grant its reward atomically."""
-    uid, item, reward = str(user_id), str(item), int(reward)
-    if reward < 0:
-        raise ValueError("reward must not be negative")
+    uid = str(user_id)
+    if (
+        not isinstance(item, str)
+        or not item.strip()
+        or isinstance(reward, bool)
+        or not isinstance(reward, int)
+        or reward < 0
+        or reward > SQLITE_MAX_INT
+    ):
+        return False, get_balance(uid)
+
+    item = item.strip()
     with _lock:
         c = _connect()
         try:
@@ -467,7 +518,7 @@ def redeem_item(user_id, item, reward):
             c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
             balance_row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
             balance = int(balance_row["balance"]) if balance_row else 0
-            if balance > ((1 << 63) - 1) - reward:
+            if balance > SQLITE_MAX_INT - reward:
                 c.rollback()
                 return False, balance
             changed = c.execute(
@@ -493,11 +544,16 @@ def redeem_item(user_id, item, reward):
             c.rollback()
             raise
 
-
 def place_bet(player_a, player_b, amount):
     """Collect both stakes atomically; neither player is charged on failure."""
-    a, b, amount = str(player_a), str(player_b), int(amount)
-    if amount <= 0 or amount > (1 << 63) - 1 or a == b:
+    a, b = str(player_a), str(player_b)
+    if (
+        isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+        or amount > SQLITE_MAX_INT
+        or a == b
+    ):
         return False
     with _lock:
         c = _connect()
@@ -539,9 +595,6 @@ def place_bet(player_a, player_b, amount):
         except Exception:
             c.rollback()
             raise
-
-
-
 def create_rps_wager(game_id, player_a, player_b, amount):
     """Atomically debit both integer stakes and persist a recoverable wager."""
     game_id, a, b = str(game_id), str(player_a), str(player_b)
