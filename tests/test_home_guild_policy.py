@@ -3,7 +3,17 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import discord
+
 import main
+
+
+def view_text(view):
+    return "\\n".join(
+        item.content
+        for item in view.walk_children()
+        if isinstance(item, discord.ui.TextDisplay)
+    )
 
 
 class HomeGuildPolicyTests(unittest.IsolatedAsyncioTestCase):
@@ -17,6 +27,8 @@ class HomeGuildPolicyTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("main.config.TOKEN", "test-token"),
             patch("main.config.HOME_GUILD_ID", None),
+            patch("main.configure_file_logging"),
+            patch("main.install_asyncio_exception_handler"),
             patch("main.logging.getLogger") as get_logger,
         ):
             await main.main()
@@ -59,7 +71,8 @@ class HomeGuildPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(allowed)
         interaction.response.send_message.assert_awaited_once()
         self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
-        self.assertIn("المافيا", interaction.response.send_message.await_args.args[0])
+        panel = interaction.response.send_message.await_args.kwargs["view"]
+        self.assertIn("المافيا", view_text(panel))
 
     async def test_prefix_game_command_is_rejected_outside_its_allowed_channels(self):
         ctx = SimpleNamespace(

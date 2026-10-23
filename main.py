@@ -43,11 +43,11 @@ class HomeGuildCommandTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         home_guild_id = getattr(config, "HOME_GUILD_ID", None)
         if home_guild_id is not None and interaction.guild_id != home_guild_id:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "البوت ده مخصص لسيرفر واحد ومش متاح خارج السيرفر الأساسي.",
-                    ephemeral=True,
-                )
+            await _send_interaction_error(
+                interaction,
+                "البوت ده مخصص لسيرفر واحد ومش متاح خارج السيرفر الأساسي.",
+                title="السيرفر غير مدعوم",
+            )
             return False
 
         game_key = game_key_from_interaction(interaction)
@@ -56,12 +56,12 @@ class HomeGuildCommandTree(app_commands.CommandTree):
             interaction.channel_id,
             game_key,
         ):
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"لعبة **{GAME_LABELS[game_key]}** متاحة في قنوات محددة بس. "
-                    "راجع الستاف أو جرّب القناة المخصصة.",
-                    ephemeral=True,
-                )
+            await _send_interaction_error(
+                interaction,
+                f"لعبة **{GAME_LABELS[game_key]}** متاحة في قنوات محددة بس. "
+                "راجع الستاف أو جرّب القناة المخصصة.",
+                title="اللعبة مش متاحة في القناة دي",
+            )
             return False
         return True
 
