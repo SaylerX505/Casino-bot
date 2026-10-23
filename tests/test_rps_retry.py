@@ -223,7 +223,11 @@ class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             is_done=lambda: second_state["done"],
         )
         first_interaction = SimpleNamespace(user=player, response=first_response)
-        second_interaction = SimpleNamespace(user=opponent, response=second_response)
+        second_interaction = SimpleNamespace(
+            user=opponent,
+            response=second_response,
+            edit_original_response=AsyncMock(),
+        )
 
         with patch(
             "cogs.casino.rps._settle_wager",
@@ -252,7 +256,10 @@ class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         message.edit.assert_has_awaits([call(view=view), unittest.mock.call(view=view)])
         self.assertEqual(message.edit.await_count, 2)
         second_response.edit_message.assert_not_awaited()
-        second_response.edit_original_response.assert_awaited_once()
+        second_interaction.edit_original_response.assert_awaited_once_with(
+            content="اتسجل اختيارك، والنتيجة النهائية ظاهرة في رسالة التحدي.",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
         self.assertTrue(view.done)
         self.assertIn("تعادل", view._panel_text.content)
         self.assertTrue(all(button.disabled for button in view._buttons))
