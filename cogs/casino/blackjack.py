@@ -143,12 +143,12 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         if self.phase == "waiting":
             elements.append(ActionRow(
                 self._button("deal", "ابدأ اللعب", self.start_game, "🃏"),
-                self._button("cancel", "إلغاء", self.cancel, "✕"),
+                self._button("cancel", "إلغاء", self.cancel, "❌"),
             ))
         elif self.phase == "playing":
             elements.append(ActionRow(
-                self._button("hit", "اسحب بطاقة", self.hit, "🂠"),
-                self._button("stand", "قف", self.stand, "⏹"),
+                self._button("hit", "اسحب بطاقة", self.hit, "🎴"),
+                self._button("stand", "قف", self.stand, "🛑"),
             ))
         self.add_item(Container(*elements, accent_color=THEME["gold"]))
 

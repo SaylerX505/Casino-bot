@@ -291,7 +291,7 @@ class WizardHomeView(WizardLayout):
                         "إغلاق المعالج",
                         "wizard_close",
                         self.close_wizard,
-                        emoji="✕",
+                        emoji="❌",
                     ),
                 ),
                 accent_color=0x393A41,

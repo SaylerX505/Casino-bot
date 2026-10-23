@@ -244,7 +244,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
 
         cancel = discord.ui.Button(
             label="إلغاء",
-            emoji="✕",
+            emoji="❌",
             style=discord.ButtonStyle.secondary,
             custom_id=f"{self.game_type}_cancel",
         )
