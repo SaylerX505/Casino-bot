@@ -21,15 +21,24 @@ class Currency(commands.Cog):
         self._persistent_hub_view = None
 
     async def cog_load(self):
-        """Restore persistent public economy buttons when the extension loads."""
+        """Register exactly one persistent economy hub, including on extension reload."""
+        old_view = getattr(self.bot, "_currency_hub_layout", None)
+        if old_view is not None:
+            self.bot.remove_view(old_view)
+
         self._persistent_hub_view = CurrencyHubLayout(self)
         self.bot.add_view(self._persistent_hub_view)
+        self.bot._currency_hub_layout = self._persistent_hub_view
 
     def cog_unload(self):
-        """Unregister the view when reloading or unloading this extension."""
-        if self._persistent_hub_view is not None:
-            self.bot.remove_view(self._persistent_hub_view)
-            self._persistent_hub_view = None
+        """Unregister the same persistent view when reloading or unloading this extension."""
+        view = self._persistent_hub_view
+        if view is None:
+            return
+        self.bot.remove_view(view)
+        if getattr(self.bot, "_currency_hub_layout", None) is view:
+            delattr(self.bot, "_currency_hub_layout")
+        self._persistent_hub_view = None
 
     def check_whitelist(self, user: discord.Member) -> bool:
         permissions = getattr(user, "guild_permissions", None)
@@ -207,11 +216,5 @@ class Currency(commands.Cog):
         )
 
 async def setup(bot):
-    cog = Currency(bot)
-    await bot.add_cog(cog)
-    old_layout = getattr(bot, "_currency_hub_layout", None)
-    if old_layout is not None:
-        bot.remove_view(old_layout)
-    layout = CurrencyHubLayout(cog)
-    bot.add_view(layout)
-    bot._currency_hub_layout = layout
+    """Let Cog lifecycle own persistent-view registration and cleanup."""
+    await bot.add_cog(Currency(bot))
