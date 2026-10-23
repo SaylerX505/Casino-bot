@@ -156,6 +156,32 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("رصيدك بعد التسوية:** 1,090", self.view._panel_text.content)
 
 
+    async def test_discord_panel_update_failure_releases_session_without_betting(self):
+        self.view.message = SimpleNamespace(id=702, edit=AsyncMock())
+        interaction = SimpleNamespace(
+            user=self.requester,
+            channel_id=999,
+            message=self.view.message,
+            response=SimpleNamespace(
+                edit_message=AsyncMock(
+                    side_effect=discord.HTTPException(
+                        SimpleNamespace(status=500, reason="simulated failure"),
+                        "simulated failure",
+                    )
+                ),
+                send_message=AsyncMock(),
+            ),
+        )
+        with patch.object(solo_betting_module.bank, "play_casino_wager") as play_wager:
+            await self.view.choose(interaction, side="heads")
+
+        play_wager.assert_not_called()
+        self.assertTrue(self.view.done)
+        self.assertFalse(self.view.resolving)
+        self.assertTrue(all(button.disabled for button in self.view._buttons.values()))
+        self.assertIn("تعذر بدء الجولة", self.view._panel_text.content)
+        self.view.message.edit.assert_awaited_once_with(view=self.view)
+
     async def test_cancel_before_choice_never_calls_the_wager_service(self):
         interaction = SimpleNamespace(
             user=self.requester,

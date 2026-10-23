@@ -376,18 +376,20 @@ class CasinoWagerTests(unittest.TestCase):
                 raise RuntimeError("simulated ledger write failure")
             return original_record(connection, **kwargs)
 
-        with patch.object(bank, "_record_ledger", side_effect=fail_during_payout):
-            with self.assertRaisesRegex(RuntimeError, "simulated ledger write failure"):
-                bank.play_casino_wager(
-                    "atomic-rollback",
-                    101,
-                    "coinflip",
-                    100,
-                    "heads",
-                    "heads",
-                    True,
-                    190,
-                )
+        with (
+            patch.object(bank, "_record_ledger", side_effect=fail_during_payout),
+            self.assertRaisesRegex(RuntimeError, "simulated ledger write failure"),
+        ):
+            bank.play_casino_wager(
+                "atomic-rollback",
+                101,
+                "coinflip",
+                100,
+                "heads",
+                "heads",
+                True,
+                190,
+            )
 
         self.assertEqual(bank.get_balance(101), 1_000)
         self.assertIsNone(bank.casino_wager_status("atomic-rollback"))

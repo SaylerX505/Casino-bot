@@ -326,7 +326,28 @@ class SoloWagerView(LayoutView):
             f"# جاري تأكيد {self.game_title}\n"
             "قفلنا الاختيار وبنحفظ نتيجة الجولة والخصم والتسوية بشكل آمن. استنى لحظة."
         )
-        await interaction.response.edit_message(view=self)
+        try:
+            await interaction.response.edit_message(view=self)
+        except asyncio.CancelledError:
+            # No wager has been written yet; release the member's session claim.
+            self.done = True
+            self.resolving = False
+            self._disable_buttons()
+            self._release_session()
+            self.stop()
+            raise
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.exception(
+                "Could not acknowledge solo wager choice game_type=%s requester_id=%s",
+                self.game_type,
+                self.requester.id,
+            )
+            await self._finish_without_bet(
+                "# تعذر بدء الجولة\n"
+                "Discord رفض تحديث لوحة اللعب، لذلك ما اتسجلش أي رهان. "
+                "ابدأ جولة جديدة لما الواجهة تستجيب."
+            )
+            return
 
         game_id = uuid.uuid4().hex
         try:
