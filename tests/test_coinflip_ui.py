@@ -13,6 +13,8 @@ from cogs.casino.solo_betting import (
     SLOT_CHOICES,
     SoloWagerView,
     _spin_slots,
+    claim_solo_session,
+    has_active_solo_session,
 )
 from cogs.utility.theme import StatusPanel
 
@@ -38,6 +40,13 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len({button.custom_id for button in buttons}), 3)
         self.assertIn("1.9x", self.view._panel_text.content)
         self.assertIn("100", self.view._panel_text.content)
+
+    def test_coinflip_panel_uses_its_own_brand_accent(self):
+        container = next(
+            item for item in self.view.walk_children()
+            if isinstance(item, discord.ui.Container)
+        )
+        self.assertEqual(container.accent_color, solo_betting_module.THEME["gold"])
 
     def test_dice_view_discloses_odds_and_uses_two_valid_button_rows(self):
         view = SoloWagerView(
@@ -196,6 +205,30 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.view.done)
         self.assertIn("تم إلغاء", self.view._panel_text.content)
         self.assertIn("مفيش أي رهان اتخصم", self.view._panel_text.content)
+
+    async def test_cancel_api_failure_still_releases_session_without_a_bet(self):
+        self.assertTrue(claim_solo_session(self.requester.id, self.view))
+        self.assertTrue(has_active_solo_session(self.requester.id))
+        self.view.message = SimpleNamespace(id=703, edit=AsyncMock())
+        interaction = SimpleNamespace(
+            user=self.requester,
+            message=self.view.message,
+            response=SimpleNamespace(
+                edit_message=AsyncMock(
+                    side_effect=discord.HTTPException(
+                        SimpleNamespace(status=500, reason="simulated failure"),
+                        "simulated failure",
+                    )
+                )
+            ),
+        )
+        with patch.object(solo_betting_module.bank, "play_casino_wager") as play_wager:
+            await self.view.cancel(interaction)
+
+        play_wager.assert_not_called()
+        self.view.message.edit.assert_awaited_once_with(view=self.view)
+        self.assertFalse(has_active_solo_session(self.requester.id))
+        self.assertTrue(self.view.done)
 
     async def test_timeout_before_choice_never_calls_the_wager_service(self):
         self.view.message = SimpleNamespace(id=701, edit=AsyncMock())

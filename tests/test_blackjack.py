@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 import discord
-from discord.ui import LayoutView
+from discord.ui import Container, LayoutView
 
 from cogs.casino.blackjack import (
     BlackjackView,
@@ -85,6 +85,13 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual({button.label for button in buttons}, {"ابدأ اللعب", "إلغاء"})
         self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+
+    def test_blackjack_panel_uses_gold_accent(self):
+        container = next(
+            item for item in self.view.walk_children()
+            if isinstance(item, Container)
+        )
+        self.assertEqual(container.accent_color, 0xF5C542)
 
     def test_playing_phase_exposes_hit_and_stand_not_start_or_cancel(self):
         self.view.phase = "playing"

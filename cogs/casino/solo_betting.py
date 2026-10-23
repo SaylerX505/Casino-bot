@@ -30,6 +30,11 @@ DICE_CHOICES = {str(number): {"label": str(number), "emoji": None} for number in
 SLOT_SYMBOLS = ("🍒", "🍋", "🍊", "🍇", "⭐", "💎")
 SLOT_TRIPLE_PAYOUTS = {"🍒": 500, "🍋": 600, "🍊": 700, "🍇": 800, "⭐": 1_000, "💎": 1_500}
 SLOT_CHOICES = {"spin": {"label": "تدوير", "emoji": "🎰"}}
+_SOLO_GAME_ACCENTS = {
+    "coinflip": THEME["gold"],
+    "dice": THEME["teal"],
+    "slots": THEME["red_dark"],
+}
 _RECOVERY_DELAYS_SECONDS = (2, 5, 15, 30, 60)
 _RECOVERY_TASKS: dict[str, asyncio.Task] = {}
 _ACTIVE_SESSIONS: dict[int, discord.ui.View] = {}
@@ -252,7 +257,12 @@ class SoloWagerView(LayoutView):
             split = (len(choice_buttons) + 1) // 2
             elements.append(ActionRow(*choice_buttons[:split]))
             elements.append(ActionRow(*choice_buttons[split:], cancel))
-        self.add_item(Container(*elements, accent_color=THEME["teal"]))
+        self.add_item(
+            Container(
+                *elements,
+                accent_color=_SOLO_GAME_ACCENTS.get(self.game_type, THEME["teal"]),
+            )
+        )
 
     def _waiting_content(self) -> str:
         payout = _gross_payout(
@@ -520,9 +530,20 @@ class SoloWagerView(LayoutView):
             f"# تم إلغاء {self.game_title}\n"
             "اتلغت الجلسة قبل اختيارك؛ مفيش أي رهان اتخصم."
         )
-        await interaction.response.edit_message(view=self)
-        self._release_session()
-        self.stop()
+        try:
+            await interaction.response.edit_message(view=self)
+        except asyncio.CancelledError:
+            raise
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning(
+                "Could not cancel solo game through its interaction game_type=%s",
+                self.game_type,
+                exc_info=True,
+            )
+            await self._edit_message()
+        finally:
+            self._release_session()
+            self.stop()
 
     async def on_timeout(self) -> None:
         if self.done or self.resolving:

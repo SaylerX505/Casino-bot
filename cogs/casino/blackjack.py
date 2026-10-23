@@ -149,7 +149,7 @@ class BlackjackView(LayoutView):
                 self._button("hit", "اسحب بطاقة", self.hit, "🂠"),
                 self._button("stand", "قف", self.stand, "⏹"),
             ))
-        self.add_item(Container(*elements, accent_color=THEME["teal"]))
+        self.add_item(Container(*elements, accent_color=THEME["gold"]))
 
     def _content(self):
         if self.phase == "waiting":
