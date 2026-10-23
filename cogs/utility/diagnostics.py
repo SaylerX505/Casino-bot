@@ -189,7 +189,7 @@ def install_asyncio_exception_handler(loop: asyncio.AbstractEventLoop) -> None:
             if callable(get_name):
                 try:
                     task_name = str(get_name())
-                except Exception:
+                except Exception:  # noqa: BLE001 - keep diagnostics alive if a custom Future accessor fails.
                     task_name = type(future).__name__
             else:
                 task_name = type(future).__name__
