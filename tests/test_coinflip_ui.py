@@ -155,6 +155,32 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("صافي الربح:** +90", self.view._panel_text.content)
         self.assertIn("رصيدك بعد التسوية:** 1,090", self.view._panel_text.content)
 
+
+    async def test_cancel_before_choice_never_calls_the_wager_service(self):
+        interaction = SimpleNamespace(
+            user=self.requester,
+            message=SimpleNamespace(id=700),
+            response=SimpleNamespace(edit_message=AsyncMock()),
+        )
+        with patch.object(solo_betting_module.bank, "play_casino_wager") as play_wager:
+            await self.view.cancel(interaction)
+
+        play_wager.assert_not_called()
+        interaction.response.edit_message.assert_awaited_once_with(view=self.view)
+        self.assertTrue(self.view.done)
+        self.assertIn("تم إلغاء", self.view._panel_text.content)
+        self.assertIn("مفيش أي رهان اتخصم", self.view._panel_text.content)
+
+    async def test_timeout_before_choice_never_calls_the_wager_service(self):
+        self.view.message = SimpleNamespace(id=701, edit=AsyncMock())
+        with patch.object(solo_betting_module.bank, "play_casino_wager") as play_wager:
+            await self.view.on_timeout()
+
+        play_wager.assert_not_called()
+        self.view.message.edit.assert_awaited_once_with(view=self.view)
+        self.assertTrue(self.view.done)
+        self.assertIn("انتهت صلاحية", self.view._panel_text.content)
+
     async def test_session_is_bound_to_the_requesting_member(self):
         other_user = SimpleNamespace(id=202)
         interaction = SimpleNamespace(

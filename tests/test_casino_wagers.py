@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
 from cogs.casino import bank
 
@@ -329,6 +330,69 @@ class CasinoWagerTests(unittest.TestCase):
             ),
             1,
         )
+
+
+    def test_concurrent_duplicate_instant_wager_id_can_only_commit_once(self):
+        arguments = (
+            "atomic-concurrent",
+            101,
+            "coinflip",
+            100,
+            "heads",
+            "heads",
+            True,
+            190,
+        )
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            receipts = list(
+                executor.map(
+                    lambda _index: bank.play_casino_wager(*arguments),
+                    range(8),
+                )
+            )
+
+        self.assertEqual(sum(bool(receipt.get("created")) for receipt in receipts), 1)
+        self.assertEqual(bank.get_balance(101), 1_090)
+        self.assertEqual(
+            len(bank.get_economy_ledger(
+                event_type="casino_wager_stake",
+                reference="atomic-concurrent",
+            )),
+            1,
+        )
+        self.assertEqual(
+            len(bank.get_economy_ledger(
+                event_type="casino_wager_payout",
+                reference="atomic-concurrent",
+            )),
+            1,
+        )
+
+    def test_ledger_failure_rolls_back_instant_wager_and_wallet(self):
+        original_record = bank._record_ledger
+
+        def fail_during_payout(connection, **kwargs):
+            if kwargs.get("event_type") == "casino_wager_payout":
+                raise RuntimeError("simulated ledger write failure")
+            return original_record(connection, **kwargs)
+
+        with patch.object(bank, "_record_ledger", side_effect=fail_during_payout):
+            with self.assertRaisesRegex(RuntimeError, "simulated ledger write failure"):
+                bank.play_casino_wager(
+                    "atomic-rollback",
+                    101,
+                    "coinflip",
+                    100,
+                    "heads",
+                    "heads",
+                    True,
+                    190,
+                )
+
+        self.assertEqual(bank.get_balance(101), 1_000)
+        self.assertIsNone(bank.casino_wager_status("atomic-rollback"))
+        self.assertEqual(bank.get_economy_ledger(reference="atomic-rollback"), [])
+        self.assertEqual(bank.active_casino_wager_ids(), [])
 
     def test_economy_reset_is_blocked_while_solo_wager_is_active(self):
         self.create_wager()
