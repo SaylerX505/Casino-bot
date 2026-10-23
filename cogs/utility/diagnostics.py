@@ -100,7 +100,7 @@ def configure_file_logging(
             maxBytes=max_bytes,
             backupCount=backup_count,
             encoding="utf-8",
-            delay=True,
+            delay=False,
         )
         handler.setLevel(root_logger.getEffectiveLevel())
         handler.setFormatter(JsonLogFormatter())

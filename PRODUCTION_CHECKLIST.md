@@ -5,13 +5,13 @@ This checklist is a release gate, not a claim that every item is already complet
 ## Automated gate
 
 - [ ] Latest commit on the release candidate has a green GitHub Actions run.
-- [ ] Python compilation and the full isolated test suite pass.
+- [ ] Python compilation and the full isolated test suite pass, including diagnostic formatter, rotation, incident correlation, and command acknowledgement tests.
 - [ ] Docker build and startup smoke tests pass.
 - [ ] Docker seed verification confirms that static data is present and runtime data/secrets are absent from the image.
 
 ## Data and secrets
 
-- [ ] Keep real `.env` files, API keys, bot tokens, runtime histories, activity trackers, SQLite files, and backups out of Git and Docker images.
+- [ ] Keep real `.env` files, API keys, bot tokens, runtime histories, activity trackers, local `data/logs/` diagnostics, SQLite files, and backups out of Git and Docker images.
 - [ ] Before migrating a live bot, stop it and create a consistent backup of the entire active `data/` directory, especially `bank.db`.
 - [ ] Validate the backup and restore it into a test volume before production cutover.
 - [ ] Attach a persistent Docker volume at `/app/data`. Do not rely on an anonymous temporary volume to preserve wallets.

@@ -4,7 +4,8 @@ The bot remains a single-process Discord application, but each subsystem should 
 
 ## Current boundaries
 
-- `main.py`: Discord client setup, guild policy, command-error reporting, and extension loading.
+- `main.py`: Discord client setup, guild policy, single-acknowledgement command error responses, redacted same-guild log forwarding, and extension loading.
+- `cogs/utility/diagnostics.py`: incident IDs, exception unwrapping, structured JSON log formatting, bounded rotating file logs, and reporting for unobserved asyncio task failures.
 - `cogs/casino/game_registry.py`: ownership of active lobby/game tasks by channel. A game must release only the entry it owns.
 - `cogs/casino/bank.py`: atomic economy operations and the public persistence-facing API, including `play_casino_wager` for one-transaction instant bets, durable multi-step solo wager escrow, RPS escrow, and channel/message references used to close stale views after refunds. Game modules should use domain operations instead of editing tables directly.
 - `cogs/casino/bank_schema.py`: ordered, transactional SQLite migrations applied from `schema_migrations`; legacy tables are adopted with `CREATE TABLE IF NOT EXISTS` rather than replaced.
@@ -32,8 +33,9 @@ The bot remains a single-process Discord application, but each subsystem should 
 2. Move Discord component classes into a view module when they are no longer small. Pass callbacks or narrow services in instead of making the view import its coordinator.
 3. Keep artwork/formatting helpers separate from state transitions. An optional artwork failure must never decide a winner or change a payout.
 4. Register one owner task per game lobby/channel and release it only if that same task still owns the registry entry.
-5. Settle one-step solo bets (coinflip/dice/slots) atomically with their stake and final outcome; persist multi-step Blackjack and RPS escrow, keep settlement idempotent, refund interrupted sessions, and replace stale controls with a recovery notice when the original panel can be reached.
-6. Test storage, scoring, and state transitions at their lowest useful boundary, then add component tests and a staging run.
-7. Refactor incrementally: preserve command names and user-visible behavior unless a behavior change is intentional, and keep the regression suite green.
+5. Give unexpected failures a stable incident ID; keep full tracebacks in private rotating logs and send only redacted summaries to Discord.
+6. Settle one-step solo bets (coinflip/dice/slots) atomically with their stake and final outcome; persist multi-step Blackjack and RPS escrow, keep settlement idempotent, refund interrupted sessions, and replace stale controls with a recovery notice when the original panel can be reached.
+7. Test storage, scoring, and state transitions at their lowest useful boundary, then add component tests and a staging run.
+8. Refactor incrementally: preserve command names and user-visible behavior unless a behavior change is intentional, and keep the regression suite green.
 
 Avoid abstractions without a real boundary. Introduce shared interfaces when multiple games actually need the same lifecycle or domain behavior, rather than anticipating every possible future feature.

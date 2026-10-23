@@ -87,6 +87,13 @@ python -m unittest discover -s tests -v
 
 The tests use temporary SQLite databases and should not operate on the live economy database. Run `python -m compileall -q main.py config.py cogs tests`, then `coverage run --branch -m unittest discover -s tests -v` and `coverage report --show-missing` to check correctness and coverage. CI also runs a broader undefined-name/syntax scan and audits every package in `requirements.lock` with pip-audit. RPS wagers are recorded as escrow; unresolved settlements retry with bounded backoff while the process is alive, remaining orphaned wagers are refunded at startup, and settlement is idempotent. Run only one bot instance against a given economy database. GitHub Actions builds the Docker image as a deployment smoke check.
 
+## Diagnostics and incident handling
+
+- Console logging follows `LOG_LEVEL`; local diagnostics are also written as JSON Lines to `data/logs/casino-bot.log` by default.
+- Set `CASINO_LOG_FILE` to use another path, or set it to `off` to disable file logging while keeping console logs.
+- Log files rotate at 5 MiB with five backups. Keep the directory on private persistent storage, and do not commit or publish it: local tracebacks may contain operational details.
+- Unexpected command failures get an incident ID. Share that ID with the maintainer to find the matching structured log entry; Discord responses and the configured error-log channel receive a redacted summary, not a full traceback or raw exception message.
+
 ## Deployment notes
 
 - Store tokens in environment variables, not in source code.
