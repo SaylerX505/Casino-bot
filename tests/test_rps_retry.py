@@ -256,10 +256,18 @@ class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         message.edit.assert_has_awaits([call(view=view), unittest.mock.call(view=view)])
         self.assertEqual(message.edit.await_count, 2)
         second_response.edit_message.assert_not_awaited()
-        second_interaction.edit_original_response.assert_awaited_once_with(
-            content="اتسجل اختيارك، والنتيجة النهائية ظاهرة في رسالة التحدي.",
-            allowed_mentions=discord.AllowedMentions.none(),
+        second_interaction.edit_original_response.assert_awaited_once()
+        acknowledgement = second_interaction.edit_original_response.await_args.kwargs
+        self.assertEqual(
+            acknowledgement["content"],
+            "اتسجل اختيارك، والنتيجة النهائية ظاهرة في رسالة التحدي.",
         )
+        mentions = acknowledgement["allowed_mentions"]
+        self.assertIsInstance(mentions, discord.AllowedMentions)
+        self.assertFalse(mentions.everyone)
+        self.assertFalse(mentions.users)
+        self.assertFalse(mentions.roles)
+        self.assertFalse(mentions.replied_user)
         self.assertTrue(view.done)
         self.assertIn("تعادل", view._panel_text.content)
         self.assertTrue(all(button.disabled for button in view._buttons))
