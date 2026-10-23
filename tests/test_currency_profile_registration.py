@@ -42,6 +42,7 @@ class CurrencyProfileRegistrationTests(unittest.IsolatedAsyncioTestCase):
             guild=None,
             channel=SimpleNamespace(id=303),
             content="!profile",
+            attachments=[],
             _state=self.bot._connection,
         )
         context = commands.Context(
