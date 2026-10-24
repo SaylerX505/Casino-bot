@@ -284,6 +284,7 @@ class MusicalChairsRoundV2Tests(unittest.TestCase):
             self.assertEqual(len(action_buttons), 24)
             self.assertTrue(all(button.disabled for button in prep_buttons))
             self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in action_buttons))
+            self.assertTrue(all(button.label == "🪑" for button in action_buttons))
             action.disable_controls()
             self.assertTrue(all(button.disabled for button in action_buttons))
         finally:
@@ -301,6 +302,8 @@ class MusicalChairsRoundV2Tests(unittest.TestCase):
             ]
             self.assertEqual(len(buttons), 3)
             self.assertIn("فخ", action._panel_text.content)
+            self.assertTrue(all(button.label == "💥" for button in buttons))
+            self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
             action.eliminated_fools.add(members[0])
             action.disable_controls()
             self.assertTrue(all(button.disabled for button in buttons))
