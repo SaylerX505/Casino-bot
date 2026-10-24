@@ -67,11 +67,11 @@ class EconomyCallbackThreadingTests(unittest.IsolatedAsyncioTestCase):
     async def test_currency_transfer_runs_atomically_off_the_event_loop(self):
         main_thread = threading.get_ident()
         transaction_threads = []
-        recipient = SimpleNamespace(id=202, bot=False, mention="<@202>")
+        recipient = SimpleNamespace(id=12345678901234567, bot=False, mention="<@12345678901234567>")
         guild = SimpleNamespace(get_member=Mock(return_value=recipient), fetch_member=AsyncMock())
         interaction = fake_interaction(guild=guild)
         modal = SimpleNamespace(
-            target=SimpleNamespace(value="<@202>"),
+            target=SimpleNamespace(value="<@12345678901234567>"),
             amount=SimpleNamespace(value="25"),
             cog=SimpleNamespace(log_action=AsyncMock()),
         )
@@ -85,7 +85,7 @@ class EconomyCallbackThreadingTests(unittest.IsolatedAsyncioTestCase):
 
         interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
         interaction.followup.send.assert_awaited_once()
-        mocked.assert_called_once_with(101, 202, 25)
+        mocked.assert_called_once_with(101, 12345678901234567, 25)
         modal.cog.log_action.assert_awaited_once()
         self.assertEqual(len(transaction_threads), 1)
         self.assertNotEqual(transaction_threads[0], main_thread)
