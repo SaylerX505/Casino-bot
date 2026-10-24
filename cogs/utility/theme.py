@@ -191,16 +191,41 @@ def result_embed(
         embed.set_thumbnail(url=thumbnail_url)
     return embed
 
-def lobby_embed(title: str, rules: str, players, time_left: int, max_players: int = 25) -> discord.Embed:
-    if players:
-        plist = "\n".join([f"**{i+1}** : {p.mention}" for i, p in enumerate(players)])
-    else:
-        plist = "في انتظار اللاعبين... خش يا معلم يلا 🏃"
-    e = discord.Embed(
-        title=title,
-        description=f"{rules}\n**اللاعبين المنضمين ({len(players)}/{max_players}):**\n{plist}\n\n⏳ تبدأ بعد **{time_left}** ثانية...",
-        color=THEME["teal"],
+def lobby_embed(
+    title: str,
+    rules: str,
+    players,
+    time_left: int,
+    max_players: int = 25,
+    *,
+    host=None,
+    min_players: int = 2,
+) -> discord.Embed:
+    """Build a consistent lobby panel with host, capacity, minimum and countdown."""
+    player_list = (
+        "\n".join(f"**{index + 1}.** {player.mention}" for index, player in enumerate(players))
+        if players
+        else "مفيش لاعبين لسه. انضم للّوبي وابدأ اللعب مع المجموعة."
     )
+    host_line = f"**المضيف:** {host.mention}\n" if host is not None else ""
+    minimum_line = (
+        f"**الحد الأدنى للبدء:** {min_players} لاعب\n"
+        if min_players > 1
+        else ""
+    )
+    early_start_line = (
+        "صاحب اللوبي يقدر يبدأ الجولة بدري؛ الأزرار بتتقفل أول ما اللعب يبدأ."
+        if host is not None
+        else ""
+    )
+    details = "\n".join(
+        line for line in (host_line.rstrip("\n"), minimum_line.rstrip("\n"), early_start_line) if line
+    )
+    roster = f"**اللاعبون ({len(players)}/{max_players}):**\n{player_list}"
+    countdown = f"**الوقت المتبقي:** {max(0, int(time_left))} ثانية"
+    sections = [rules.strip(), details, roster, countdown]
+    description = "\n\n".join(section for section in sections if section)
+    e = discord.Embed(title=title, description=description, color=THEME["teal"])
     if LOGO_URL:
         e.set_thumbnail(url=LOGO_URL)
         e.set_footer(text=f"كازينو الحفرة • {BRAND}", icon_url=LOGO_URL)
