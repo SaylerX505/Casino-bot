@@ -206,7 +206,7 @@ class RouletteLobby(LayoutView):
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="للأدمن فقط!",
+                description="صاحب اللوبي فقط يقدر يمدد وقت التسجيل.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
