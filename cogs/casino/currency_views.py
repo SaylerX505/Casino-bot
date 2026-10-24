@@ -16,6 +16,19 @@ from cogs.utility.theme import StatusPanel, private_status
 logger = logging.getLogger(__name__)
 
 
+def _load_inventory_snapshot(cog, user_id):
+    """Read a consistent-enough inventory screen snapshot off the event loop."""
+    inventory = dict(cog.get_inventory(user_id))
+    balance = int(cog.get_balance(user_id))
+    return inventory, balance
+
+
+def _load_profile_snapshot(cog, user_id):
+    inventory, balance = _load_inventory_snapshot(cog, user_id)
+    _last_daily, streak = bank.get_daily(str(user_id))
+    return balance, int(streak), inventory
+
+
 # --- UI VIEWS ---
 class BuyForm(discord.ui.Modal, title="شراء غرض"):
     def __init__(self, cog, item_id, price, item_name):
@@ -127,11 +140,13 @@ class ShopDropdown(discord.ui.Select):
 
 
 class ShopView(LayoutView):
-    def __init__(self, cog, owner=None):
+    def __init__(self, cog, owner=None, *, balance=None):
         super().__init__(timeout=180)
         self.message = None
+        if owner is not None and balance is None:
+            balance = cog.get_balance(owner.id)
         balance_line = (
-            f"**رصيدك الحالي:** {fmt(cog.get_balance(owner.id))} {COIN_EMOJI}\n"
+            f"**رصيدك الحالي:** {fmt(balance)} {COIN_EMOJI}\n"
             if owner is not None
             else ""
         )
@@ -162,7 +177,16 @@ class ShopView(LayoutView):
 
 
 class InventoryView(LayoutView):
-    def __init__(self, cog, owner, category="all", notice=None):
+    def __init__(
+        self,
+        cog,
+        owner,
+        category="all",
+        notice=None,
+        *,
+        inventory=None,
+        balance=None,
+    ):
         super().__init__(timeout=180)
         self.cog = cog
         self.owner = owner
@@ -170,6 +194,14 @@ class InventoryView(LayoutView):
         self.category = category
         self.notice = notice
         self.message = None
+        if inventory is None or balance is None:
+            loaded_inventory, loaded_balance = _load_inventory_snapshot(cog, self.owner_id)
+            if inventory is None:
+                inventory = loaded_inventory
+            if balance is None:
+                balance = loaded_balance
+        self.inventory = dict(inventory)
+        self.balance = int(balance)
 
         self._panel_text = TextDisplay(self.make_description())
         container = Container(
@@ -198,7 +230,7 @@ class InventoryView(LayoutView):
             emoji="🎁",
             style=discord.ButtonStyle.secondary,
             custom_id="inventory_use_box",
-            disabled=self.cog.get_item_count(self.owner_id, "loot_box") < 1,
+            disabled=self.inventory.get("loot_box", 0) < 1,
         )
         self.box_button.callback = self.use_box_button
         use_row.add_item(self.box_button)
@@ -207,7 +239,7 @@ class InventoryView(LayoutView):
             emoji="🎟️",
             style=discord.ButtonStyle.secondary,
             custom_id="inventory_use_ticket",
-            disabled=self.cog.get_item_count(self.owner_id, "luck_ticket") < 1,
+            disabled=self.inventory.get("luck_ticket", 0) < 1,
         )
         self.ticket_button.callback = self.use_ticket_button
         use_row.add_item(self.ticket_button)
@@ -228,12 +260,11 @@ class InventoryView(LayoutView):
         return True
 
     def refresh_buttons(self):
-        inventory = self.cog.get_inventory(self.owner_id)
-        self.box_button.disabled = inventory.get("loot_box", 0) < 1
-        self.ticket_button.disabled = inventory.get("luck_ticket", 0) < 1
+        self.box_button.disabled = self.inventory.get("loot_box", 0) < 1
+        self.ticket_button.disabled = self.inventory.get("luck_ticket", 0) < 1
 
     def make_description(self, notice=None):
-        inventory = self.cog.get_inventory(self.owner_id)
+        inventory = self.inventory
         lines = []
         for item_id, name, category, price, description, emoji in INVENTORY_ITEMS:
             if self.category != "all" and category != self.category:
@@ -258,7 +289,7 @@ class InventoryView(LayoutView):
         current_notice = self.notice if notice is None else notice
         if current_notice:
             description = f"{current_notice}\n\n{description}"
-        balance_line = f"\n\n**الرصيد الحالي:** {fmt(self.cog.get_balance(self.owner_id))} {COIN_EMOJI}"
+        balance_line = f"\n\n**الرصيد الحالي:** {fmt(self.balance)} {COIN_EMOJI}"
         return f"# 🎒 شنطة {self.owner.display_name}\n{description}{balance_line}"
 
     def make_embed(self, notice=None):
