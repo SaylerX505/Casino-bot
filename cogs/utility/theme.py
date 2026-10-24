@@ -20,18 +20,20 @@ PREFIX = getattr(config, "PREFIX", "+")
 
 
 class WatermarkView(discord.ui.View):
+    """Legacy compatibility shim; game messages no longer attach promotional buttons."""
+
     def __init__(self):
         super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 
 def base_embed(title: str = None, description: str = None, color: int = None) -> discord.Embed:
     e = discord.Embed(title=title, description=description, color=color or THEME["grey"])
+    footer_text = f"كازينو الحفرة • {BRAND}"
     if LOGO_URL:
         e.set_thumbnail(url=LOGO_URL)
-        e.set_footer(text=f"كازينو الحفرة • {BRAND} • Developed by @neglawy", icon_url=LOGO_URL)
+        e.set_footer(text=footer_text, icon_url=LOGO_URL)
     else:
-        e.set_footer(text=f"كازينو الحفرة • {BRAND} • Developed by @neglawy")
+        e.set_footer(text=footer_text)
     return e
 
 
@@ -110,6 +112,16 @@ class StatusPanel(LayoutView):
                 accent_color=colors.get(outcome, THEME["grey"]),
             )
         )
+
+
+async def send_status(ctx, title: str, description: str, outcome: str = "neutral"):
+    """Send a branded Components V2 status panel from a prefix or slash command.
+
+    Slash-command errors are ephemeral to avoid polluting busy game channels;
+    prefix-command responses remain visible in the channel where the command ran.
+    """
+    kwargs = {"ephemeral": True} if getattr(ctx, "interaction", None) is not None else {}
+    return await ctx.send(view=StatusPanel(title, description, outcome), **kwargs)
 
 
 async def try_edit_view(message, view, *, context: str) -> bool:
