@@ -3,7 +3,6 @@ from discord.ext import commands
 import asyncio
 import random
 import json
-import os
 import logging
 import re
 import unicodedata
