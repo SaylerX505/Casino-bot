@@ -32,15 +32,52 @@ def _direct_embed_sends():
                     continue
                 if node.func.attr not in MESSAGE_METHODS:
                     continue
-                if any(keyword.arg == "embed" for keyword in node.keywords):
-                    relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
-                    findings.append(
-                        (
-                            relative_path,
-                            node.lineno,
-                            f"{node.func.attr}(embed=...) bypasses the Components V2 renderer",
+                for keyword in node.keywords:
+                    if keyword.arg == "embed":
+                        legacy_payload = True
+                    elif keyword.arg == "embeds":
+                        # Clearing legacy embeds while replacing a message with a V2
+                        # view is valid; sending any legacy embeds is not.
+                        is_empty_list = isinstance(keyword.value, ast.List) and not keyword.value.elts
+                        legacy_payload = not (
+                            is_empty_list
+                            and node.func.attr in {"edit", "edit_original_response"}
                         )
-                    )
+                    else:
+                        continue
+
+                    if legacy_payload:
+                        relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
+                        findings.append(
+                            (
+                                relative_path,
+                                node.lineno,
+                                f"{node.func.attr}({keyword.arg}=...) bypasses the Components V2 renderer",
+                            )
+                        )
+                        break
+    return sorted(findings)
+
+
+def _promotional_button_labels():
+    findings = []
+    for directory, _subdirectories, filenames in os.walk(COGS):
+        for filename in sorted(filenames):
+            if not filename.endswith(".py"):
+                continue
+            path = os.path.join(directory, filename)
+            try:
+                with open(path, "r", encoding="utf-8") as source_file:
+                    source = source_file.read()
+            except OSError as error:
+                relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
+                findings.append((relative_path, 1, f"could not inspect source: {type(error).__name__}"))
+                continue
+            for marker in ("Developed by @neglawy", "Developed by @neglawy & @17 Nicotine"):
+                if marker in source:
+                    relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
+                    line = source[:source.index(marker)].count("\n") + 1
+                    findings.append((relative_path, line, f"legacy promotional label remains: {marker}"))
     return sorted(findings)
 
 
@@ -51,6 +88,15 @@ class ComponentsV2PolicyTests(unittest.TestCase):
             findings,
             [],
             "All sent or edited embeds must be converted to Components V2:\n"
+            + "\n".join(f"{path}:{line}: {reason}" for path, line, reason in findings),
+        )
+
+    def test_game_ui_does_not_add_disabled_developer_promo_buttons(self):
+        findings = _promotional_button_labels()
+        self.assertEqual(
+            findings,
+            [],
+            "Remove legacy promotional UI labels:\n"
             + "\n".join(f"{path}:{line}: {reason}" for path, line, reason in findings),
         )
 
