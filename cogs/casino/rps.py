@@ -167,6 +167,8 @@ def _schedule_wager_recovery(game_id, winner_id=None, on_recovered=None):
 
 # --- CHALLENGE VIEW ---
 class RPSView(DiagnosticViewMixin, LayoutView):
+    """A consent-first duel: reserve both stakes only after the invited player accepts."""
+
     def __init__(self, ctx, player, opponent, bet, game_id):
         super().__init__(timeout=60)
         self.ctx = ctx
@@ -176,49 +178,82 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         self.game_id = str(game_id)
         self.choices = {}
         self._choice_lock = asyncio.Lock()
+        self.accepted = False
+        self.resolving = False
         self.done = False
         self.message = None
         self._panel_text = TextDisplay(self._embed_content(self.make_embed()))
         self._buttons = []
-        for emoji, label, callback_name in (
-            ("🪨", "حجر", "rock"),
-            ("📄", "ورقة", "paper"),
-            ("✂️", "مقص", "scissors"),
-        ):
-            button = discord.ui.Button(
-                emoji=emoji,
-                label=label,
-                style=discord.ButtonStyle.secondary,
-                custom_id=f"rps_{callback_name}",
-            )
-            button.callback = partial(getattr(self, callback_name), button=button)
-            self._buttons.append(button)
-        self.add_item(
-            Container(
-                self._panel_text,
-                Separator(),
-                ActionRow(*self._buttons),
-                accent_color=discord.Color.green(),
-            )
-        )
+        self._render_view()
 
     def make_embed(self):
-        player_status = "✅" if self.player.id in self.choices else "⏳"
-        opponent_status = "✅" if self.opponent.id in self.choices else "⏳"
         prize = int(self.bet * 2 * PAYOUT_RATE)
+        net_profit = prize - self.bet
+        if not self.accepted:
+            return base_embed(
+                title="✊ تحدي حومص",
+                description=(
+                    f"{self.player.mention} **تحدى** {self.opponent.mention}\\n"
+                    f"**الرهان:** {self.bet:,} عملة لكل لاعب\\n"
+                    f"**جائزة الفائز:** {prize:,} عملة · **صافي الربح:** +{net_profit:,}\\n\\n"
+                    f"**الرسوم:** ضريبة البنك {self.bet * 2 - prize:,} عملة من مجموع الرهانات.\\n"
+                    "لسه مفيش رصيد اتحجز. الخصم المحدد يقدر يقبل أو يرفض، وصاحب التحدي يقدر يلغيه.\\n"
+                    "لو التحدي انتهى من غير قبول، مفيش أي خصم."
+                ),
+                color=THEME["teal"],
+            )
+
+        player_status = "✅ اختار" if self.player.id in self.choices else "⏳ مستني"
+        opponent_status = "✅ اختار" if self.opponent.id in self.choices else "⏳ مستني"
         return base_embed(
-            title="✊ حومص!",
+            title="✊ حومص · الجولة بدأت",
             description=(
-                f"{self.player.mention} **VS** {self.opponent.mention}\n"
-                f"💰 الرهان: **{self.bet:,}** لكل لاعب\n"
-                f"🏆 جائزة الفائز: **{prize:,}** {COIN}\n\n"
-                f"{self.player.mention}: {player_status}\n"
-                f"{self.opponent.mention}: {opponent_status}\n\n"
-                "اختار حركتك بسرية، والنتيجة هتظهر لما الاتنين يختاروا."
+                f"{self.player.mention} **VS** {self.opponent.mention}\\n"
+                f"**الرهان المحجوز:** {self.bet:,} عملة لكل لاعب\\n"
+                f"**إجمالي الصرف للفائز:** {prize:,} · **صافي ربحه:** +{net_profit:,}\\n\\n"
+                f"{self.player.mention}: {player_status}\\n"
+                f"{self.opponent.mention}: {opponent_status}\\n\\n"
+                "اختار حركتك بسرية؛ الحركة مش هتظهر للخصم قبل ما الطرفين يختاروا. "
+                "التعادل أو انتهاء الوقت يرجّع الرهان للطرفين."
             ),
             color=THEME["teal"],
         )
 
+    def _render_view(self):
+        self.clear_items()
+        self._buttons = []
+        if not self.done:
+            if self.accepted:
+                actions = (
+                    ("🪨", "حجر", "rock"),
+                    ("📄", "ورقة", "paper"),
+                    ("✂️", "مقص", "scissors"),
+                )
+            else:
+                actions = (
+                    ("✅", "قبول التحدي", "accept_challenge"),
+                    ("✖️", "رفض", "decline_challenge"),
+                    ("↩️", "إلغاء التحدي", "cancel_challenge"),
+                )
+            for emoji, label, callback_name in actions:
+                button = discord.ui.Button(
+                    emoji=emoji,
+                    label=label,
+                    style=discord.ButtonStyle.secondary,
+                    custom_id=f"rps_{callback_name}",
+                )
+                button.callback = partial(getattr(self, callback_name), button=button)
+                self._buttons.append(button)
+
+        components = [self._panel_text, Separator()]
+        if self._buttons:
+            components.append(ActionRow(*self._buttons))
+        self.add_item(
+            Container(
+                *components,
+                accent_color=THEME["green"] if self.accepted else THEME["teal"],
+            )
+        )
 
     @staticmethod
     def _embed_content(embed):
@@ -235,6 +270,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
 
     def _refresh_panel(self, embed=None):
         self._panel_text.content = self._embed_content(embed or self.make_embed())
+        self._render_view()
 
     def _disable_buttons(self):
         for button in self._buttons:
