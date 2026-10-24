@@ -17,7 +17,13 @@ from discord.ui import (
 import config
 from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.game_registry import register_game_task
-from cogs.utility.theme import THEME, StatusPanel, lobby_embed, private_status, try_edit_view
+from cogs.utility.theme import (
+    THEME,
+    StatusPanel,
+    lobby_embed,
+    private_status,
+    try_edit_view,
+)
 
 logger = logging.getLogger(__name__)
 
