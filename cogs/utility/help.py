@@ -337,7 +337,7 @@ class HelpCommand(commands.Cog):
                 "مركز الاقتصاد مش جاهز حاليًا. جرّب بعد شوية.",
                 ephemeral=True,
             )
-        await CurrencyHubLayout(cog, interaction.user).daily_btn(interaction)
+        await CurrencyHubLayout(cog).daily_btn(interaction)
 
     @economy.command(name="top", description="عرض ترتيب أغنى الأعضاء بشكل خاص.")
     async def economy_top(self, interaction: discord.Interaction):
@@ -349,21 +349,35 @@ class HelpCommand(commands.Cog):
                 "مركز الاقتصاد مش جاهز حاليًا. جرّب بعد شوية.",
                 ephemeral=True,
             )
-        await CurrencyHubLayout(cog, interaction.user).top_btn(interaction)
+        await CurrencyHubLayout(cog).top_btn(interaction)
 
     @economy.command(name="shop", description="فتح المتجر واختيار غرض للشراء.")
     async def economy_shop(self, interaction: discord.Interaction):
-        from cogs.casino.currency import ShopView
+        from cogs.casino.currency_views import build_shop_view
 
         cog = self.bot.get_cog("Currency")
         if cog is None:
             return await interaction.response.send_message(
-                "المتجر مش جاهز حاليًا. جرّب بعد شوية.",
+                view=StatusPanel("المتجر غير جاهز", "المتجر مش جاهز حاليًا. جرّب بعد شوية.", "warning"),
                 ephemeral=True,
             )
-        view = ShopView(cog, interaction.user)
-        await interaction.response.send_message(view=view, ephemeral=True)
-        view.message = await interaction.original_response()
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            view = await build_shop_view(cog, interaction.user)
+            await interaction.edit_original_response(view=view)
+            view.message = await interaction.original_response()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Could not open economy shop user_id=%s", interaction.user.id)
+            if interaction.response.is_done():
+                return await interaction.followup.send(
+                    view=StatusPanel("تعذر فتح المتجر", "حصل عطل أثناء تجهيز المتجر. جرّب تاني بعد شوية.", "warning"),
+                    ephemeral=True,
+                )
+            return await interaction.response.send_message(
+                view=StatusPanel("تعذر فتح المتجر", "حصل عطل أثناء تجهيز المتجر. جرّب تاني بعد شوية.", "warning"),
+                ephemeral=True,
+            )
 
     @app_commands.command(name="commands", description="فتح قائمة الأوامر والمساعدة")
     @app_commands.guild_only()
