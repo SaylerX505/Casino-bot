@@ -5,6 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+import discord
+
 from cogs.casino.currency_views import (
     BuyForm,
     CurrencyHubLayout,
