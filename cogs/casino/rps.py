@@ -382,25 +382,43 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             )
 
     async def _update_live_panel(self) -> bool:
-        """Update the existing challenge panel, republishing only if it disappeared."""
+        """Update the original panel; only publish a replacement if Discord confirms deletion."""
         if self.message is not None:
-            try:
-                await self.message.edit(view=self)
-                await self._store_panel_reference()
-                return True
-            except discord.NotFound:
-                logging.getLogger(__name__).info(
-                    "RPS challenge panel was deleted; publishing the current state again game_id=%s",
-                    self.game_id,
-                )
-                self.message = None
-            except discord.HTTPException:
-                logging.getLogger(__name__).warning(
-                    "Could not edit RPS challenge panel; trying a replacement panel game_id=%s",
-                    self.game_id,
-                    exc_info=True,
-                )
+            for attempt in range(2):
+                try:
+                    await self.message.edit(view=self)
+                    await self._store_panel_reference()
+                    return True
+                except discord.NotFound:
+                    logging.getLogger(__name__).info(
+                        "RPS challenge panel was deleted; publishing current state again game_id=%s",
+                        self.game_id,
+                    )
+                    self.message = None
+                    break
+                except discord.HTTPException as error:
+                    status = getattr(error, "status", 0)
+                    transient = status == 429 or status >= 500
+                    if transient and attempt == 0:
+                        logging.getLogger(__name__).warning(
+                            "Transient RPS panel edit failure; retrying the same message game_id=%s status=%s",
+                            self.game_id,
+                            status,
+                            exc_info=True,
+                        )
+                        await asyncio.sleep(0.25)
+                        continue
+                    logging.getLogger(__name__).warning(
+                        "Could not update RPS challenge panel; keeping the existing message instead of posting a duplicate game_id=%s status=%s",
+                        self.game_id,
+                        status,
+                        exc_info=True,
+                    )
+                    return False
 
+        # A replacement is safe only when the original message was confirmed missing,
+        # or when this game has not published a panel yet. Generic edit failures are
+        # deliberately not treated as deletion because that used to duplicate panels.
         try:
             self.message = await self.ctx.send(
                 view=self,
