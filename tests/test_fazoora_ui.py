@@ -127,7 +127,7 @@ class InventoryViewLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(view.category, "tools")
         response.edit_message.assert_awaited_once_with(view=view)
-        self.assertIn("أدوات ألعاب", view.category_select.options[1].label)
+        self.assertIn("أدوات الألعاب", view.category_select.options[1].label)
 
 
 class ShopTimeoutTests(unittest.IsolatedAsyncioTestCase):
