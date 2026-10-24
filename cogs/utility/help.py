@@ -7,11 +7,11 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Select, Separator, TextDisplay
 
 import config
-
-logger = logging.getLogger(__name__)
 from cogs.casino.game_registry import release_game_task
 from cogs.casino.permissions import has_staff_access
 from cogs.utility.theme import StatusPanel
+
+logger = logging.getLogger(__name__)
 
 
 def t(text: str) -> str:
