@@ -8,7 +8,12 @@ import unicodedata
 import discord
 from discord.ext import commands
 
-from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task, set_game_message
+from cogs.casino.game_registry import (
+    is_active_game,
+    register_game_task,
+    release_game_task,
+    set_game_message,
+)
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
