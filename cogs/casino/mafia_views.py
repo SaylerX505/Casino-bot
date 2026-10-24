@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 class WatermarkView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy & @17 Nicotine", style=discord.ButtonStyle.secondary, disabled=True))
 
 class MafiaDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
