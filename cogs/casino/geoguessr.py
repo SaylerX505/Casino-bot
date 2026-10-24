@@ -20,7 +20,6 @@ from cogs.casino.game_registry import (
     release_game_task,
     set_game_view,
 )
-from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
     StatusPanel,
     report_game_failure,
@@ -378,7 +377,6 @@ class GeoGuessr(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='جيو', aliases=["geo", "geoguessr", "خمن"], description="ابدأ لعبة تخمين الدولة")
-    @is_staff_or_admin()
     async def start_geo(self, ctx):
         """يبدأ لعبة جيوغيسر"""
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
