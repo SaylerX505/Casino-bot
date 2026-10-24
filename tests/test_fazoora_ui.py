@@ -5,8 +5,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, mock_open, patch
 
+import discord
 from discord.ui import LayoutView
 
+from cogs.casino.currency_views import CurrencyHubLayout, profile_panel
 from cogs.casino.fazoora import DEFAULT_QUESTIONS, load_bank, normalize
 from cogs.utility.theme import (
     StatusPanel,
@@ -38,6 +40,39 @@ class RiddleInputTests(unittest.TestCase):
             self.assertEqual(load_bank(), [{"q": "سؤال صالح؟", "a": ["إجابة!"]}])
 
 
+class EconomyHubUXTests(unittest.TestCase):
+    def setUp(self):
+        self.user = SimpleNamespace(id=101, display_name="Test member")
+        self.cog = SimpleNamespace(
+            get_balance=lambda user_id: 250,
+            get_inventory=lambda user_id: {"loot_box": 1},
+        )
+
+    def test_hub_has_direct_inventory_and_profile_actions(self):
+        view = CurrencyHubLayout(self.cog, self.user)
+        self.assertIsInstance(view, LayoutView)
+        buttons = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        ]
+        custom_ids = {button.custom_id for button in buttons}
+        self.assertTrue({"hubv2_inventory", "hubv2_profile"}.issubset(custom_ids))
+        self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+
+    def test_command_and_hub_can_share_profile_panel_data(self):
+        with patch("cogs.casino.currency_views.bank.get_daily", return_value=(0, 4)):
+            panel = profile_panel(self.cog, self.user)
+        self.assertIsInstance(panel, LayoutView)
+        content = "\n".join(
+            item.content
+            for item in panel.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("الرصيد", content)
+        self.assertIn("4 يوم", content)
+        self.assertIn("الأغراض", content)
+
+
 class SharedStatusPanelTests(unittest.IsolatedAsyncioTestCase):
     async def test_prefix_status_is_visible_and_uses_components_v2(self):
         ctx = SimpleNamespace(interaction=None, send=AsyncMock())
@@ -59,7 +94,7 @@ class SharedStatusPanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(kwargs["view"], StatusPanel)
         self.assertTrue(kwargs["ephemeral"])
 
-    def test_base_panels_have_no_promotional_button_or_footer_noise(self):
+    def test_base_panels_have_clean_footer_and_v2_conversion(self):
         legacy = base_embed(title="اختبار", description="محتوى")
         self.assertNotIn("Developed by", legacy.footer.text)
         self.assertIsInstance(embed_to_v2(legacy), LayoutView)
