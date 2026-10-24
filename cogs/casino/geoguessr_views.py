@@ -331,6 +331,8 @@ class ActiveGameView(LayoutView):
             )
 
         self.extensions_left -= 1
+        if self.extensions_left <= 0:
+            self.button.disabled = True
         self.timer_state["end_time"] += 10
         remaining = max(0, int(self.timer_state["end_time"] - time.time()))
         self.update_timer(remaining)
