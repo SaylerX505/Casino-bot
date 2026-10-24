@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, mock_open, patch
 import discord
 from discord.ui import LayoutView
 
-from cogs.casino.currency_views import CurrencyHubLayout, profile_panel
+from cogs.casino.currency_views import CurrencyHubLayout, ShopView, profile_panel
 from cogs.casino.fazoora import DEFAULT_QUESTIONS, load_bank, normalize
 from cogs.utility.theme import (
     StatusPanel,
@@ -71,6 +71,17 @@ class EconomyHubUXTests(unittest.TestCase):
         self.assertIn("الرصيد", content)
         self.assertIn("4 يوم", content)
         self.assertIn("الأغراض", content)
+
+
+    def test_shop_shows_the_requesters_current_balance(self):
+        view = ShopView(self.cog, self.user)
+        content = "\n".join(
+            item.content
+            for item in view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("رصيدك الحالي", content)
+        self.assertIn("250", content)
 
 
 class SharedStatusPanelTests(unittest.IsolatedAsyncioTestCase):
