@@ -30,7 +30,7 @@ class FakeCurrency:
         return False
 
 
-class InventoryViewTests(unittest.TestCase):
+class InventoryViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.owner = SimpleNamespace(
             id=123,
@@ -66,13 +66,13 @@ class InventoryViewTests(unittest.TestCase):
         self.assertIn("طلقة مزدوجة", tools)
         self.assertNotIn("صندوق حظ", tools)
 
-    def test_use_buttons_reflect_inventory_counts(self):
+    async def test_use_buttons_reflect_inventory_counts_after_off_loop_snapshot_refresh(self):
         self.assertFalse(self.button("inventory_use_box").disabled)
         self.assertTrue(self.button("inventory_use_ticket").disabled)
 
         self.cog.inventory["loot_box"] = 0
         self.cog.inventory["luck_ticket"] = 1
-        self.view.refresh_buttons()
+        await self.view.refresh_snapshot()
 
         self.assertTrue(self.button("inventory_use_box").disabled)
         self.assertFalse(self.button("inventory_use_ticket").disabled)
