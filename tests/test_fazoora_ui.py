@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, mock_open, patch
 import discord
 from discord.ui import LayoutView
 
-from cogs.casino.currency_views import CurrencyHubLayout, ShopView, profile_panel
+from cogs.casino.currency_views import CurrencyHubLayout, InventoryView, ShopView, profile_panel
 from cogs.casino.fazoora import DEFAULT_QUESTIONS, load_bank, normalize
 from cogs.utility.theme import (
     StatusPanel,
@@ -82,6 +82,26 @@ class EconomyHubUXTests(unittest.TestCase):
         )
         self.assertIn("رصيدك الحالي", content)
         self.assertIn("250", content)
+
+
+class InventoryViewLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_category_change_updates_the_same_view_instance(self):
+        owner = SimpleNamespace(id=7, display_name="Tester")
+        cog = SimpleNamespace(
+            get_balance=lambda _user_id: 100,
+            get_inventory=lambda _user_id: {"double_shot": 1, "loot_box": 0, "luck_ticket": 0},
+            get_item_count=lambda _user_id, _item_id: 0,
+        )
+        view = InventoryView(cog, owner)
+        view.category_select._values = ["tools"]
+        response = SimpleNamespace(edit_message=AsyncMock())
+        interaction = SimpleNamespace(response=response)
+
+        await view.select_category(interaction)
+
+        self.assertEqual(view.category, "tools")
+        response.edit_message.assert_awaited_once_with(view=view)
+        self.assertIn("أدوات ألعاب", view.category_select.options[1].label)
 
 
 class ShopTimeoutTests(unittest.IsolatedAsyncioTestCase):
