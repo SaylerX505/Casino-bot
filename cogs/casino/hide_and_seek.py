@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 class WatermarkView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
 
