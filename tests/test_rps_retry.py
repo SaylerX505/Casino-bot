@@ -27,17 +27,29 @@ class RPSComponentsV2Tests(unittest.TestCase):
         buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
         self.assertEqual(len(buttons), 3)
         self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+        self.assertEqual(
+            {button.label for button in buttons},
+            {"قبول التحدي", "رفض", "إلغاء التحدي"},
+        )
         self.assertIn("100", view._panel_text.content)
         self.assertIn("<@101>", view._panel_text.content)
         self.assertIn("<@202>", view._panel_text.content)
+        self.assertIn("مفيش رصيد اتحجز", view._panel_text.content)
+
+        view.accepted = True
+        view._refresh_panel()
+        move_buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
+        self.assertEqual({button.label for button in move_buttons}, {"حجر", "ورقة", "مقص"})
+        self.assertIn("الرهان المحجوز", view._panel_text.content)
 
         view.choices[player.id] = "🪨"
         view._refresh_panel()
-        self.assertIn("✅", view._panel_text.content)
-        self.assertEqual(sum(button.disabled for button in buttons), 0)
+        self.assertIn("✅ اختار", view._panel_text.content)
+        move_buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
+        self.assertEqual(sum(button.disabled for button in move_buttons), 0)
 
         view._disable_buttons()
-        self.assertTrue(all(button.disabled for button in buttons))
+        self.assertTrue(all(button.disabled for button in move_buttons))
 
 
 class RPSettlementRetryTests(unittest.IsolatedAsyncioTestCase):
@@ -137,6 +149,7 @@ class RPSStartupRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 "cogs.casino.rps.bank.active_rps_wager_records",
                 side_effect=OSError("database unavailable"),
             ),
+            patch("cogs.casino.rps.bank.expire_pending_rps_challenges", return_value=[]),
             patch("cogs.casino.rps.bank.refund_orphaned_rps_wagers") as refund,
         ):
             await cog.cog_load()
@@ -168,6 +181,7 @@ class RPSStartupRecoveryTests(unittest.IsolatedAsyncioTestCase):
         }
         publish = AsyncMock()
         with (
+            patch("cogs.casino.rps.bank.expire_pending_rps_challenges", return_value=[]),
             patch("cogs.casino.rps.bank.active_rps_wager_records", return_value=[record]),
             patch("cogs.casino.rps.bank.refund_orphaned_rps_wagers", return_value=1) as refund,
             patch("cogs.casino.rps.bank.active_rps_wager_ids", return_value=[]),
@@ -182,9 +196,36 @@ class RPSStartupRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cog._escrow_ready)
         publish.assert_awaited_once_with(bot, record, status)
 
+    async def test_startup_expires_unaccepted_challenge_and_closes_its_panel(self):
+        bot = SimpleNamespace()
+        pending = {
+            "game_id": "unaccepted-rps",
+            "player_a": "101",
+            "player_b": "202",
+            "amount": 100,
+            "channel_id": 303,
+            "message_id": 404,
+        }
+        publish = AsyncMock()
+        with (
+            patch("cogs.casino.rps.bank.expire_pending_rps_challenges", return_value=[pending]),
+            patch("cogs.casino.rps.bank.active_rps_wager_records", return_value=[]),
+            patch("cogs.casino.rps.bank.refund_orphaned_rps_wagers", return_value=0),
+            patch("cogs.casino.rps.bank.active_rps_wager_ids", return_value=[]),
+            patch("cogs.casino.rps._publish_expired_rps_challenge_panel", new=publish),
+        ):
+            cog = RPS(bot)
+            await cog.cog_load()
+            await asyncio.sleep(0)
+
+        self.assertTrue(cog._escrow_ready)
+        publish.assert_awaited_once_with(bot, pending)
+
+
     async def test_startup_schedules_retries_for_escrow_left_active(self):
         cog = RPS(SimpleNamespace())
         with (
+            patch("cogs.casino.rps.bank.expire_pending_rps_challenges", return_value=[]),
             patch("cogs.casino.rps.bank.active_rps_wager_records", return_value=[]),
             patch("cogs.casino.rps.bank.refund_orphaned_rps_wagers", return_value=2),
             patch("cogs.casino.rps.bank.active_rps_wager_ids", return_value=["pending-a", "pending-b"]),
@@ -213,6 +254,8 @@ class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             "race-game",
         )
         view.message = message
+        view.accepted = True
+        view._refresh_panel()
 
         ack_started = asyncio.Event()
         release_ack = asyncio.Event()
