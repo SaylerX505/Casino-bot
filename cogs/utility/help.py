@@ -357,7 +357,7 @@ class HelpCommand(commands.Cog):
                 "المتجر مش جاهز حاليًا. جرّب بعد شوية.",
                 ephemeral=True,
             )
-        await interaction.response.send_message(view=ShopView(cog), ephemeral=True)
+        await interaction.response.send_message(view=ShopView(cog, interaction.user), ephemeral=True)
 
     @app_commands.command(name="commands", description="فتح قائمة الأوامر والمساعدة")
     @app_commands.guild_only()
