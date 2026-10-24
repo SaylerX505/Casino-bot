@@ -71,7 +71,7 @@ class ShopDropdown(discord.ui.Select):
         options = [
             discord.SelectOption(
                 label=name,
-                description=f"{price} | {description}",
+                description=f"{fmt(price)} عملة | {description}",
                 value=item_id,
                 emoji=emoji,
             )
@@ -443,7 +443,7 @@ class CurrencyHubLayout(LayoutView):
             ephemeral=True,
         )
     async def shop_btn(self, interaction: discord.Interaction):
-        await interaction.response.send_message(view=ShopView(self.cog), ephemeral=True)
+        await interaction.response.send_message(view=ShopView(self.cog, interaction.user), ephemeral=True)
 
     async def transfer_btn(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TransferModal(self.cog))
