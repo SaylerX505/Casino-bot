@@ -29,10 +29,6 @@ from cogs.utility.theme import (
 logger = logging.getLogger(__name__)
 
 
-class WatermarkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-
 DATABASE_FILE = "data/database.json"
 USED_TRACKER_FILE = "data/used_images.json"
 IMAGES_DIR = "images"
