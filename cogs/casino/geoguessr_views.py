@@ -41,7 +41,6 @@ class GuessGameMenu(LayoutView):
         self.game_started = False
         self.time_left = 40
         self.extensions_left = self.MAX_TIME_EXTENSIONS
-        self.round_closed = False
         self.message = None
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
@@ -263,6 +262,7 @@ class ActiveGameView(LayoutView):
         self.round_num = round_num
         self.total_rounds = total_rounds
         self.extensions_left = self.MAX_TIME_EXTENSIONS
+        self.round_closed = False
         self.message = None
         self._panel_text = TextDisplay(self._content())
         self.button = discord.ui.Button(
