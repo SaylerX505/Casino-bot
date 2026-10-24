@@ -15,7 +15,7 @@ from cogs.casino.game_registry import (
     release_game_task,
 )
 from cogs.utility.diagnostics import DiagnosticViewMixin
-from cogs.utility.theme import THEME, StatusPanel, base_embed, embed_to_v2, get_currency
+from cogs.utility.theme import THEME, StatusPanel, base_embed, embed_to_v2, get_currency, send_status
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
@@ -1074,31 +1074,40 @@ class RPS(commands.Cog):
         currency = get_currency(self.bot)
         if currency is None:
             return await ctx.send(view=embed_to_v2(base_embed(description="❌ الفلوس واقعة! كلم نجلاوي.", color=THEME["red_dark"])))
-        game_id = uuid.uuid4().hex
-        if not await asyncio.to_thread(bank.create_rps_wager, game_id, ctx.author.id, opponent.id, amount):
-            player_balance = await asyncio.to_thread(bank.get_balance, ctx.author.id)
-            opponent_balance = await asyncio.to_thread(bank.get_balance, opponent.id)
-            if player_balance < amount:
-                return await ctx.send(
-                    view=embed_to_v2(base_embed(
-                        description=f"❌ رصيدك **{player_balance:,}**، محتاج **{amount:,}**.",
-                        color=THEME["red_dark"],
-                    ))
-                )
-            if opponent_balance < amount:
-                return await ctx.send(
-                    view=embed_to_v2(base_embed(
-                        description=f"❌ {opponent.mention} رصيده مش كفاية للرهان.",
-                        color=THEME["red_dark"],
-                    ))
-                )
-            return await ctx.send(
-                view=embed_to_v2(base_embed(
-                    description="❌ تعذر تسجيل الرهان بأمان. مفيش مبلغ اتخصم؛ راجع الرصيد وحاول تاني.",
-                    color=THEME["red_dark"],
-                ))
+        try:
+            player_balance, opponent_balance = await asyncio.gather(
+                asyncio.to_thread(bank.get_balance, ctx.author.id),
+                asyncio.to_thread(bank.get_balance, opponent.id),
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Could not verify RPS challenge balances challenger_id=%s opponent_id=%s",
+                ctx.author.id,
+                opponent.id,
+            )
+            return await send_status(
+                ctx,
+                "تعذر التحقق من الرصيد",
+                "حصل عطل أثناء قراءة الأرصدة. مفيش رهان اتعمل؛ جرّب تاني بعد شوية.",
+                "warning",
             )
 
+        if player_balance < amount:
+            return await send_status(
+                ctx,
+                "رصيدك مش كفاية",
+                f"رصيدك الحالي **{player_balance:,} {COIN}**، ومحتاج **{amount:,} {COIN}** عشان تبعت التحدي.",
+                "warning",
+            )
+        if opponent_balance < amount:
+            return await send_status(
+                ctx,
+                "رصيد الخصم مش كفاية",
+                f"{opponent.mention} رصيده الحالي **{opponent_balance:,} {COIN}**، وأقل رهان مطلوب **{amount:,} {COIN}**. مفيش رصيد اتحجز.",
+                "warning",
+            )
+
+        game_id = uuid.uuid4().hex
         view = RPSView(ctx, ctx.author, opponent, amount, game_id)
         task = asyncio.current_task()
         if task is None or not register_game_task(
@@ -1109,39 +1118,101 @@ class RPS(commands.Cog):
             "Rock Paper Scissors",
             view=view,
         ):
-            refund = await _settle_wager(game_id)
-            if not refund.get("settled") and refund.get("reason") in {"database_error", "balance_limit"}:
-                _schedule_wager_recovery(game_id)
-            message = (
-                "❌ فيه لعبة شغالة في الروم؛ رجعنا الرهان للطرفين."
-                if refund.get("settled")
-                else "❌ فيه لعبة شغالة في الروم. الرهان محفوظ، والبوت هيعيد محاولة التسوية تلقائيًا."
-            )
-            return await ctx.send(
-                view=embed_to_v2(base_embed(
-                    description=message,
-                    color=THEME["red_dark"],
-                ))
+            view.stop()
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة شغالة في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ تحديًا جديدًا.",
+                "warning",
             )
 
         try:
-            view.message = await ctx.send(view=view)
+            try:
+                created = await asyncio.to_thread(
+                    bank.create_rps_challenge,
+                    game_id,
+                    ctx.author.id,
+                    opponent.id,
+                    amount,
+                    channel_id=int(ctx.channel.id),
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Could not create RPS challenge invitation game_id=%s",
+                    game_id,
+                )
+                view.stop()
+                await send_status(
+                    ctx,
+                    "تعذر إنشاء التحدي",
+                    "قاعدة بيانات الرهانات لم تؤكد إنشاء الدعوة. مفيش رصيد اتحجز؛ جرّب تاني.",
+                    "warning",
+                )
+                return
+
+            if not created:
+                view.stop()
+                await send_status(
+                    ctx,
+                    "تعذر إنشاء التحدي",
+                    "لم نقدر نحفظ الدعوة بأمان. مفيش رصيد اتحجز؛ جرّب تاني.",
+                    "warning",
+                )
+                return
+
+            try:
+                view.message = await ctx.send(
+                    view=view,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except asyncio.CancelledError:
+                await asyncio.to_thread(
+                    bank.cancel_rps_challenge,
+                    game_id,
+                    ctx.author.id,
+                )
+                raise
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Could not publish RPS challenge invitation game_id=%s requester_id=%s",
+                    game_id,
+                    ctx.author.id,
+                )
+                try:
+                    await asyncio.to_thread(
+                        bank.cancel_rps_challenge,
+                        game_id,
+                        ctx.author.id,
+                    )
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Could not cancel unpublished RPS invitation game_id=%s",
+                        game_id,
+                    )
+                await send_status(
+                    ctx,
+                    "تعذر إرسال التحدي",
+                    "حصل عطل أثناء إرسال الدعوة. الدعوة اتلغت أو هتنتهي بأمان من غير حجز أي عملات.",
+                    "warning",
+                )
+                return
+
             try:
                 stored_reference = await asyncio.to_thread(
-                    bank.set_rps_wager_message_reference,
+                    bank.set_rps_challenge_message_reference,
                     game_id,
                     int(ctx.channel.id),
                     int(view.message.id),
                 )
                 if not stored_reference:
-                    logging.getLogger(__name__).warning(
-                        "RPS message reference was not saved because wager is no longer active game_id=%s",
+                    logging.getLogger(__name__).error(
+                        "RPS invitation exists but its panel reference was not saved game_id=%s",
                         game_id,
                     )
             except Exception:
-                # Losing the optional panel reference must not invalidate an already-started wager.
+                # This reference is only for cleanup; acceptance/escrow remains guarded by DB state.
                 logging.getLogger(__name__).exception(
-                    "Could not persist RPS challenge panel reference game_id=%s",
+                    "Could not persist pending RPS invitation panel reference game_id=%s",
                     game_id,
                 )
             await view.wait()
@@ -1149,6 +1220,11 @@ class RPS(commands.Cog):
             await view.abort()
             raise
         except Exception:
+            logging.getLogger(__name__).exception(
+                "Unexpected RPS command lifecycle error game_id=%s requester_id=%s",
+                game_id,
+                ctx.author.id,
+            )
             if not view.done:
                 await view.abort()
             raise
