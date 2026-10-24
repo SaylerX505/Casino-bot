@@ -351,7 +351,7 @@ async def run_mafia_game(ctx, players):
                         except Exception:
                             logger.exception("Could not resolve the Currency cog for the Mafia item action")
                             cur_cog = None
-                        if cur_cog and cur_cog.remove_item(hanged_player.id, "veto", 1):
+                        if cur_cog and await asyncio.to_thread(cur_cog.remove_item, hanged_player.id, "veto", 1):
                             embed = discord.Embed(
                                 description=f"⛔ **{hanged_player.mention}** استخدم **فيتو**! الناس صوتت ضده بس الفيتو لغى الإعدام... عاش يا وحش!",
                                 color=discord.Color.gold()
@@ -494,7 +494,7 @@ class Mafia(commands.Cog):
         cur_cog = self.bot.get_cog("Currency")
         if cur_cog is None:
             return await respond("الاقتصاد غير متاح", "مركز الاقتصاد مش محمّل حاليًا. جرّب تاني بعد إصلاح البوت.")
-        if cur_cog.get_item_count(ctx.author.id, "mafia_scan") <= 0:
+        if await asyncio.to_thread(cur_cog.get_item_count, ctx.author.id, "mafia_scan") <= 0:
             return await respond(
                 "أداة الكشف مش موجودة",
                 "مفيش كشف مافيا في شنطتك. تقدر تشتريه من المتجر داخل مركز الاقتصاد.",
@@ -511,7 +511,7 @@ class Mafia(commands.Cog):
         alive_mafias = [member for member in game.mafias if member in game.alive and member != ctx.author]
         if not alive_mafias:
             return await respond("مفيش هدف صالح", "مفيش مافيا تانية عايشة تقدر تكشفها دلوقتي.")
-        if not cur_cog.remove_item(ctx.author.id, "mafia_scan", 1):
+        if not await asyncio.to_thread(cur_cog.remove_item, ctx.author.id, "mafia_scan", 1):
             return await respond(
                 "تعذر استخدام الأداة",
                 "الأداة اتستخدمت أو مش موجودة. اتأكد من شنطتك وحاول تاني.",
@@ -534,7 +534,7 @@ class Mafia(commands.Cog):
             )
         except discord.Forbidden:
             try:
-                cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
+                await asyncio.to_thread(cur_cog.add_item, ctx.author.id, "mafia_scan", 1)
             except Exception:
                 logger.exception(
                     "Failed to refund mafia_scan after DM Forbidden user_id=%s",
@@ -550,7 +550,7 @@ class Mafia(commands.Cog):
             )
         except discord.HTTPException:
             try:
-                cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
+                await asyncio.to_thread(cur_cog.add_item, ctx.author.id, "mafia_scan", 1)
             except Exception:
                 logger.exception(
                     "Failed to refund mafia_scan after DM HTTP error user_id=%s",
