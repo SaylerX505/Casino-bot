@@ -1,5 +1,6 @@
 """Tests for retrying RPS escrow settlement after transient SQLite failures."""
 import asyncio
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, call, patch
@@ -40,6 +41,21 @@ class RPSComponentsV2Tests(unittest.TestCase):
 
 
 class RPSettlementRetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_settlement_runs_in_a_worker_thread(self):
+        main_thread = threading.get_ident()
+        transaction_threads = []
+
+        def settle(game_id, winner_id):
+            transaction_threads.append(threading.get_ident())
+            return {"settled": True, "status": "settled", "game_id": game_id, "winner_id": winner_id}
+
+        with patch("cogs.casino.rps.bank.settle_rps_wager", side_effect=settle):
+            result = await _settle_wager("worker-thread-test", 101)
+
+        self.assertTrue(result["settled"])
+        self.assertEqual(len(transaction_threads), 1)
+        self.assertNotEqual(transaction_threads[0], main_thread)
+
     async def test_transient_database_errors_are_retried_then_settled(self):
         settled = {"settled": True, "status": "settled", "payout": 190, "tax": 10}
         with (
