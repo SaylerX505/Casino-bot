@@ -1,40 +1,46 @@
 """Repository-wide guardrails for the Components V2 message policy."""
 
 import ast
-from pathlib import Path
+import os
 import unittest
 
 
-ROOT = Path(__file__).resolve().parents[1]
-COGS = ROOT / "cogs"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+COGS = os.path.join(ROOT, "cogs")
 MESSAGE_METHODS = {"send", "send_message", "reply", "edit", "edit_original_response"}
 
 
 def _direct_embed_sends():
     """Find Discord send/edit calls that pass the legacy embed keyword directly."""
     findings = []
-    for path in sorted(COGS.rglob("*.py")):
-        try:
-            source = path.read_text(encoding="utf-8")
-            tree = ast.parse(source, filename=str(path))
-        except (OSError, SyntaxError) as error:
-            findings.append((path.relative_to(ROOT).as_posix(), 1, f"could not inspect source: {type(error).__name__}"))
-            continue
+    for directory, _subdirectories, filenames in os.walk(COGS):
+        for filename in sorted(filenames):
+            if not filename.endswith(".py"):
+                continue
+            path = os.path.join(directory, filename)
+            try:
+                with open(path, "r", encoding="utf-8") as source_file:
+                    tree = ast.parse(source_file.read(), filename=path)
+            except (OSError, SyntaxError) as error:
+                relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
+                findings.append((relative_path, 1, f"could not inspect source: {type(error).__name__}"))
+                continue
 
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                continue
-            if node.func.attr not in MESSAGE_METHODS:
-                continue
-            if any(keyword.arg == "embed" for keyword in node.keywords):
-                findings.append(
-                    (
-                        path.relative_to(ROOT).as_posix(),
-                        node.lineno,
-                        f"{node.func.attr}(embed=...) bypasses the Components V2 renderer",
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                if node.func.attr not in MESSAGE_METHODS:
+                    continue
+                if any(keyword.arg == "embed" for keyword in node.keywords):
+                    relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
+                    findings.append(
+                        (
+                            relative_path,
+                            node.lineno,
+                            f"{node.func.attr}(embed=...) bypasses the Components V2 renderer",
+                        )
                     )
-                )
-    return findings
+    return sorted(findings)
 
 
 class ComponentsV2PolicyTests(unittest.TestCase):
