@@ -292,7 +292,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         self.add_item(
             Container(
                 *components,
-                accent_color=THEME["green"] if self.accepted else THEME["teal"],
+                accent_color=getattr(self, "_panel_accent", THEME["green"] if self.accepted else THEME["teal"]),
             )
         )
 
@@ -310,7 +310,14 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         return "\n\n".join(parts)[:4000]
 
     def _refresh_panel(self, embed=None):
-        self._panel_text.content = self._embed_content(embed or self.make_embed())
+        embed = embed or self.make_embed()
+        self._panel_text.content = self._embed_content(embed)
+        color = getattr(embed, "color", None)
+        self._panel_accent = (
+            color.value
+            if color is not None
+            else (THEME["green"] if self.accepted else THEME["teal"])
+        )
         self._render_view()
 
     def _disable_buttons(self):
@@ -325,6 +332,249 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             )
         else:
             await interaction.response.send_message(content, ephemeral=True)
+
+    async def _defer_private(self, interaction) -> bool:
+        if interaction.response.is_done():
+            return True
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except (discord.HTTPException, discord.InteractionResponded):
+            logging.getLogger(__name__).warning(
+                "Could not acknowledge RPS challenge action game_id=%s user_id=%s",
+                self.game_id,
+                interaction.user.id,
+                exc_info=True,
+            )
+            return False
+        return True
+
+    async def _store_panel_reference(self):
+        if self.message is None or not getattr(self.message, "id", None):
+            return
+        channel_id = int(self.ctx.channel.id)
+        message_id = int(self.message.id)
+        try:
+            await asyncio.to_thread(
+                bank.set_rps_challenge_message_reference,
+                self.game_id,
+                channel_id,
+                message_id,
+            )
+            if self.accepted:
+                await asyncio.to_thread(
+                    bank.set_rps_wager_message_reference,
+                    self.game_id,
+                    channel_id,
+                    message_id,
+                )
+        except Exception:
+            # A missing optional message reference must never change money state.
+            logging.getLogger(__name__).exception(
+                "Could not persist RPS challenge panel reference game_id=%s",
+                self.game_id,
+            )
+
+    async def _update_live_panel(self) -> bool:
+        """Update the existing challenge panel, republishing only if it disappeared."""
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+                await self._store_panel_reference()
+                return True
+            except discord.NotFound:
+                logging.getLogger(__name__).info(
+                    "RPS challenge panel was deleted; publishing the current state again game_id=%s",
+                    self.game_id,
+                )
+                self.message = None
+            except discord.HTTPException:
+                logging.getLogger(__name__).warning(
+                    "Could not edit RPS challenge panel; trying a replacement panel game_id=%s",
+                    self.game_id,
+                    exc_info=True,
+                )
+
+        try:
+            self.message = await self.ctx.send(
+                view=self,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            await self._store_panel_reference()
+            return True
+        except discord.HTTPException:
+            logging.getLogger(__name__).exception(
+                "Could not publish the current RPS challenge state game_id=%s",
+                self.game_id,
+            )
+            return False
+
+    async def accept_challenge(self, interaction: discord.Interaction, button=None):
+        if not await self._defer_private(interaction):
+            return
+
+        async with self._choice_lock:
+            if self.done:
+                return await self._private_notice(interaction, "التحدي خلص بالفعل.")
+            if interaction.user.id != self.opponent.id:
+                return await self._private_notice(interaction, "الخصم المحدد في التحدي فقط هو اللي يقدر يقبله.")
+            if self.accepted:
+                return await self._private_notice(interaction, "التحدي اتقبل بالفعل؛ اختار حركتك من لوحة الجولة.")
+            if self.resolving:
+                return await self._private_notice(interaction, "جاري تأكيد حالة التحدي؛ استنى لحظة وجرب تاني.")
+
+            self.resolving = True
+            try:
+                receipt = await asyncio.to_thread(
+                    bank.accept_rps_challenge,
+                    self.game_id,
+                    interaction.user.id,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Could not confirm RPS challenge acceptance game_id=%s",
+                    self.game_id,
+                )
+                try:
+                    status = await asyncio.to_thread(bank.rps_challenge_status, self.game_id)
+                except Exception:
+                    status = None
+                    logging.getLogger(__name__).exception(
+                        "Could not verify RPS challenge after acceptance error game_id=%s",
+                        self.game_id,
+                    )
+                if status is None or status.get("status") != "accepted":
+                    self.resolving = False
+                    return await self._private_notice(
+                        interaction,
+                        "تعذر تأكيد القبول. مش هنعلن إن الجولة بدأت من غير ما نتأكد من حالة الرهان؛ جرّب تاني لو التحدي لسه مفتوح.",
+                    )
+                receipt = {"accepted": True, "already_accepted": True, "status": "accepted"}
+
+            if not receipt.get("accepted"):
+                reason = receipt.get("reason", "unknown")
+                self.resolving = False
+                if reason == "not_authorized":
+                    return await self._private_notice(interaction, "الخصم المحدد فقط هو اللي يقدر يقبل التحدي.")
+                if reason == "insufficient_funds":
+                    self.done = True
+                    public_notice = (
+                        "واحد من الطرفين رصيده أقل من قيمة الرهان. اتقفل التحدي من غير خصم أي عملات؛ "
+                        "زوّدوا الرصيد وافتحوا تحديًا جديدًا."
+                    )
+                    self._refresh_panel(
+                        base_embed(
+                            title="تعذر بدء التحدي",
+                            description=public_notice,
+                            color=THEME["orange"],
+                        )
+                    )
+                    await self._update_live_panel()
+                    self.stop()
+                    if receipt.get("player_b_balance", 0) < receipt.get("amount", self.bet):
+                        private_notice = (
+                            f"رصيدك الحالي **{int(receipt.get('player_b_balance', 0)):,}** {COIN}، "
+                            f"والرهان المطلوب **{self.bet:,}**. مفيش عملات اتخصمت."
+                        )
+                    else:
+                        private_notice = (
+                            f"رصيد {self.player.mention} مش كفاية لتحدي بقيمة **{self.bet:,}**. "
+                            "مفيش عملات اتخصمت من أي طرف."
+                        )
+                    return await self._private_notice(interaction, private_notice)
+
+                self.done = True
+                self._refresh_panel(
+                    base_embed(
+                        title="التحدي لم يعد متاحًا",
+                        description="تم إغلاق الدعوة أو انتهت صلاحيتها قبل قبولها. مفيش رهان اتخصم.",
+                        color=THEME["orange"],
+                    )
+                )
+                await self._update_live_panel()
+                self.stop()
+                return await self._private_notice(interaction, "التحدي لم يعد مفتوحًا، ومفيش رهان اتخصم.")
+
+            self.accepted = True
+            self.resolving = False
+            self._refresh_panel()
+            await self._update_live_panel()
+            return await self._private_notice(
+                interaction,
+                f"✅ قبلت التحدي. اتحجز **{self.bet:,} {COIN}** من رصيد كل طرف؛ اختار حركتك بسرية من اللوحة العامة.",
+            )
+
+    async def decline_challenge(self, interaction: discord.Interaction, button=None):
+        await self._close_invitation(interaction, action="decline")
+
+    async def cancel_challenge(self, interaction: discord.Interaction, button=None):
+        await self._close_invitation(interaction, action="cancel")
+
+    async def _close_invitation(self, interaction: discord.Interaction, *, action: str):
+        if not await self._defer_private(interaction):
+            return
+
+        async with self._choice_lock:
+            if self.done:
+                return await self._private_notice(interaction, "التحدي اتقفل بالفعل.")
+            if self.accepted:
+                return await self._private_notice(
+                    interaction,
+                    "التحدي اتقبل والرهان اتحجز بالفعل؛ مينفعش يتلغى من زر الدعوة.",
+                )
+
+            expected_user = self.opponent.id if action == "decline" else self.player.id
+            if interaction.user.id != expected_user:
+                message = (
+                    "الخصم المحدد فقط يقدر يرفض التحدي."
+                    if action == "decline"
+                    else "صاحب التحدي الأصلي فقط يقدر يلغيه."
+                )
+                return await self._private_notice(interaction, message)
+
+            operation = bank.decline_rps_challenge if action == "decline" else bank.cancel_rps_challenge
+            try:
+                receipt = await asyncio.to_thread(operation, self.game_id, interaction.user.id)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Could not close RPS invite game_id=%s action=%s",
+                    self.game_id,
+                    action,
+                )
+                try:
+                    status = await asyncio.to_thread(bank.rps_challenge_status, self.game_id)
+                except Exception:
+                    status = None
+                target_status = "declined" if action == "decline" else "cancelled"
+                if status is None or status.get("status") != target_status:
+                    return await self._private_notice(
+                        interaction,
+                        "تعذر تأكيد إغلاق التحدي. مفيش رهان اتخصم؛ حاول تاني بعد لحظة.",
+                    )
+                receipt = {"closed": True, "status": target_status}
+
+            if not receipt.get("closed"):
+                if receipt.get("reason") == "not_authorized":
+                    return await self._private_notice(interaction, "مش مسموح لك تنفذ الإجراء ده على التحدي.")
+                if receipt.get("reason") == "accepted":
+                    self.accepted = True
+                    self._refresh_panel()
+                    await self._update_live_panel()
+                    return await self._private_notice(interaction, "التحدي اتقبل بالفعل؛ استخدم أزرار الجولة.")
+                return await self._private_notice(interaction, "التحدي اتقفل أو انتهت صلاحيته بالفعل.")
+
+            self.done = True
+            title = "تم رفض التحدي" if action == "decline" else "تم إلغاء التحدي"
+            description = (
+                f"{self.opponent.mention} رفض الدعوة. مفيش رصيد اتحجز."
+                if action == "decline"
+                else f"{self.player.mention} ألغى الدعوة قبل القبول. مفيش رصيد اتحجز."
+            )
+            self._refresh_panel(
+                base_embed(title=title, description=description, color=THEME["grey"])
+            )
+            await self._update_live_panel()
+            self.stop()
+            return await self._private_notice(interaction, title + ". مفيش أي عملات اتخصمت.")
 
     def _queue_recovery_if_needed(self, result, winner_id=None):
         if result.get("settled"):
