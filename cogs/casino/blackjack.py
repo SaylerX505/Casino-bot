@@ -1,4 +1,5 @@
 """Single-player blackjack backed by the durable virtual-currency wager ledger."""
+# ruff: noqa: I001
 
 import asyncio
 import io
