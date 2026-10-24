@@ -105,6 +105,47 @@ async def _publish_interrupted_rps_panel(bot, record, receipt):
         )
 
 
+async def _publish_expired_rps_challenge_panel(bot, record):
+    """Close a pre-acceptance invite after restart; no stake was ever reserved."""
+    channel_id = record.get("channel_id")
+    message_id = record.get("message_id")
+    if not channel_id or not message_id:
+        return
+
+    try:
+        await bot.wait_until_ready()
+        channel = bot.get_channel(int(channel_id))
+        if channel is None:
+            channel = await bot.fetch_channel(int(channel_id))
+        message = await channel.fetch_message(int(message_id))
+        await message.edit(
+            view=StatusPanel(
+                "انتهى التحدي بعد إعادة التشغيل",
+                "التحدي ما اتقبلش قبل ما البوت يعيد التشغيل، فتم إقفاله من غير حجز أو خصم أي عملات. ابدأوا تحديًا جديدًا لو حابين.",
+                "warning",
+            ),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except asyncio.CancelledError:
+        raise
+    except discord.NotFound:
+        logging.getLogger(__name__).info(
+            "Expired unaccepted RPS challenge panel no longer exists game_id=%s",
+            record.get("game_id"),
+        )
+    except discord.Forbidden:
+        logging.getLogger(__name__).warning(
+            "Expired unaccepted RPS challenge could not be closed due to channel permissions game_id=%s",
+            record.get("game_id"),
+        )
+    except discord.HTTPException:
+        logging.getLogger(__name__).warning(
+            "Expired unaccepted RPS challenge but its panel could not be updated game_id=%s",
+            record.get("game_id"),
+            exc_info=True,
+        )
+
+
 async def _retry_wager_recovery(game_id, winner_id=None, on_recovered=None):
     """Keep retrying unresolved escrow while this process is alive.
 
