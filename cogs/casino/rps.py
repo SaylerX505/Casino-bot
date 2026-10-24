@@ -608,7 +608,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 base_embed(
                     title="⚠️ التحدي اتقفل بأمان",
                     description=(
-                        f"حصل عطل أثناء التفاعل. رقم المتابعة: **{incident_id}**.\\n"
+                        f"حصل عطل أثناء التفاعل. رقم المتابعة: **{incident_id}**.\n"
                         "التحدي لم يكن مقبولًا؛ مفيش أي رصيد اتحجز أو اتخصم."
                     ),
                     color=THEME["orange"],
