@@ -207,7 +207,8 @@ def lobby_embed(
         if players
         else "مفيش لاعبين لسه. انضم للّوبي وابدأ اللعب مع المجموعة."
     )
-    host_name = getattr(host, "display_name", getattr(host, "name", "مضيف اللوبي"))\n    host_line = f"**المضيف:** {host_name}\n" if host is not None else ""
+    host_name = getattr(host, "display_name", getattr(host, "name", "مضيف اللوبي"))
+    host_line = f"**المضيف:** {host_name}\n" if host is not None else ""
     minimum_line = (
         f"**الحد الأدنى للبدء:** {min_players} لاعب\n"
         if min_players > 1
