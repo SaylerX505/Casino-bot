@@ -18,7 +18,7 @@ from discord.ui import (
 import config
 from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.game_registry import register_game_task
-from cogs.utility.theme import THEME, StatusPanel, lobby_embed, try_edit_view
+from cogs.utility.theme import THEME, StatusPanel, lobby_embed, private_status, try_edit_view
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +77,11 @@ class GuessGameMenu(LayoutView):
             button.disabled = True
 
     async def _send_private_embed(self, interaction, embed):
-        await interaction.response.send_message(
-            view=StatusPanel(embed.title or "تنبيه", embed.description or "حصل خطأ غير متوقع.", "warning"),
-            ephemeral=True,
+        return await private_status(
+            interaction,
+            embed.title or "تنبيه",
+            embed.description or "حصل خطأ غير متوقع.",
+            "warning",
         )
 
     async def run_timer(self):
@@ -101,7 +103,7 @@ class GuessGameMenu(LayoutView):
             self.game_started = True
             cancel_embed = discord.Embed(
                 title="❌ تم الإلغاء",
-                description="الوقت خلص و محدش دخل, دنتو عيال فصيله",
+                description="انتهى وقت التسجيل من غير ما ينضم أي لاعب. افتح لوبي جديد لما تكونوا جاهزين.",
                 color=discord.Color.red()
             )
             self._refresh_panel(cancel_embed)
@@ -127,7 +129,7 @@ class GuessGameMenu(LayoutView):
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
-                description="اللعبه شغاله يابا",
+                description="اللعبة بدأت بالفعل. لا يمكن الانضمام بعد إغلاق التسجيل.",
                 color=discord.Color.red()
             )
             return await self._send_private_embed(interaction, embed)
@@ -139,7 +141,7 @@ class GuessGameMenu(LayoutView):
             return await self._send_private_embed(interaction, embed)
         if interaction.user in self.players:
             embed = discord.Embed(
-                description="منتا دخلت يا عم متقرفناش بقي",
+                description="أنت مسجل بالفعل في اللوبي.",
                 color=discord.Color.red()
             )
             await self._send_private_embed(interaction, embed)
@@ -151,7 +153,7 @@ class GuessGameMenu(LayoutView):
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
-                description="اللعبة بدأت ياعمنااا",
+                description="اللعبة بدأت بالفعل. لا يمكن مغادرة الجولة بعد بدايتها.",
                 color=discord.Color.red()
             )
             return await self._send_private_embed(interaction, embed)
@@ -161,7 +163,7 @@ class GuessGameMenu(LayoutView):
             await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
-                description="ولا انتا مش ف اللعبه يلا بطل استعباط",
+                description="أنت مش مسجل في اللوبي، فلازم تنضم الأول قبل المغادرة.",
                 color=discord.Color.red()
             )
             await self._send_private_embed(interaction, embed)
@@ -169,7 +171,7 @@ class GuessGameMenu(LayoutView):
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="بس يلا هش بعيد",
+                description="صاحب اللوبي فقط يقدر يبدأ الجولة.",
                 color=discord.Color.red()
             )
             return await self._send_private_embed(interaction, embed)
@@ -180,7 +182,7 @@ class GuessGameMenu(LayoutView):
     async def add_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="هش بعيد ياه",
+                description="صاحب اللوبي فقط يقدر يمدد وقت التسجيل.",
                 color=discord.Color.red()
             )
             return await self._send_private_embed(interaction, embed)
