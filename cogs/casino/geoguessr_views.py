@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 # --- MENUS AND VIEWS ---
 class GuessGameMenu(LayoutView):
+    MAX_TIME_EXTENSIONS = 3
+
     def __init__(self, ctx, *, start_game):
         super().__init__(timeout=120)
         self.ctx = ctx
@@ -38,6 +40,7 @@ class GuessGameMenu(LayoutView):
         self.players = set()
         self.game_started = False
         self.time_left = 40
+        self.extensions_left = self.MAX_TIME_EXTENSIONS
         self.message = None
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
@@ -67,16 +70,31 @@ class GuessGameMenu(LayoutView):
         embed.set_thumbnail(url=SERVER_LOGO_URL)
         return embed
 
+    def _sync_extension_control(self):
+        exhausted = self.game_started or self.extensions_left <= 0
+        for button in self._buttons:
+            if button.custom_id == "geoguessr_add_time":
+                button.disabled = exhausted
+
     def _panel_content(self):
         embed = self.get_embed()
-        return f"# {embed.title or 'GeoGuessr'}\n{embed.description or ''}\n\n-# كازينو الحفرة • {config.BRAND}"[:4000]
+        return (
+            f"# {embed.title or 'GeoGuessr'}\n"
+            f"{embed.description or ''}\n\n"
+            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            f"-# كازينو الحفرة • {config.BRAND}"
+        )[:4000]
 
     def _refresh_panel(self, embed=None):
         embed = embed or self.get_embed()
         title = f"# {embed.title}\n" if embed.title else ""
         description = f"{embed.description}\n\n" if embed.description else ""
-        footer = f"-# كازينو الحفرة • {config.BRAND}"
+        footer = (
+            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            f"-# كازينو الحفرة • {config.BRAND}"
+        )
         self._panel_text.content = (title + description + footer)[:4000]
+        self._sync_extension_control()
 
     def _disable_buttons(self):
         for button in self._buttons:
@@ -192,6 +210,21 @@ class GuessGameMenu(LayoutView):
                 color=discord.Color.red()
             )
             return await self._send_private_embed(interaction, embed)
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "اللعبة بدأت بالفعل؛ مفيش تمديدات بعد إغلاق التسجيل.",
+                "warning",
+            )
+        if self.extensions_left <= 0:
+            return await private_status(
+                interaction,
+                "وصلنا للحد الأقصى",
+                "استخدمت كل تمديدات الوقت المتاحة. ابدأ الجولة أو استنى العدّ التنازلي.",
+                "warning",
+            )
+        self.extensions_left -= 1
         self.time_left += 10
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
