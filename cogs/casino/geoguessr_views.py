@@ -36,8 +36,8 @@ class GuessGameMenu(LayoutView):
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
-            ("انضمام (Join)", "geoguessr_join", "join_button", None),
-            ("مغادرة (Leave)", "geoguessr_leave", "leave_button", None),
+            ("انضمام", "geoguessr_join", "join_button", None),
+            ("مغادرة", "geoguessr_leave", "leave_button", None),
             ("ابدأ الآن", "geoguessr_start", "start_button", None),
             ("+10 ثواني", "geoguessr_add_time", "add_time", "⏱️"),
         ):
@@ -49,11 +49,13 @@ class GuessGameMenu(LayoutView):
 
     def get_embed(self):
         embed = lobby_embed(
-            "Waiting room الحفره",
+            "🌍 GeoGuessr • تخمين الموقع",
             "اضغط على 'انضمام' للعب.",
             sorted(self.players, key=lambda player: player.id),
             self.time_left,
             max_players=15,
+            host=self.ctx.author,
+            min_players=1,
         )
         embed.color = discord.Color.gold()
         embed.set_thumbnail(url=SERVER_LOGO_URL)
