@@ -22,10 +22,6 @@ from cogs.utility.theme import THEME, StatusPanel, lobby_embed, try_edit_view
 logger = logging.getLogger(__name__)
 
 
-class WatermarkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-
 class MafiaDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
         self.view_parent = view_parent
