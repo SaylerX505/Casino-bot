@@ -89,6 +89,13 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(view, LayoutView)
         self.assertEqual(view.timeout, 180)
+        texts = [
+            item.content
+            for item in view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        ]
+        self.assertIn("مركز المساعدة", "\n".join(texts))
+        self.assertNotIn("Help Center", "\n".join(texts))
         buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
         self.assertEqual(len(buttons), 1)
         self.assertEqual(buttons[0].style, discord.ButtonStyle.secondary)
