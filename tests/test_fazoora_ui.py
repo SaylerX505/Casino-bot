@@ -84,6 +84,31 @@ class EconomyHubUXTests(unittest.TestCase):
         self.assertIn("250", content)
 
 
+class HubInventoryButtonTests(unittest.IsolatedAsyncioTestCase):
+    async def test_hub_inventory_button_tracks_the_ephemeral_message(self):
+        owner = SimpleNamespace(id=9, display_name="Tester")
+        cog = SimpleNamespace(
+            get_balance=lambda _user_id: 100,
+            get_inventory=lambda _user_id: {},
+            get_item_count=lambda _user_id, _item_id: 0,
+        )
+        hub = CurrencyHubLayout(cog, owner)
+        message = object()
+        response = SimpleNamespace(send_message=AsyncMock())
+        interaction = SimpleNamespace(
+            user=owner,
+            response=response,
+            original_response=AsyncMock(return_value=message),
+        )
+
+        await hub.inventory_btn(interaction)
+
+        view = response.send_message.await_args.kwargs["view"]
+        self.assertIsInstance(view, InventoryView)
+        self.assertIs(view.message, message)
+        self.assertTrue(response.send_message.await_args.kwargs["ephemeral"])
+
+
 class InventoryViewLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_category_change_updates_the_same_view_instance(self):
         owner = SimpleNamespace(id=7, display_name="Tester")
