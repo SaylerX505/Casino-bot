@@ -173,8 +173,8 @@ class ChairsLobby(LayoutView):
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
-            ("انضمام (Join)", "chairs_join", "join_btn", None),
-            ("مغادرة (Leave)", "chairs_leave", "leave_btn", None),
+            ("انضمام", "chairs_join", "join_btn", None),
+            ("مغادرة", "chairs_leave", "leave_btn", None),
             ("ابدأ الآن", "chairs_start", "start_btn", None),
             ("+10 ثواني", "chairs_add_time", "add_time_btn", "⏱️"),
         ):
@@ -210,6 +210,8 @@ class ChairsLobby(LayoutView):
             self.players,
             self.time_left,
             max_players=25,
+            host=self.ctx.author,
+            min_players=2,
         )
         embed.set_thumbnail(url=self.logo_url)
         embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=self.logo_url)
