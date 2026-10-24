@@ -41,6 +41,7 @@ class GuessGameMenu(LayoutView):
         self.game_started = False
         self.time_left = 40
         self.extensions_left = self.MAX_TIME_EXTENSIONS
+        self.round_closed = False
         self.message = None
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
@@ -303,6 +304,7 @@ class ActiveGameView(LayoutView):
             self.disable_controls()
 
     def disable_controls(self):
+        self.round_closed = True
         self.button.disabled = True
 
     async def add_time(self, interaction: discord.Interaction):
@@ -311,13 +313,14 @@ class ActiveGameView(LayoutView):
                 view=StatusPanel("التحكم مش متاح", "مضيف اللعبة فقط يقدر يمدد الوقت.", "warning"),
                 ephemeral=True,
             )
-        if self.button.disabled or time.time() >= self.timer_state["end_time"]:
+        if self.round_closed or time.time() >= self.timer_state["end_time"]:
             self.disable_controls()
             return await interaction.response.send_message(
                 view=StatusPanel("الجولة انتهت", "انتهى وقت التخمين بالفعل؛ مش ممكن نفتح الجولة من جديد.", "warning"),
                 ephemeral=True,
             )
         if self.extensions_left <= 0:
+            self.button.disabled = True
             return await interaction.response.send_message(
                 view=StatusPanel(
                     "وصلنا للحد الأقصى",
