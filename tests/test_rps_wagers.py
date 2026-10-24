@@ -66,7 +66,13 @@ class RPSWagerTests(unittest.TestCase):
         self.assertEqual(bank.rps_challenge_status("challenge-accept")["status"], "pending")
         self.assertIsNone(bank.rps_wager_status("challenge-accept"))
 
-        receipt = bank.accept_rps_challenge("challenge-accept")
+        unauthorized = bank.accept_rps_challenge("challenge-accept", 101)
+        self.assertFalse(unauthorized["accepted"])
+        self.assertEqual(unauthorized["reason"], "not_authorized")
+        self.assertEqual(bank.get_balance(101), 1_000)
+        self.assertEqual(bank.get_balance(202), 1_000)
+
+        receipt = bank.accept_rps_challenge("challenge-accept", 202)
         self.assertTrue(receipt["accepted"])
         self.assertFalse(receipt["already_accepted"])
         self.assertEqual(receipt["status"], "accepted")
@@ -76,7 +82,7 @@ class RPSWagerTests(unittest.TestCase):
         self.assertEqual(wager["status"], "active")
         self.assertEqual(wager["channel_id"], 303)
 
-        repeated = bank.accept_rps_challenge("challenge-accept")
+        repeated = bank.accept_rps_challenge("challenge-accept", 202)
         self.assertTrue(repeated["accepted"])
         self.assertTrue(repeated["already_accepted"])
         self.assertEqual(bank.get_balance(101), 900)
@@ -115,7 +121,7 @@ class RPSWagerTests(unittest.TestCase):
         bank.set_balance(202, 25)
         self.assertTrue(bank.create_rps_challenge("challenge-insufficient", 101, 202, 100))
 
-        receipt = bank.accept_rps_challenge("challenge-insufficient")
+        receipt = bank.accept_rps_challenge("challenge-insufficient", 202)
         self.assertFalse(receipt["accepted"])
         self.assertEqual(receipt["reason"], "insufficient_funds")
         self.assertEqual(receipt["player_a_balance"], 1_000)
@@ -142,7 +148,7 @@ class RPSWagerTests(unittest.TestCase):
         self.assertTrue(bank.create_rps_challenge("challenge-concurrent", 101, 202, 1_000))
 
         with ThreadPoolExecutor(max_workers=8) as executor:
-            receipts = list(executor.map(lambda _index: bank.accept_rps_challenge("challenge-concurrent"), range(8)))
+            receipts = list(executor.map(lambda _index: bank.accept_rps_challenge("challenge-concurrent", 202), range(8)))
 
         self.assertTrue(all(receipt["accepted"] for receipt in receipts))
         self.assertEqual(sum(not receipt["already_accepted"] for receipt in receipts), 1)
@@ -157,11 +163,11 @@ class RPSWagerTests(unittest.TestCase):
         self.assertTrue(bank.create_rps_challenge("challenge-reference", 101, 202, 100, channel_id=303))
         self.assertTrue(bank.set_rps_challenge_message_reference("challenge-reference", 303, 404))
         self.assertEqual(bank.rps_challenge_status("challenge-reference")["message_id"], 404)
-        self.assertTrue(bank.accept_rps_challenge("challenge-reference"))
+        self.assertTrue(bank.accept_rps_challenge("challenge-reference", 202))
         self.assertEqual(bank.rps_wager_status("challenge-reference")["message_id"], 404)
 
         self.assertTrue(bank.create_rps_challenge("challenge-reference-race", 101, 202, 100, channel_id=303))
-        self.assertTrue(bank.accept_rps_challenge("challenge-reference-race")["accepted"])
+        self.assertTrue(bank.accept_rps_challenge("challenge-reference-race", 202)["accepted"])
         self.assertTrue(bank.set_rps_challenge_message_reference("challenge-reference-race", 303, 405))
         self.assertEqual(bank.rps_wager_status("challenge-reference-race")["message_id"], 405)
 
