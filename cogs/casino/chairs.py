@@ -227,8 +227,15 @@ class ChairsLobby(LayoutView):
             f"-# كازينو الحفرة • {config.BRAND}"
         )[:4000]
 
+    def _sync_extension_control(self):
+        exhausted = self.game_started or self.extensions_left <= 0
+        for button in self._buttons:
+            if button.custom_id == "chairs_add_time":
+                button.disabled = exhausted
+
     def _refresh_panel(self):
         self._panel_text.content = self._panel_content()
+        self._sync_extension_control()
 
     def _disable_buttons(self):
         for button in self._buttons:
