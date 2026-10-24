@@ -15,7 +15,14 @@ from cogs.casino.game_registry import (
     release_game_task,
 )
 from cogs.utility.diagnostics import DiagnosticViewMixin
-from cogs.utility.theme import THEME, StatusPanel, base_embed, embed_to_v2, get_currency, send_status
+from cogs.utility.theme import (
+    THEME,
+    StatusPanel,
+    base_embed,
+    embed_to_v2,
+    get_currency,
+    send_status,
+)
 
 COIN = "<:ckrcoin:1513743032124575784>"
 MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
@@ -436,7 +443,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 )
                 try:
                     status = await asyncio.to_thread(bank.rps_challenge_status, self.game_id)
-                except Exception:  # noqa: BLE001 - persistence verification must fail closed.
+                except Exception:
                     status = None
                     logging.getLogger(__name__).exception(
                         "Could not verify RPS challenge after acceptance error game_id=%s",
@@ -542,7 +549,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 )
                 try:
                     status = await asyncio.to_thread(bank.rps_challenge_status, self.game_id)
-                except Exception:
+                except Exception:  # noqa: BLE001 - persistence verification must fail closed.
                     status = None
                 target_status = "declined" if action == "decline" else "cancelled"
                 if status is None or status.get("status") != target_status:
