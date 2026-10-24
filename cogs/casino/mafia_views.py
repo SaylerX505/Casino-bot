@@ -258,8 +258,8 @@ class MafiaLobbyView(LayoutView):
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
-            ("انضمام (Join)", "mafia_join", "join_button", None),
-            ("مغادرة (Leave)", "mafia_leave", "leave_button", None),
+            ("انضمام", "mafia_join", "join_button", None),
+            ("مغادرة", "mafia_leave", "leave_button", None),
             ("ابدأ الآن", "mafia_start", "start_button", None),
             ("+10 ثواني", "mafia_add_time", "add_time", "⏱️"),
         ):
@@ -282,6 +282,8 @@ class MafiaLobbyView(LayoutView):
             self.players,
             self.time_left,
             max_players=25,
+            host=self.ctx.author,
+            min_players=5,
         )
         embed.color = discord.Color.dark_red()
         embed.set_image(url="attachment://menu.jpg")
