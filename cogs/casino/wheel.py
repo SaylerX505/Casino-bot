@@ -198,6 +198,8 @@ class WheelLobby(LayoutView):
             self.players,
             self.time_left,
             max_players=MAX_PLAYERS,
+            host=self.ctx.author,
+            min_players=1,
         )
 
     def _panel_content(self, embed=None):
