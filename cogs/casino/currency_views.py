@@ -1,5 +1,6 @@
 """Discord Components V2 presentation and interaction flows for the economy."""
 
+import asyncio
 import logging
 import random
 import re
@@ -139,8 +140,9 @@ class InventoryView(LayoutView):
         self.notice = notice
         self.message = None
 
+        self._panel_text = TextDisplay(self.make_description())
         container = Container(
-            TextDisplay(self.make_description()),
+            self._panel_text,
             Separator(),
             accent_color=config.EMBED_COLOR,
         )
@@ -232,25 +234,55 @@ class InventoryView(LayoutView):
         )
 
     async def select_category(self, interaction: discord.Interaction):
-        view = InventoryView(
-            self.cog,
-            self.owner,
-            category=self.category_select.values[0],
-            notice=self.notice,
-        )
-        await interaction.response.edit_message(view=view)
-        view.message = await interaction.original_response()
+        # Mutate the same view. Replacing it leaves the old view's timeout alive,
+        # which could later overwrite the newer panel with stale controls/content.
+        self.category = self.category_select.values[0]
+        self._panel_text.content = self.make_description()
+        self.refresh_buttons()
+        await interaction.response.edit_message(view=self)
 
     async def redeem_consumable(self, interaction: discord.Interaction, item_id: str):
-        redeemed, reward, balance_after = self.cog.redeem_consumable(self.owner_id, item_id)
+        # Acknowledge before touching SQLite so lock contention cannot expire the
+        # component interaction. Atomic redemption remains the bank's source of truth.
+        try:
+            await interaction.response.defer()
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning(
+                "Could not acknowledge inventory item redemption user_id=%s item_id=%s",
+                self.owner_id,
+                item_id,
+                exc_info=True,
+            )
+            return
+
+        try:
+            redeemed, reward, balance_after = await asyncio.to_thread(
+                self.cog.redeem_consumable,
+                self.owner_id,
+                item_id,
+            )
+        except Exception:
+            logger.exception(
+                "Inventory item redemption failed user_id=%s item_id=%s",
+                self.owner_id,
+                item_id,
+            )
+            return await interaction.followup.send(
+                view=StatusPanel(
+                    "تعذر استخدام الغرض",
+                    "حصل عطل أثناء معالجة الغرض. راجع رصيدك والشنطة قبل المحاولة مرة تانية.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+
         if not redeemed:
             if self.cog.get_item_count(self.owner_id, item_id) > 0:
-                return await interaction.response.send_message(
-                    "رصيدك وصل للحد الأقصى؛ احتفظنا بالغرض في شنطتك ولم نستهلكه.",
-                    ephemeral=True,
-                )
-            return await interaction.response.send_message(
-                "الغرض ده مش موجود في شنطتك. افتح المتجر من مركز الاقتصاد لشرائه.",
+                message = "رصيدك وصل للحد الأقصى؛ احتفظنا بالغرض في شنطتك ولم نستهلكه."
+            else:
+                message = "الغرض ده مش موجود في شنطتك. افتح المتجر من مركز الاقتصاد لشرائه."
+            return await interaction.followup.send(
+                view=StatusPanel("الغرض غير مستخدم", message, "warning"),
                 ephemeral=True,
             )
 
@@ -259,9 +291,22 @@ class InventoryView(LayoutView):
         else:
             notice = f"🎟️ استخدمت تذكرة الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
         notice += f"\nرصيدك الجديد: **{fmt(balance_after)}** {COIN_EMOJI}"
-        view = InventoryView(self.cog, self.owner, category=self.category, notice=notice)
-        await interaction.response.edit_message(view=view)
-        view.message = await interaction.original_response()
+        self.notice = notice
+        self._panel_text.content = self.make_description()
+        self.refresh_buttons()
+        try:
+            await interaction.edit_original_response(view=self)
+        except discord.HTTPException:
+            logger.warning(
+                "Item redeemed but inventory panel could not be refreshed user_id=%s item_id=%s",
+                self.owner_id,
+                item_id,
+                exc_info=True,
+            )
+            await interaction.followup.send(
+                view=StatusPanel("تم استخدام الغرض", notice, "success"),
+                ephemeral=True,
+            )
 
     async def use_box_button(self, interaction: discord.Interaction):
         await self.redeem_consumable(interaction, "loot_box")
