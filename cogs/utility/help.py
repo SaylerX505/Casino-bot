@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import discord
 from discord import app_commands
@@ -6,6 +7,8 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Select, Separator, TextDisplay
 
 import config
+
+logger = logging.getLogger(__name__)
 from cogs.casino.game_registry import release_game_task
 from cogs.casino.permissions import has_staff_access
 from cogs.utility.theme import StatusPanel
@@ -367,8 +370,7 @@ class HelpCommand(commands.Cog):
             await interaction.edit_original_response(view=view)
             view.message = await interaction.original_response()
         except Exception:
-            import logging
-            logging.getLogger(__name__).exception("Could not open economy shop user_id=%s", interaction.user.id)
+            logger.exception("Could not open economy shop user_id=%s", interaction.user.id)
             if interaction.response.is_done():
                 return await interaction.followup.send(
                     view=StatusPanel("تعذر فتح المتجر", "حصل عطل أثناء تجهيز المتجر. جرّب تاني بعد شوية.", "warning"),
