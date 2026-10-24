@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from cogs.utility.theme import THEME, StatusPanel, report_game_failure, result_embed, try_edit_view
+from cogs.utility.theme import THEME, StatusPanel, private_status, report_game_failure, result_embed, try_edit_view
 
 
 class ResultEmbedTests(unittest.TestCase):
@@ -26,6 +26,42 @@ class ResultEmbedTests(unittest.TestCase):
         self.assertEqual(loss.color.value, THEME["red_dark"])
         self.assertEqual(unknown.color.value, THEME["grey"])
 
+
+
+class PrivateStatusTests(unittest.IsolatedAsyncioTestCase):
+    async def test_initial_interaction_response_uses_private_v2_panel(self):
+        interaction = SimpleNamespace(
+            response=SimpleNamespace(
+                is_done=lambda: False,
+                send_message=AsyncMock(),
+            ),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await private_status(interaction, "تنبيه", "رسالة خاصة")
+
+        interaction.response.send_message.assert_awaited_once()
+        kwargs = interaction.response.send_message.await_args.kwargs
+        self.assertIsInstance(kwargs["view"], StatusPanel)
+        self.assertTrue(kwargs["ephemeral"])
+        interaction.followup.send.assert_not_awaited()
+
+    async def test_already_acknowledged_interaction_uses_private_followup(self):
+        interaction = SimpleNamespace(
+            response=SimpleNamespace(
+                is_done=lambda: True,
+                send_message=AsyncMock(),
+            ),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await private_status(interaction, "تنبيه", "رسالة خاصة")
+
+        interaction.followup.send.assert_awaited_once()
+        kwargs = interaction.followup.send.await_args.kwargs
+        self.assertIsInstance(kwargs["view"], StatusPanel)
+        self.assertTrue(kwargs["ephemeral"])
+        interaction.response.send_message.assert_not_awaited()
 
 
 class GameFailureReportingTests(unittest.IsolatedAsyncioTestCase):
