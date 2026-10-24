@@ -604,15 +604,7 @@ def profile_panel(cog, user):
     return render_profile_panel(user, balance, streak, inventory)
 
 
-async def build_currency_hub_view(cog, requester=None):
-    balance = None
-    if requester is not None:
-        balance = await asyncio.to_thread(cog.get_balance, requester.id)
-    return CurrencyHubLayout(cog, requester, balance=balance)
-
-
-class CurrencyHubLayout(LayoutView):
-    def __init__(self, cog, requester=None, *, balance=None):
+class CurrencyHubLayout(LayoutView):    def __init__(self, cog, requester=None, *, balance=None):
         super().__init__(timeout=None)
         self.cog = cog
 
