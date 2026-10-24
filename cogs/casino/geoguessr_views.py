@@ -253,12 +253,15 @@ class GeoGuessrResultPanel(LayoutView):
 
 
 class ActiveGameView(LayoutView):
+    MAX_TIME_EXTENSIONS = 2
+
     def __init__(self, executor, timer_state, round_num=1, total_rounds=6):
         super().__init__(timeout=120)
         self.executor = executor
         self.timer_state = timer_state
         self.round_num = round_num
         self.total_rounds = total_rounds
+        self.extensions_left = self.MAX_TIME_EXTENSIONS
         self.message = None
         self._panel_text = TextDisplay(self._content())
         self.button = discord.ui.Button(
@@ -289,12 +292,15 @@ class ActiveGameView(LayoutView):
         return (
             f"# 🌍 الجولة {self.round_num} من {self.total_rounds} — أين نحن؟\n"
             "اكتب اسم الدولة بالعربية أو الإنجليزية في الشات.\n"
-            f"الوقت المتبقي: **{remaining}** ثانية.\n\n"
+            f"الوقت المتبقي: **{remaining}** ثانية.\n"
+            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
             f"-# كازينو الحفرة • {config.BRAND}"
         )
 
     def update_timer(self, remaining):
         self._panel_text.content = self._content(remaining)
+        if remaining <= 0:
+            self.disable_controls()
 
     def disable_controls(self):
         self.button.disabled = True
@@ -305,11 +311,32 @@ class ActiveGameView(LayoutView):
                 view=StatusPanel("التحكم مش متاح", "مضيف اللعبة فقط يقدر يمدد الوقت.", "warning"),
                 ephemeral=True,
             )
+        if self.button.disabled or time.time() >= self.timer_state["end_time"]:
+            self.disable_controls()
+            return await interaction.response.send_message(
+                view=StatusPanel("الجولة انتهت", "انتهى وقت التخمين بالفعل؛ مش ممكن نفتح الجولة من جديد.", "warning"),
+                ephemeral=True,
+            )
+        if self.extensions_left <= 0:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "وصلنا للحد الأقصى",
+                    "استخدمت كل تمديدات الجولة. استمر في التخمين؛ مفيش تمديدات إضافية.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+
+        self.extensions_left -= 1
         self.timer_state["end_time"] += 10
         remaining = max(0, int(self.timer_state["end_time"] - time.time()))
         self.update_timer(remaining)
         await interaction.response.send_message(
-            view=StatusPanel("تم تمديد الوقت", "أضفنا 10 ثواني للجولة الحالية.", "success"),
+            view=StatusPanel(
+                "تم تمديد الوقت",
+                f"أضفنا 10 ثواني للجولة الحالية. التمديدات المتبقية: **{self.extensions_left}**.",
+                "success",
+            ),
             ephemeral=True,
         )
         if self.message is not None:
