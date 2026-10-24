@@ -459,7 +459,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
         try:
             with (
                 patch("cogs.casino.wheel.get_currency", return_value=currency),
-                patch("cogs.casino.wheel.random.randrange", return_value=0),
+                patch("cogs.casino.wheel.secrets.randbelow", return_value=0),
                 patch("cogs.casino.wheel.render_wheel", return_value=BytesIO(b"png")),
                 patch("cogs.casino.wheel.asyncio.sleep", new=AsyncMock()),
             ):
