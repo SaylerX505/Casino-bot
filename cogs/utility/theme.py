@@ -19,13 +19,6 @@ BRAND = getattr(config, "BRAND", "Çukur")
 PREFIX = getattr(config, "PREFIX", "+")
 
 
-class WatermarkView(discord.ui.View):
-    """Legacy compatibility shim; game messages no longer attach promotional buttons."""
-
-    def __init__(self):
-        super().__init__(timeout=180)
-
-
 def base_embed(title: str = None, description: str = None, color: int = None) -> discord.Embed:
     e = discord.Embed(title=title, description=description, color=color or THEME["grey"])
     footer_text = f"كازينو الحفرة • {BRAND}"
