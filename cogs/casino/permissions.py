@@ -200,7 +200,7 @@ def configured_manager_role_ids(guild_id: int) -> set[int]:
 
 
 def has_staff_access(user) -> bool:
-    """Discord admins, configured bot managers, and game-staff roles can host games."""
+    """Return access to protected management actions and staff-only controls."""
     if has_admin_access(user):
         return True
 
