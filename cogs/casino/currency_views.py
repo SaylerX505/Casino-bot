@@ -464,7 +464,9 @@ class CurrencyHubLayout(LayoutView):
             ephemeral=True,
         )
     async def shop_btn(self, interaction: discord.Interaction):
-        await interaction.response.send_message(view=ShopView(self.cog, interaction.user), ephemeral=True)
+        view = ShopView(self.cog, interaction.user)
+        await interaction.response.send_message(view=view, ephemeral=True)
+        view.message = await interaction.original_response()
 
     async def transfer_btn(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TransferModal(self.cog))
