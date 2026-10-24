@@ -56,8 +56,8 @@ class RouletteLobby(LayoutView):
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
-            ("انضمام (Join)", "roulette_join", "join_btn", None),
-            ("مغادرة (Leave)", "roulette_leave", "leave_btn", None),
+            ("انضمام", "roulette_join", "join_btn", None),
+            ("مغادرة", "roulette_leave", "leave_btn", None),
             ("ابدأ الآن", "roulette_start", "start_btn", None),
             ("+10 ثواني", "roulette_add_time", "add_time_btn", "⏱️"),
         ):
@@ -92,6 +92,8 @@ class RouletteLobby(LayoutView):
             self.players,
             self.time_left,
             max_players=45,
+            host=self.ctx.author,
+            min_players=2,
         )
         embed.color = discord.Color.dark_purple()
         return embed
