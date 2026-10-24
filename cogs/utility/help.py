@@ -287,27 +287,27 @@ class HelpCommand(commands.Cog):
                     ephemeral=True,
                 )
 
-    @games.command(name="mafia", description="بدء لعبة المافيا بصلاحية الستاف.")
+    @games.command(name="mafia", description="فتح لوبي مافيا جديد.")
     async def games_mafia(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "مافيا")
 
-    @games.command(name="roulette", description="بدء الروليت الروسي بصلاحية الستاف.")
+    @games.command(name="roulette", description="فتح لوبي الروليت الروسي.")
     async def games_roulette(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "روليت")
 
-    @games.command(name="hide-and-seek", description="بدء لعبة الغميضة بصلاحية الستاف.")
+    @games.command(name="hide-and-seek", description="فتح لوبي الغميضة.")
     async def games_hide_and_seek(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "غميضه")
 
-    @games.command(name="geo", description="بدء لعبة تخمين الموقع بصلاحية الستاف.")
+    @games.command(name="geo", description="فتح لوبي تخمين الدولة.")
     async def games_geo(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "جيو")
 
-    @games.command(name="chairs", description="بدء لعبة الكراسي بصلاحية الستاف.")
+    @games.command(name="chairs", description="فتح لوبي الكراسي الموسيقية.")
     async def games_chairs(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "كراسي")
 
-    @games.command(name="wheel", description="بدء عجلة الحظ بصلاحية الستاف.")
+    @games.command(name="wheel", description="فتح لوبي عجلة الحفرة.")
     async def games_wheel(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "عجلة")
 
