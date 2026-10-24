@@ -683,10 +683,10 @@ def rps_challenge_status(game_id):
         return dict(row) if row is not None else None
 
 
-def accept_rps_challenge(game_id):
-    """Atomically accept an invitation and escrow both stakes exactly once."""
-    game_id = str(game_id).strip()
-    if not game_id:
+def accept_rps_challenge(game_id, user_id):
+    """Atomically accept an invitation for its invited opponent and escrow both stakes."""
+    game_id, uid = str(game_id).strip(), str(user_id).strip()
+    if not game_id or not uid:
         return {"accepted": False, "reason": "not_found"}
 
     with _lock:
@@ -701,6 +701,9 @@ def accept_rps_challenge(game_id):
             if challenge is None:
                 c.rollback()
                 return {"accepted": False, "reason": "not_found"}
+            if uid != str(challenge["player_b"]):
+                c.rollback()
+                return {"accepted": False, "reason": "not_authorized"}
             status = str(challenge["status"])
             if status == "accepted":
                 c.rollback()
