@@ -228,10 +228,15 @@ class RouletteLobby(LayoutView):
                 img_bytes = await generate_sniper_image(chosen_player)
                 file = discord.File(fp=img_bytes, filename="sniper.png")
 
-                has_weapon = bool(
-                    currency_cog
-                    and currency_cog.get_item_count(chosen_player.id, "double_shot") > 0
-                )
+                has_weapon = False
+                if currency_cog is not None:
+                    has_weapon = (
+                        await asyncio.to_thread(
+                            currency_cog.get_item_count,
+                            chosen_player.id,
+                            "double_shot",
+                        )
+                    ) > 0
                 view = KickView(
                     chosen_player,
                     active_players,
@@ -259,7 +264,12 @@ class RouletteLobby(LayoutView):
                         p = next((x for x in active_players if x.id == kid), None)
                         if p:
                             # --- SHIELD RESOLUTION ---
-                            if currency_cog and currency_cog.remove_item(p.id, "shield", 1):
+                            if currency_cog and await asyncio.to_thread(
+                                currency_cog.remove_item,
+                                p.id,
+                                "shield",
+                                1,
+                            ):
                                 round_notes.append(
                                     f"🛡️ {p.mention} فعّل الدرع، فانعكست الرصاصة على القناص {chosen_player.mention}."
                                 )
@@ -268,7 +278,12 @@ class RouletteLobby(LayoutView):
                                     attacker_died = True
                             else:
                                 # --- INSURANCE RESOLUTION ---
-                                if currency_cog and currency_cog.remove_item(p.id, "roulette_ins", 1):
+                                if currency_cog and await asyncio.to_thread(
+                                    currency_cog.remove_item,
+                                    p.id,
+                                    "roulette_ins",
+                                    1,
+                                ):
                                     round_notes.append(
                                         f"💉 {p.mention} استخدم تأمين الروليت ونجا من الرصاصة."
                                     )
@@ -319,7 +334,7 @@ class RouletteLobby(LayoutView):
                 winner = active_players[0]
                 final_description = f"الناجي الوحيد والأقوى في الحفرة!\n\nالفائز النهائي هو {winner.mention}."
                 if currency_cog:
-                    credited, _balance = currency_cog.credit_balance(winner.id, 20)
+                    credited, _balance = await asyncio.to_thread(currency_cog.credit_balance, winner.id, 20)
                     if credited:
                         final_description += "\n\n💰 تم إضافة 20 عملة كمكافأة فوز."
                     else:
