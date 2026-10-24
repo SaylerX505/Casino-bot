@@ -139,6 +139,40 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("owner", HELP_PAGES)
         self.assertNotIn("bankreset", SLASH_COMMANDS)
         self.assertNotIn("ai", SLASH_COMMANDS)
+    async def test_prefix_stop_errors_do_not_pass_ephemeral_argument(self):
+        fake_bot = SimpleNamespace(active_games={})
+        cog = HelpCommand(fake_bot)
+        context = SimpleNamespace(
+            bot=fake_bot,
+            channel=SimpleNamespace(id=9001),
+            author=SimpleNamespace(id=101),
+            interaction=None,
+            send=AsyncMock(),
+        )
+
+        await HelpCommand.stop_game.callback(cog, context)
+
+        context.send.assert_awaited_once()
+        self.assertNotIn("ephemeral", context.send.await_args.kwargs)
+        self.assertIsInstance(context.send.await_args.kwargs["view"], LayoutView)
+
+    async def test_slash_stop_errors_remain_ephemeral(self):
+        fake_bot = SimpleNamespace(active_games={})
+        cog = HelpCommand(fake_bot)
+        context = SimpleNamespace(
+            bot=fake_bot,
+            channel=SimpleNamespace(id=9002),
+            author=SimpleNamespace(id=101),
+            interaction=object(),
+            send=AsyncMock(),
+        )
+
+        await HelpCommand.stop_game.callback(cog, context)
+
+        context.send.assert_awaited_once()
+        self.assertTrue(context.send.await_args.kwargs["ephemeral"])
+        self.assertIsInstance(context.send.await_args.kwargs["view"], LayoutView)
+
     async def test_prefix_compatibility_is_preserved(self):
         self.assertIsNotNone(self.bot.get_command("help"))
         self.assertIsNotNone(self.bot.get_command("stop"))
