@@ -25,13 +25,13 @@ class BankMigrationsAndLedgerTests(unittest.TestCase):
 
     def test_schema_is_versioned_and_migrations_are_idempotent(self):
         bank.set_balance(10, 100)
-        self.assertEqual(bank.schema_version(), 5)
+        self.assertEqual(bank.schema_version(), 6)
         connection = bank._connect()
         versions = [
             int(row["version"])
             for row in connection.execute("SELECT version FROM schema_migrations ORDER BY version")
         ]
-        self.assertEqual(versions, [1, 2, 3, 4, 5])
+        self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
 
         bank.close_database()
         self.assertEqual(bank.get_balance(10), 100)
@@ -40,7 +40,7 @@ class BankMigrationsAndLedgerTests(unittest.TestCase):
             [row["version"] for row in bank._connect().execute(
                 "SELECT version FROM schema_migrations ORDER BY version"
             )],
-            [1, 2, 3, 4, 5],
+            [1, 2, 3, 4, 5, 6],
         )
 
     def test_migrations_adopt_legacy_tables_without_discarding_data(self):
