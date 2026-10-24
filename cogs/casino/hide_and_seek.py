@@ -11,7 +11,7 @@ import random
 import config
 
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, try_edit_view
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, send_status, try_edit_view
 
 
 logger = logging.getLogger(__name__)
@@ -542,11 +542,21 @@ class HideAndSeek(commands.Cog):
     async def start_hide_seek(self, ctx):
         """يبدأ لعبة الغميضة في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         view = LobbyView(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "HideAndSeek lobby", view=view):
             view.timer_task.cancel()
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         try:
             view.message = await ctx.send(view=view)
         except Exception:
