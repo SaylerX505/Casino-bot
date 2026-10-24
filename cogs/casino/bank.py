@@ -596,6 +596,296 @@ def place_bet(player_a, player_b, amount):
         except Exception:
             c.rollback()
             raise
+def create_rps_challenge(game_id, player_a, player_b, amount, *, channel_id=None):
+    """Create a challenge invitation without reserving either player's balance."""
+    game_id, a, b = str(game_id).strip(), str(player_a).strip(), str(player_b).strip()
+    if (
+        not game_id
+        or not a
+        or not b
+        or a == b
+        or isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+        or amount > SQLITE_MAX_INT // 2
+    ):
+        return False
+    if channel_id is not None and (
+        isinstance(channel_id, bool)
+        or not isinstance(channel_id, int)
+        or not 0 < channel_id <= SQLITE_MAX_INT
+    ):
+        raise ValueError("channel_id must be a positive integer")
+
+    timestamp = now()
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute(
+                "INSERT INTO rps_challenges "
+                "(game_id,player_a,player_b,amount,status,created_at,updated_at,channel_id) "
+                "VALUES (?,?,?,?,'pending',?,?,?)",
+                (game_id, a, b, amount, timestamp, timestamp, channel_id),
+            )
+            c.commit()
+            return True
+        except Exception:
+            c.rollback()
+            raise
+
+
+def set_rps_challenge_message_reference(game_id, channel_id, message_id):
+    """Persist the challenge panel for clean shutdown/restart behavior."""
+    game_id = str(game_id).strip()
+    if not game_id:
+        return False
+    for field_name, field_value in (("channel_id", channel_id), ("message_id", message_id)):
+        if (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, int)
+            or not 0 < field_value <= SQLITE_MAX_INT
+        ):
+            raise ValueError(f"{field_name} must be a positive integer")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            changed = c.execute(
+                "UPDATE rps_challenges SET channel_id=?,message_id=?,updated_at=? "
+                "WHERE game_id=? AND status IN ('pending','accepted')",
+                (channel_id, message_id, now(), game_id),
+            ).rowcount
+            if changed == 1:
+                # If acceptance raced with the command's message-reference write,
+                # update the escrow record too so startup can always close it.
+                c.execute(
+                    "UPDATE rps_wagers SET channel_id=?,message_id=? "
+                    "WHERE game_id=? AND status='active'",
+                    (channel_id, message_id, game_id),
+                )
+            c.commit()
+            return changed == 1
+        except Exception:
+            c.rollback()
+            raise
+
+
+def rps_challenge_status(game_id):
+    """Read the durable invite state without touching player balances."""
+    with _lock:
+        row = _connect().execute(
+            "SELECT game_id,player_a,player_b,amount,status,outcome,channel_id,message_id "
+            "FROM rps_challenges WHERE game_id=?",
+            (str(game_id),),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+
+def accept_rps_challenge(game_id):
+    """Atomically accept an invitation and escrow both stakes exactly once."""
+    game_id = str(game_id).strip()
+    if not game_id:
+        return {"accepted": False, "reason": "not_found"}
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            challenge = c.execute(
+                "SELECT player_a,player_b,amount,status,channel_id,message_id "
+                "FROM rps_challenges WHERE game_id=?",
+                (game_id,),
+            ).fetchone()
+            if challenge is None:
+                c.rollback()
+                return {"accepted": False, "reason": "not_found"}
+            status = str(challenge["status"])
+            if status == "accepted":
+                c.rollback()
+                return {"accepted": True, "already_accepted": True, "status": status}
+            if status != "pending":
+                c.rollback()
+                return {"accepted": False, "reason": status}
+
+            a, b = str(challenge["player_a"]), str(challenge["player_b"])
+            amount = int(challenge["amount"])
+            if c.execute("SELECT 1 FROM rps_wagers WHERE game_id=?", (game_id,)).fetchone():
+                c.execute(
+                    "UPDATE rps_challenges SET status='cancelled',outcome='duplicate_wager',updated_at=? "
+                    "WHERE game_id=? AND status='pending'",
+                    (now(), game_id),
+                )
+                c.commit()
+                return {"accepted": False, "reason": "duplicate_wager"}
+
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (a,))
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (b,))
+            row_a = c.execute("SELECT balance FROM users WHERE user_id=?", (a,)).fetchone()
+            row_b = c.execute("SELECT balance FROM users WHERE user_id=?", (b,)).fetchone()
+            balance_a = int(row_a["balance"]) if row_a else 0
+            balance_b = int(row_b["balance"]) if row_b else 0
+            if balance_a < amount or balance_b < amount:
+                c.execute(
+                    "UPDATE rps_challenges SET status='cancelled',outcome='insufficient_funds',updated_at=? "
+                    "WHERE game_id=? AND status='pending'",
+                    (now(), game_id),
+                )
+                c.commit()
+                return {
+                    "accepted": False,
+                    "reason": "insufficient_funds",
+                    "player_a_balance": balance_a,
+                    "player_b_balance": balance_b,
+                    "amount": amount,
+                }
+
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
+            transaction_id = uuid.uuid4().hex
+            _record_ledger(
+                c,
+                event_type="rps_wager_stake",
+                user_id=a,
+                delta=-amount,
+                balance_after=balance_a - amount,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={"counterparty": b, "stake": amount},
+            )
+            _record_ledger(
+                c,
+                event_type="rps_wager_stake",
+                user_id=b,
+                delta=-amount,
+                balance_after=balance_b - amount,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={"counterparty": a, "stake": amount},
+            )
+            c.execute(
+                "INSERT INTO rps_wagers "
+                "(game_id,player_a,player_b,amount,status,created_at,channel_id,message_id) "
+                "VALUES (?,?,?,?,'active',?,?,?)",
+                (
+                    game_id,
+                    a,
+                    b,
+                    amount,
+                    now(),
+                    challenge["channel_id"],
+                    challenge["message_id"],
+                ),
+            )
+            c.execute(
+                "UPDATE rps_challenges SET status='accepted',outcome=NULL,updated_at=? "
+                "WHERE game_id=? AND status='pending'",
+                (now(), game_id),
+            )
+            c.commit()
+            return {
+                "accepted": True,
+                "already_accepted": False,
+                "status": "accepted",
+                "amount": amount,
+                "player_a_balance": balance_a - amount,
+                "player_b_balance": balance_b - amount,
+            }
+        except Exception:
+            c.rollback()
+            raise
+
+
+def decline_rps_challenge(game_id, user_id):
+    """Decline a pending challenge only when called by its invited opponent."""
+    return _close_rps_challenge(game_id, user_id, allowed_role="opponent", outcome="declined")
+
+
+def cancel_rps_challenge(game_id, user_id):
+    """Cancel an unaccepted challenge only when called by its original challenger."""
+    return _close_rps_challenge(game_id, user_id, allowed_role="challenger", outcome="cancelled")
+
+
+def _close_rps_challenge(game_id, user_id, *, allowed_role, outcome):
+    game_id, uid = str(game_id).strip(), str(user_id).strip()
+    if not game_id or not uid:
+        return {"closed": False, "reason": "not_found"}
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            challenge = c.execute(
+                "SELECT player_a,player_b,status FROM rps_challenges WHERE game_id=?",
+                (game_id,),
+            ).fetchone()
+            if challenge is None:
+                c.rollback()
+                return {"closed": False, "reason": "not_found"}
+            allowed_user = str(challenge["player_b"] if allowed_role == "opponent" else challenge["player_a"])
+            if uid != allowed_user:
+                c.rollback()
+                return {"closed": False, "reason": "not_authorized"}
+            if str(challenge["status"]) != "pending":
+                c.rollback()
+                return {"closed": False, "reason": str(challenge["status"])}
+            c.execute(
+                "UPDATE rps_challenges SET status=?,outcome=?,updated_at=? "
+                "WHERE game_id=? AND status='pending'",
+                (outcome, outcome, now(), game_id),
+            )
+            c.commit()
+            return {"closed": True, "reason": None, "status": outcome}
+        except Exception:
+            c.rollback()
+            raise
+
+
+def expire_rps_challenge(game_id):
+    """Expire a pending invite; it never transfers or refunds coins because none were reserved."""
+    game_id = str(game_id).strip()
+    if not game_id:
+        return False
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            changed = c.execute(
+                "UPDATE rps_challenges SET status='expired',outcome='timeout',updated_at=? "
+                "WHERE game_id=? AND status='pending'",
+                (now(), game_id),
+            ).rowcount
+            c.commit()
+            return changed == 1
+        except Exception:
+            c.rollback()
+            raise
+
+
+def expire_pending_rps_challenges():
+    """Close every pre-acceptance invite at startup and return panels needing cleanup."""
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            rows = c.execute(
+                "SELECT game_id,player_a,player_b,amount,channel_id,message_id "
+                "FROM rps_challenges WHERE status='pending' ORDER BY created_at"
+            ).fetchall()
+            records = [dict(row) for row in rows]
+            timestamp = now()
+            c.execute(
+                "UPDATE rps_challenges SET status='expired',outcome='restart',updated_at=? "
+                "WHERE status='pending'",
+                (timestamp,),
+            )
+            c.commit()
+            return records
+        except Exception:
+            c.rollback()
+            raise
+
+
 def create_rps_wager(game_id, player_a, player_b, amount):
     """Atomically debit both integer stakes and persist a recoverable wager."""
     game_id, a, b = str(game_id), str(player_a), str(player_b)
