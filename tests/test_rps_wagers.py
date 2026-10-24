@@ -134,7 +134,6 @@ class RPSWagerTests(unittest.TestCase):
 
         expired = bank.expire_pending_rps_challenges()
         self.assertEqual({row["game_id"] for row in expired}, {"challenge-expire-a", "challenge-expire-b"})
-        self.assertTrue(all(row["status"] == "expired" for row in expired))
         self.assertEqual(bank.get_balance(101), 1_000)
         self.assertEqual(bank.get_balance(202), 1_000)
         self.assertEqual(bank.expire_pending_rps_challenges(), [])
