@@ -196,12 +196,15 @@ class SeekerView(LayoutView):
 
 
 class LobbyView(LayoutView):
+    MAX_TIME_EXTENSIONS = 3
+
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
         self.players = []
         self.game_started = False
         self.time_left = 30
+        self.extensions_left = self.MAX_TIME_EXTENSIONS
         self.message = None
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
@@ -238,14 +241,25 @@ class LobbyView(LayoutView):
         embed.set_thumbnail(url=SERVER_LOGO_URL)
         return embed
 
+    def _sync_extension_control(self):
+        exhausted = self.game_started or self.extensions_left <= 0
+        for button in self._buttons:
+            if button.custom_id == "hide_seek_add_time":
+                button.disabled = exhausted
+
     def _panel_content(self):
         embed = self.get_embed()
         title = f"# {embed.title}\n" if embed.title else ""
         description = f"{embed.description or ''}\n\n"
-        return (title + description + f"-# كازينو الحفرة • {config.BRAND}")[:4000]
+        return (
+            title + description
+            + f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            + f"-# كازينو الحفرة • {config.BRAND}"
+        )[:4000]
 
     def _refresh_panel(self):
         self._panel_text.content = self._panel_content()
+        self._sync_extension_control()
 
     def _disable_buttons(self):
         for button in self._buttons:
@@ -349,6 +363,19 @@ class LobbyView(LayoutView):
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
+        if self.game_started:
+            return await self._private_notice(
+                interaction,
+                "اللوبي اتقفل",
+                "اللعبة بدأت بالفعل؛ مفيش تمديدات بعد إغلاق التسجيل.",
+            )
+        if self.extensions_left <= 0:
+            return await self._private_notice(
+                interaction,
+                "وصلنا للحد الأقصى",
+                "استخدمت كل تمديدات الوقت المتاحة. ابدأ الجولة أو استنى العدّ التنازلي.",
+            )
+        self.extensions_left -= 1
         self.time_left += 10
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
