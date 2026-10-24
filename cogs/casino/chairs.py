@@ -310,7 +310,7 @@ class ChairsLobby(LayoutView):
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="للأدمن فقط!",
+                description="صاحب اللوبي فقط يقدر يمدد وقت التسجيل.",
                 color=discord.Color.red()
             )
             return await interaction.response.send_message(view=embed_to_v2(embed), ephemeral=True)
