@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from cogs.utility.theme import THEME, StatusPanel, private_status, report_game_failure, result_embed, try_edit_view
+from cogs.utility.theme import THEME, StatusPanel, lobby_embed, private_status, report_game_failure, result_embed, try_edit_view
 
 
 class ResultEmbedTests(unittest.TestCase):
@@ -26,6 +26,31 @@ class ResultEmbedTests(unittest.TestCase):
         self.assertEqual(loss.color.value, THEME["red_dark"])
         self.assertEqual(unknown.color.value, THEME["grey"])
 
+
+
+class SharedPanelBrandingTests(unittest.TestCase):
+    def test_status_panel_contains_the_shared_brand_footer(self):
+        panel = StatusPanel("Test", "Body text", "success")
+        content = "\n".join(
+            item.content
+            for item in panel.walk_children()
+            if hasattr(item, "content")
+        )
+        self.assertIn("Body text", content)
+        self.assertIn("كازينو الحفرة", content)
+
+    def test_lobby_host_is_mentionable_in_the_roster_panel(self):
+        host = SimpleNamespace(display_name="Lobby host", mention="<@123>")
+        panel = lobby_embed(
+            "Game lobby",
+            "Rules",
+            [],
+            30,
+            host=host,
+            min_players=2,
+        )
+        self.assertIn("<@123>", panel.description)
+        self.assertIn("الحد الأدنى للبدء", panel.description)
 
 
 class PrivateStatusTests(unittest.IsolatedAsyncioTestCase):
