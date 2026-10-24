@@ -610,5 +610,63 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
                 await task
 
 
+class GeoGuessrRoundExtensionPolicyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_round_extensions_are_limited_and_button_disables_at_cap(self):
+        executor = _FakeMember(8101)
+        timer_state = {"end_time": 9999999999.0}
+        view = ActiveGameView(executor, timer_state, round_num=1, total_rounds=6)
+        initial_end = timer_state["end_time"]
+
+        def interaction_for(user):
+            return SimpleNamespace(
+                user=user,
+                response=SimpleNamespace(send_message=AsyncMock()),
+            )
+
+        try:
+            self.assertEqual(view.extensions_left, 2)
+            for remaining in (1, 0):
+                interaction = interaction_for(executor)
+                await view.add_time(interaction)
+                self.assertEqual(view.extensions_left, remaining)
+                self.assertEqual(timer_state["end_time"], initial_end + (2 - remaining) * 10)
+                self.assertIn(
+                    f"تمديدات الوقت المتبقية:** {remaining}",
+                    view._panel_text.content,
+                )
+                interaction.response.send_message.assert_awaited_once()
+            self.assertTrue(view.button.disabled)
+
+            capped = interaction_for(executor)
+            await view.add_time(capped)
+            self.assertEqual(timer_state["end_time"], initial_end + 20)
+            self.assertEqual(view.extensions_left, 0)
+            self.assertTrue(capped.response.send_message.await_args.kwargs["ephemeral"])
+            self.assertIn("وصلنا للحد الأقصى", "\\n".join(
+                item.content
+                for item in capped.response.send_message.await_args.kwargs["view"].walk_children()
+                if isinstance(item, discord.ui.TextDisplay)
+            ))
+        finally:
+            view.stop()
+
+    async def test_expired_round_cannot_be_reopened_by_a_stale_button(self):
+        executor = _FakeMember(8102)
+        timer_state = {"end_time": __import__("time").time() - 1}
+        view = ActiveGameView(executor, timer_state, round_num=2, total_rounds=6)
+        interaction = SimpleNamespace(
+            user=executor,
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+
+        await view.add_time(interaction)
+
+        self.assertTrue(view.round_closed)
+        self.assertTrue(view.button.disabled)
+        self.assertLess(timer_state["end_time"], __import__("time").time())
+        self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+        view.stop()
+
+
 if __name__ == "__main__":
     unittest.main()
