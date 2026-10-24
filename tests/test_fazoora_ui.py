@@ -10,7 +10,6 @@ from discord.ui import LayoutView
 from cogs.casino.fazoora import DEFAULT_QUESTIONS, load_bank, normalize
 from cogs.utility.theme import (
     StatusPanel,
-    WatermarkView,
     base_embed,
     embed_to_v2,
     send_status,
@@ -61,7 +60,6 @@ class SharedStatusPanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(kwargs["ephemeral"])
 
     def test_base_panels_have_no_promotional_button_or_footer_noise(self):
-        self.assertEqual(len(WatermarkView().children), 0)
         legacy = base_embed(title="اختبار", description="محتوى")
         self.assertNotIn("Developed by", legacy.footer.text)
         self.assertIsInstance(embed_to_v2(legacy), LayoutView)
