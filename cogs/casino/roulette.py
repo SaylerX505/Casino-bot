@@ -24,7 +24,6 @@ from cogs.casino.game_registry import (
     release_game_task,
     set_game_view,
 )
-from cogs.casino.permissions import is_staff_or_admin
 from cogs.casino.roulette_art import generate_sniper_image
 from cogs.casino.roulette_views import KickView
 from cogs.utility.theme import (
@@ -353,7 +352,6 @@ class Roulette(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='روليت', description='بدء لعبة الروليت الروسي')
-    @is_staff_or_admin()
     async def start_roulette(self, ctx):
         """يبدأ لعبة الروليت"""
         if is_active_game(self.bot, ctx.channel.id):
