@@ -246,7 +246,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                     f"**جائزة الفائز:** {prize:,} عملة · **صافي الربح:** +{net_profit:,}\n\n"
                     f"**الرسوم:** ضريبة البنك {self.bet * 2 - prize:,} عملة من مجموع الرهانات.\n"
                     "لسه مفيش رصيد اتحجز. الخصم المحدد يقدر يقبل أو يرفض، وصاحب التحدي يقدر يلغيه.\n"
-                    "لو التحدي انتهى من غير قبول، مفيش أي خصم."
+                    "**مهلة القبول:** 60 ثانية. لو التحدي انتهى من غير قبول، مفيش أي خصم."
                 ),
                 color=THEME["teal"],
             )
@@ -1170,7 +1170,12 @@ class RPS(commands.Cog):
             try:
                 view.message = await ctx.send(
                     view=view,
-                    allowed_mentions=discord.AllowedMentions.none(),
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False,
+                        users=[opponent],
+                        roles=False,
+                        replied_user=False,
+                    ),
                 )
             except asyncio.CancelledError:
                 await asyncio.to_thread(
