@@ -137,12 +137,15 @@ def validate_slash_command_metadata(command_list) -> list[str]:
             if not isinstance(local_name, str) or not 1 <= len(local_name) <= 32:
                 problems.append(f"{name}: command name must contain 1–32 characters")
 
-            if not _has_visible_text(description):
-                problems.append(
-                    f"{name}: description is empty or contains only invisible characters"
-                )
-            elif len(description) > 100:
-                problems.append(f"{name}: description exceeds Discord's 100-character limit")
+            # Discord context-menu commands do not have descriptions; slash
+            # commands and groups do. Do not block valid user/message menus.
+            if not isinstance(command, app_commands.ContextMenu):
+                if not _has_visible_text(description):
+                    problems.append(
+                        f"{name}: description is empty or contains only invisible characters"
+                    )
+                elif len(description) > 100:
+                    problems.append(f"{name}: description exceeds Discord's 100-character limit")
 
             nested = getattr(command, "commands", None)
             if nested:

@@ -33,6 +33,21 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(command, app_commands.Command)
         self.assertEqual(command.description, "فتح قائمة الأوامر والمساعدة")
 
+    async def test_metadata_validator_allows_context_menu_commands(self):
+        async def inspect_member(
+            interaction: discord.Interaction,
+            user: discord.User,
+        ):
+            return None
+
+        context_menu = app_commands.ContextMenu(
+            name="Inspect member",
+            callback=inspect_member,
+        )
+        self.bot.tree.add_command(context_menu)
+        problems = validate_slash_command_metadata(self.bot.tree.get_commands())
+        self.assertEqual(problems, [])
+
     async def test_sync_preflight_blocks_invisible_description_and_names_command(self):
         async def broken_command(interaction: discord.Interaction):
             return None
