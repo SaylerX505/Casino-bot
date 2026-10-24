@@ -133,7 +133,7 @@ class HelpLayout(LayoutView):
                 f"# الحفرة • مركز المساعدة\n"
                 f"**البادئة:** `{config.PREFIX}`  ·  **زمن الاستجابة:** {latency}ms\n\n"
                 "اختار القسم المناسب لصلاحياتك. تفاصيل الأوامر هتظهر بشكل خاص ليك.\n"
-                "استخدم \`/games\` للألعاب و\`/economy\` للاقتصاد."
+                "استخدم `/games` للألعاب و`/economy` للاقتصاد."
             ),
             Separator(),
             accent_color=config.EMBED_COLOR,
