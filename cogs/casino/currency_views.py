@@ -1,5 +1,6 @@
 """Discord Components V2 presentation and interaction flows for the economy."""
 
+import logging
 import random
 import re
 
@@ -10,6 +11,8 @@ import config
 from cogs.casino import bank
 from cogs.casino.currency_catalog import COIN_EMOJI, INVENTORY_ITEMS, fmt
 from cogs.utility.theme import StatusPanel
+
+logger = logging.getLogger(__name__)
 
 
 # --- UI VIEWS ---
@@ -94,6 +97,7 @@ class ShopDropdown(discord.ui.Select):
 class ShopView(LayoutView):
     def __init__(self, cog, owner=None):
         super().__init__(timeout=180)
+        self.message = None
         balance_line = (
             f"**رصيدك الحالي:** {fmt(cog.get_balance(owner.id))} {COIN_EMOJI}\n"
             if owner is not None
@@ -113,6 +117,16 @@ class ShopView(LayoutView):
         row.add_item(ShopDropdown(cog))
         container.add_item(row)
         self.add_item(container)
+
+    async def on_timeout(self):
+        for item in self.walk_children():
+            if hasattr(item, "disabled"):
+                item.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                logger.debug("Could not disable expired shop controls", exc_info=True)
 
 
 class InventoryView(LayoutView):
