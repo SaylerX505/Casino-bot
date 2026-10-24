@@ -7,7 +7,7 @@ from discord.ext import commands
 import config
 from cogs.casino import bank
 from cogs.casino.currency_catalog import COIN_EMOJI, INVENTORY_ITEMS, fmt
-from cogs.casino.currency_views import CurrencyHubLayout, InventoryView
+from cogs.casino.currency_views import CurrencyHubLayout, InventoryView, profile_panel
 from cogs.casino.permissions import configured_log_channel_id
 from cogs.utility.theme import StatusPanel, embed_to_v2
 
@@ -151,26 +151,10 @@ class Currency(commands.Cog):
 
     @commands.hybrid_command(name='بروفايل', aliases=['profile', 'me', 'انا'], description='عرض بروفايلك أو بروفايل عضو')
     async def profile(self, ctx, target: discord.Member = None):
-        """كارت البروفايل بتاعك: رصيد + ستريك + اغراض"""
+        """عرض بطاقة البروفايل المشتركة من الأمر ومركز الاقتصاد."""
         user = target or ctx.author
-        bal = self.get_balance(user.id)
-        _last, streak = bank.get_daily(str(user.id))
-        inventory = self.get_inventory(user.id)
-        labels = {item[0]: f"{item[5]} {item[1]}" for item in INVENTORY_ITEMS}
-        items = " • ".join(
-            f"{labels.get(item_id, item_id)} ×{fmt(quantity)}"
-            for item_id, quantity in inventory.items()
-            if quantity > 0
-        ) or "الشنطة فاضية حاليًا"
-        description = (
-            f"**الرصيد:** {fmt(bal)} {COIN_EMOJI}\n"
-            f"**الستريك اليومي:** {streak} يوم\n\n"
-            f"**الأغراض:**\n{items[:2200]}"
-        )
-        await ctx.send(
-            view=StatusPanel(f"🪪 بروفايل {user.display_name}", description, "success"),
-            ephemeral=ctx.interaction is not None,
-        )
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        await ctx.send(view=profile_panel(self, user), **send_kwargs)
 
     @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
     async def use_item(self, ctx, item: str | None = None):
