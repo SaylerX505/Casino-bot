@@ -1,4 +1,5 @@
 """Repository-wide guardrails for the Components V2 message policy."""
+# ruff: noqa: I001
 
 import ast
 import os
