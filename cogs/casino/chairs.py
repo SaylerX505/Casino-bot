@@ -160,12 +160,14 @@ class ChairActionView(LayoutView):
 
 
 class ChairsLobby(LayoutView):
+    MAX_TIME_EXTENSIONS = 3
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
         self.players = []
         self.game_started = False
         self.time_left = 35
+        self.extensions_left = self.MAX_TIME_EXTENSIONS
         self.message = None
         
         self.logo_url = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
@@ -219,10 +221,14 @@ class ChairsLobby(LayoutView):
     def _panel_content(self):
         embed = self.get_embed()
         description = embed.description or ""
-        return f"# {embed.title or 'لعبة الكراسي الموسيقية'}\n{description}\n\n-# كازينو الحفرة • {config.BRAND}"
+        return (
+            f"# {embed.title or 'لعبة الكراسي الموسيقية'}\n{description}\n\n"
+            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            f"-# كازينو الحفرة • {config.BRAND}"
+        )[:4000]
 
     def _refresh_panel(self):
-        self._panel_text.content = self._panel_content()[:4000]
+        self._panel_text.content = self._panel_content()
 
     def _disable_buttons(self):
         for button in self._buttons:
@@ -308,11 +314,25 @@ class ChairsLobby(LayoutView):
 
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
-            embed = discord.Embed(
-                description="صاحب اللوبي فقط يقدر يمدد وقت التسجيل.",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("مش مسموح", "صاحب اللوبي فقط يقدر يمدد وقت التسجيل.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(view=embed_to_v2(embed), ephemeral=True)
+        if self.game_started:
+            return await interaction.response.send_message(
+                view=StatusPanel("اللوبي اتقفل", "الجولة بدأت بالفعل.", "warning"),
+                ephemeral=True,
+            )
+        if self.extensions_left <= 0:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "وصلنا للحد الأقصى",
+                    "استخدمت كل تمديدات الوقت المتاحة. ابدأ الجولة أو استنى العدّ التنازلي.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+        self.extensions_left -= 1
         self.time_left += 10
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
