@@ -284,6 +284,7 @@ class MusicalChairsRoundV2Tests(unittest.TestCase):
             self.assertEqual(len(action_buttons), 24)
             self.assertTrue(all(button.disabled for button in prep_buttons))
             self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in action_buttons))
+            self.assertTrue(all(button.label == "🪑" for button in action_buttons))
             action.disable_controls()
             self.assertTrue(all(button.disabled for button in action_buttons))
         finally:
@@ -301,6 +302,8 @@ class MusicalChairsRoundV2Tests(unittest.TestCase):
             ]
             self.assertEqual(len(buttons), 3)
             self.assertIn("فخ", action._panel_text.content)
+            self.assertTrue(all(button.label == "💥" for button in buttons))
+            self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
             action.eliminated_fools.add(members[0])
             action.disable_controls()
             self.assertTrue(all(button.disabled for button in buttons))
@@ -348,6 +351,102 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+    async def _assert_lobby_extension_budget(
+        self,
+        view_type,
+        *,
+        initial_time=35,
+        extension_method="add_time_btn",
+    ):
+        loop = asyncio.get_running_loop()
+        host = _FakeMember(200)
+        ctx = SimpleNamespace(
+            bot=SimpleNamespace(loop=loop),
+            channel=SimpleNamespace(id=100),
+            author=host,
+        )
+        if view_type is GuessGameMenu:
+            async def start_game(_ctx, _players):
+                return None
+
+            view = view_type(ctx, start_game=start_game)
+        else:
+            view = view_type(ctx)
+        try:
+            self.assertEqual(view.extensions_left, 3)
+            self.assertIn("تمديدات الوقت المتبقية:** 3", view._panel_text.content)
+
+            async def click_extension():
+                interaction = SimpleNamespace(
+                    user=host,
+                    response=SimpleNamespace(
+                        is_done=lambda: False,
+                        edit_message=AsyncMock(),
+                        send_message=AsyncMock(),
+                    ),
+                    followup=SimpleNamespace(send=AsyncMock()),
+                )
+                await getattr(view, extension_method)(interaction, button=None)
+                return interaction
+
+            for remaining in (2, 1, 0):
+                interaction = await click_extension()
+                self.assertEqual(view.extensions_left, remaining)
+                self.assertEqual(view.time_left, initial_time + (3 - remaining) * 10)
+                self.assertIn(
+                    f"تمديدات الوقت المتبقية:** {remaining}",
+                    view._panel_text.content,
+                )
+                interaction.response.edit_message.assert_awaited_once_with(view=view)
+
+            time_button_id = {
+                RouletteLobby: "roulette_add_time",
+                ChairsLobby: "chairs_add_time",
+                GuessGameMenu: "geoguessr_add_time",
+                LobbyView: "hide_seek_add_time",
+            }[view_type]
+            time_button = next(
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Button) and item.custom_id == time_button_id
+            )
+            self.assertTrue(time_button.disabled)
+
+            capped_interaction = await click_extension()
+            self.assertEqual(view.extensions_left, 0)
+            self.assertEqual(view.time_left, initial_time + 30)
+            self.assertTrue(capped_interaction.response.send_message.await_count == 1)
+
+            view.game_started = True
+            closed_interaction = await click_extension()
+            self.assertEqual(view.extensions_left, 0)
+            self.assertEqual(view.time_left, initial_time + 30)
+            self.assertEqual(closed_interaction.response.send_message.await_count, 1)
+        finally:
+            task = getattr(view, "timer_task", None) or getattr(view, "lobby_task", None)
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+    async def test_roulette_lobby_extension_budget_is_finite(self):
+        await self._assert_lobby_extension_budget(RouletteLobby)
+
+    async def test_chairs_lobby_extension_budget_is_finite(self):
+        await self._assert_lobby_extension_budget(ChairsLobby)
+
+    async def test_geoguessr_lobby_extension_budget_is_finite(self):
+        await self._assert_lobby_extension_budget(
+            GuessGameMenu,
+            initial_time=40,
+            extension_method="add_time",
+        )
+
+    async def test_hide_and_seek_lobby_extension_budget_is_finite(self):
+        await self._assert_lobby_extension_budget(
+            LobbyView,
+            initial_time=30,
+        )
 
     async def test_geoguessr_lobby_uses_v2_components(self):
         await self._assert_v2_lobby(
@@ -459,7 +558,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
         try:
             with (
                 patch("cogs.casino.wheel.get_currency", return_value=currency),
-                patch("cogs.casino.wheel.random.randrange", return_value=0),
+                patch("cogs.casino.wheel.secrets.randbelow", return_value=0),
                 patch("cogs.casino.wheel.render_wheel", return_value=BytesIO(b"png")),
                 patch("cogs.casino.wheel.asyncio.sleep", new=AsyncMock()),
             ):
@@ -509,6 +608,64 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+
+class GeoGuessrRoundExtensionPolicyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_round_extensions_are_limited_and_button_disables_at_cap(self):
+        executor = _FakeMember(8101)
+        timer_state = {"end_time": 9999999999.0}
+        view = ActiveGameView(executor, timer_state, round_num=1, total_rounds=6)
+        initial_end = timer_state["end_time"]
+
+        def interaction_for(user):
+            return SimpleNamespace(
+                user=user,
+                response=SimpleNamespace(send_message=AsyncMock()),
+            )
+
+        try:
+            self.assertEqual(view.extensions_left, 2)
+            for remaining in (1, 0):
+                interaction = interaction_for(executor)
+                await view.add_time(interaction)
+                self.assertEqual(view.extensions_left, remaining)
+                self.assertEqual(timer_state["end_time"], initial_end + (2 - remaining) * 10)
+                self.assertIn(
+                    f"تمديدات الوقت المتبقية:** {remaining}",
+                    view._panel_text.content,
+                )
+                interaction.response.send_message.assert_awaited_once()
+            self.assertTrue(view.button.disabled)
+
+            capped = interaction_for(executor)
+            await view.add_time(capped)
+            self.assertEqual(timer_state["end_time"], initial_end + 20)
+            self.assertEqual(view.extensions_left, 0)
+            self.assertTrue(capped.response.send_message.await_args.kwargs["ephemeral"])
+            self.assertIn("وصلنا للحد الأقصى", "\\n".join(
+                item.content
+                for item in capped.response.send_message.await_args.kwargs["view"].walk_children()
+                if isinstance(item, discord.ui.TextDisplay)
+            ))
+        finally:
+            view.stop()
+
+    async def test_expired_round_cannot_be_reopened_by_a_stale_button(self):
+        executor = _FakeMember(8102)
+        timer_state = {"end_time": __import__("time").time() - 1}
+        view = ActiveGameView(executor, timer_state, round_num=2, total_rounds=6)
+        interaction = SimpleNamespace(
+            user=executor,
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+
+        await view.add_time(interaction)
+
+        self.assertTrue(view.round_closed)
+        self.assertTrue(view.button.disabled)
+        self.assertLess(timer_state["end_time"], __import__("time").time())
+        self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+        view.stop()
 
 
 if __name__ == "__main__":

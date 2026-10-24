@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import unicodedata
 
 import discord
 from discord import app_commands
@@ -16,7 +17,13 @@ from cogs.casino.permissions import (
     game_key_from_interaction,
     is_game_channel_allowed,
 )
-from cogs.utility.theme import embed_to_v2
+from cogs.utility.diagnostics import (
+    configure_file_logging,
+    install_asyncio_exception_handler,
+    log_unhandled_exception,
+    new_incident_id,
+)
+from cogs.utility.theme import StatusPanel, embed_to_v2
 
 logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
@@ -37,11 +44,11 @@ class HomeGuildCommandTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         home_guild_id = getattr(config, "HOME_GUILD_ID", None)
         if home_guild_id is not None and interaction.guild_id != home_guild_id:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "البوت ده مخصص لسيرفر واحد ومش متاح خارج السيرفر الأساسي.",
-                    ephemeral=True,
-                )
+            await _send_interaction_error(
+                interaction,
+                "البوت ده مخصص لسيرفر واحد ومش متاح خارج السيرفر الأساسي.",
+                title="السيرفر غير مدعوم",
+            )
             return False
 
         game_key = game_key_from_interaction(interaction)
@@ -50,12 +57,12 @@ class HomeGuildCommandTree(app_commands.CommandTree):
             interaction.channel_id,
             game_key,
         ):
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"لعبة **{GAME_LABELS[game_key]}** متاحة في قنوات محددة بس. "
-                    "راجع الستاف أو جرّب القناة المخصصة.",
-                    ephemeral=True,
-                )
+            await _send_interaction_error(
+                interaction,
+                f"لعبة **{GAME_LABELS[game_key]}** متاحة في قنوات محددة بس. "
+                "راجع الستاف أو جرّب القناة المخصصة.",
+                title="اللعبة مش متاحة في القناة دي",
+            )
             return False
         return True
 
@@ -73,10 +80,121 @@ bot.remove_command('help')
 ERROR_LOG_CHANNEL_ID = config.LOG_CHANNELS.get("command_errors", 0)
 
 
+async def _send_interaction_error(interaction, message, *, title="تعذر تنفيذ الأمر"):
+    """Send one private V2 error panel, whether or not Discord already acknowledged."""
+    panel = StatusPanel(title, message, "warning")
+    response = getattr(interaction, "response", None)
+    is_done = getattr(response, "is_done", None)
+    if response is not None and callable(is_done) and not is_done():
+        await response.send_message(view=panel, ephemeral=True)
+        return
+
+    followup = getattr(interaction, "followup", None)
+    send_followup = getattr(followup, "send", None)
+    if callable(send_followup):
+        await send_followup(view=panel, ephemeral=True)
+        return
+    raise RuntimeError("interaction has no available response channel")
+
+
 async def _send_command_error(ctx, message):
-    """Use ephemeral responses only for interaction contexts, never prefix messages."""
-    kwargs = {"ephemeral": True} if getattr(ctx, "interaction", None) is not None else {}
-    await ctx.send(message, **kwargs)
+    """Send a safe V2 error panel without double-acknowledging hybrid commands."""
+    panel = StatusPanel("تعذر تنفيذ الأمر", message, "warning")
+    interaction = getattr(ctx, "interaction", None)
+    if interaction is None:
+        await ctx.send(view=panel)
+        return
+
+    response = getattr(interaction, "response", None)
+    if response is None:
+        # Defensive fallback for custom/fake hybrid contexts; never expose internals.
+        await ctx.send(view=panel, ephemeral=True)
+        return
+    await _send_interaction_error(interaction, message)
+
+
+def _has_visible_text(value) -> bool:
+    """Reject empty and Unicode-invisible strings for required Discord text fields."""
+    if not isinstance(value, str):
+        return False
+    return any(
+        not character.isspace()
+        and unicodedata.category(character)[0] not in {"C", "Z"}
+        for character in value
+    )
+
+
+def validate_slash_command_metadata(command_list) -> list[str]:
+    """Validate local command/group metadata before an API sync can reject the batch."""
+    problems = []
+
+    def visit(commands_to_check):
+        for command in commands_to_check:
+            name = getattr(command, "qualified_name", None) or getattr(command, "name", "<unknown>")
+            local_name = getattr(command, "name", None)
+            description = getattr(command, "description", None)
+
+            if not isinstance(local_name, str) or not 1 <= len(local_name) <= 32:
+                problems.append(f"{name}: command name must contain 1–32 characters")
+
+            # Discord context-menu commands do not have descriptions; slash
+            # commands and groups do. Do not block valid user/message menus.
+            if not isinstance(command, app_commands.ContextMenu):
+                if not _has_visible_text(description):
+                    problems.append(
+                        f"{name}: description is empty or contains only invisible characters"
+                    )
+                elif len(description) > 100:
+                    problems.append(f"{name}: description exceeds Discord's 100-character limit")
+
+            nested = getattr(command, "commands", None)
+            if nested:
+                visit(nested)
+
+    visit(command_list)
+    return problems
+
+
+async def sync_slash_commands(tree, home_guild_id, *, logger=None):
+    """Preflight and synchronize commands without sending invalid metadata to Discord.
+
+    In single-guild mode, clear the global command surface first, then validate
+    and sync the guild copy. This keeps the bot's one-server boundary even when
+    a local command definition is invalid and the guild sync must be skipped.
+    """
+    logger = logger or logging.getLogger("casino.startup")
+
+    if home_guild_id:
+        guild = discord.Object(id=int(home_guild_id))
+        tree.copy_global_to(guild=guild)
+        tree.clear_commands(guild=None)
+        await tree.sync()
+
+        local_commands = tree.get_commands(guild=guild)
+        problems = validate_slash_command_metadata(local_commands)
+        if problems:
+            logger.error(
+                "Skipped guild slash command sync because local command metadata is invalid: %s",
+                "; ".join(problems),
+            )
+            return None
+
+        synced = await tree.sync(guild=guild)
+        logger.info("Synced %s server-only slash command(s)", len(synced))
+        return synced
+
+    local_commands = tree.get_commands()
+    problems = validate_slash_command_metadata(local_commands)
+    if problems:
+        logger.error(
+            "Skipped global slash command sync because local command metadata is invalid: %s",
+            "; ".join(problems),
+        )
+        return None
+
+    synced = await tree.sync()
+    logger.info("Synced %s global slash command(s)", len(synced))
+    return synced
 
 
 @bot.check
@@ -137,21 +255,15 @@ async def on_ready():
     
     if not getattr(bot, "_slash_commands_synced", False):
         try:
-            if config.HOME_GUILD_ID:
-                guild = discord.Object(id=config.HOME_GUILD_ID)
-                bot.tree.copy_global_to(guild=guild)
-                synced = await bot.tree.sync(guild=guild)
-                # Remove the global command surface so new command registrations stay
-                # scoped to the one configured server.
-                bot.tree.clear_commands(guild=None)
-                await bot.tree.sync()
-                print(f"✅ Synced {len(synced)} server-only slash command(s)")
-            else:
-                synced = await bot.tree.sync()
-                print(f"✅ Synced {len(synced)} global slash command(s)")
-            bot._slash_commands_synced = True
+            synced = await sync_slash_commands(
+                bot.tree,
+                getattr(config, "HOME_GUILD_ID", None),
+                logger=logger,
+            )
+            if synced is not None:
+                bot._slash_commands_synced = True
         except Exception:
-            logging.getLogger("casino.startup").exception("Failed to sync slash commands")
+            logger.exception("Failed to sync slash commands")
 
 async def _forward_error_to_guild_log(
     command_name: str,
@@ -159,8 +271,9 @@ async def _forward_error_to_guild_log(
     guild_id: int | None,
     channel_id: int | None,
     error_type: str,
+    incident_id: str = "unavailable",
 ) -> None:
-    """Send redacted diagnostics to a configured log channel in the same guild only."""
+    """Send redacted, correlated diagnostics to a configured channel in the same guild only."""
     if guild_id is None:
         return
 
@@ -179,7 +292,8 @@ async def _forward_error_to_guild_log(
             channel = await bot.fetch_channel(log_channel_id)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             logger.warning(
-                "Could not resolve command-error channel guild=%s channel=%s",
+                "Could not resolve command-error channel incident_id=%s guild_id=%s channel_id=%s",
+                incident_id,
                 guild_id,
                 log_channel_id,
             )
@@ -188,20 +302,22 @@ async def _forward_error_to_guild_log(
     channel_guild_id = getattr(getattr(channel, "guild", None), "id", None)
     if channel_guild_id != guild_id:
         logger.error(
-            "Skipped command-error log because destination guild=%s does not match source guild=%s",
+            "Skipped cross-guild error log incident_id=%s destination_guild=%s source_guild=%s",
+            incident_id,
             channel_guild_id,
             guild_id,
         )
         return
 
     embed = discord.Embed(
-        title="Bot Error",
+        title=f"Command Error · {incident_id}",
         description=(
-            f"**الأمر:** `{command_name}`\n"
-            f"**معرّف المستخدم:** `{user_id}`\n"
-            f"**معرّف السيرفر:** `{guild_id}`\n"
-            f"**معرّف الروم:** `{channel_id}`\n"
-            f"**نوع الخطأ:** `{error_type}`"
+            f"**رقم المتابعة:** {incident_id}\n"
+            f"**الأمر:** {command_name}\n"
+            f"**معرّف المستخدم:** {user_id}\n"
+            f"**معرّف السيرفر:** {guild_id}\n"
+            f"**معرّف الروم:** {channel_id}\n"
+            f"**نوع الخطأ:** {error_type}"
         ),
         color=0x8B1E1E,
     )
@@ -212,79 +328,128 @@ async def _forward_error_to_guild_log(
         )
     except discord.HTTPException:
         logger.warning(
-            "Could not send command-error log guild=%s channel=%s",
+            "Could not send command-error log incident_id=%s guild_id=%s channel_id=%s",
+            incident_id,
             guild_id,
             log_channel_id,
             exc_info=True,
         )
 
+@bot.event
+async def on_casino_component_error(
+    command_name,
+    user_id,
+    guild_id,
+    channel_id,
+    error_type,
+    incident_id,
+):
+    """Forward component failures through the same-guild, redacted diagnostics path."""
+    try:
+        await _forward_error_to_guild_log(
+            command_name,
+            user_id,
+            guild_id,
+            channel_id,
+            error_type,
+            incident_id,
+        )
+    except Exception:
+        logging.getLogger("casino.error_forwarding").exception(
+            "Failed to forward component error incident_id=%s",
+            incident_id,
+        )
+
 
 @bot.event
 async def on_command_error(ctx, error):
+    """Handle expected user errors quietly; correlate and report unexpected failures."""
+    logger = logging.getLogger("casino.commands")
+    command = getattr(ctx, "command", None)
+    command_name = getattr(command, "qualified_name", None) or "unknown"
+    user_id = getattr(getattr(ctx, "author", None), "id", None)
+    guild_id = getattr(getattr(ctx, "guild", None), "id", None)
+    channel_id = getattr(getattr(ctx, "channel", None), "id", None)
+
     if isinstance(error, commands.CommandNotFound):
-        return
-    if isinstance(error, GameChannelBlocked):
-        game_key = game_key_from_command_name(getattr(ctx.command, "name", None))
-        game_label = GAME_LABELS.get(game_key, "اللعبة")
-        try:
-            await _send_command_error(
-                ctx,
-                f"🔒 {game_label} متاحة في قنوات محددة بس. راجع الستاف أو جرّب القناة المخصصة.",
-            )
-        except discord.HTTPException:
-            pass
-        return
-    if isinstance(error, commands.CheckFailure):
-        try:
-            await _send_command_error(ctx, "❌ الأمر ده مش متاح لصلاحيات حسابك.")
-        except discord.HTTPException:
-            pass
-        return
-    if isinstance(error, commands.CommandOnCooldown):
-        try:
-            await _send_command_error(
-                ctx,
-                f"⏳ اهدى يا معلم! جرب تاني بعد **{error.retry_after:.0f}** ثانية.",
-            )
-        except discord.HTTPException:
-            pass
+        logger.debug("Ignored unknown prefix command user_id=%s guild_id=%s channel_id=%s", user_id, guild_id, channel_id)
         return
 
-    original_error = getattr(error, "original", error)
-    command_text = ctx.command.qualified_name if ctx.command else "unknown"
-    guild_id = getattr(ctx, "guild", None)
-    guild_id = getattr(guild_id, "id", None)
-    channel_id = getattr(getattr(ctx, "channel", None), "id", None)
-    logger = logging.getLogger("casino.commands")
-    logger.error(
-        "Command failed: command=%s user_id=%s guild_id=%s channel_id=%s",
-        command_text,
-        getattr(getattr(ctx, "author", None), "id", None),
-        guild_id,
-        channel_id,
-        exc_info=(type(original_error), original_error, original_error.__traceback__),
+    if isinstance(error, GameChannelBlocked):
+        game_key = game_key_from_command_name(getattr(command, "name", None))
+        game_label = GAME_LABELS.get(game_key, "اللعبة")
+        logger.warning("Channel policy rejected command=%s user_id=%s guild_id=%s channel_id=%s",
+                       command_name, user_id, guild_id, channel_id)
+        try:
+            await _send_command_error(ctx, f"{game_label} متاحة في قنوات محددة بس. راجع الستاف أو جرّب القناة المخصصة.")
+        except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+            logger.debug("Could not acknowledge channel-policy rejection", exc_info=True)
+        return
+
+    if isinstance(error, commands.CommandOnCooldown):
+        logger.info("Command cooldown command=%s user_id=%s guild_id=%s retry_after=%.2f",
+                    command_name, user_id, guild_id, error.retry_after)
+        try:
+            await _send_command_error(ctx, f"استنى {error.retry_after:.0f} ثانية قبل ما تستخدم الأمر تاني.")
+        except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+            logger.debug("Could not acknowledge command cooldown", exc_info=True)
+        return
+
+    if isinstance(error, commands.UserInputError):
+        logger.debug("Invalid command input command=%s user_id=%s guild_id=%s error_type=%s",
+                     command_name, user_id, guild_id, type(error).__name__)
+        try:
+            await _send_command_error(ctx, "صيغة الأمر ناقصة أو فيها قيمة غير صحيحة. راجع الأمر من /commands وتأكد من القيم المطلوبة.")
+        except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+            logger.debug("Could not acknowledge invalid command input", exc_info=True)
+        return
+
+    if isinstance(error, commands.CheckFailure):
+        logger.warning("Command permission/check rejected command=%s user_id=%s guild_id=%s error_type=%s",
+                       command_name, user_id, guild_id, type(error).__name__)
+        try:
+            await _send_command_error(ctx, "الأمر ده مش متاح لصلاحيات حسابك أو في المكان الحالي.")
+        except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+            logger.debug("Could not acknowledge command check rejection", exc_info=True)
+        return
+
+    incident_id = new_incident_id()
+    original_error = log_unhandled_exception(
+        logger,
+        incident_id=incident_id,
+        surface="prefix",
+        command_name=command_name,
+        user_id=user_id,
+        guild_id=guild_id,
+        channel_id=channel_id,
+        error=error,
     )
     try:
         await _forward_error_to_guild_log(
-            command_text,
-            getattr(getattr(ctx, "author", None), "id", "unknown"),
+            command_name,
+            user_id if user_id is not None else "unknown",
             guild_id,
             channel_id,
             type(original_error).__name__,
+            incident_id,
         )
     except Exception:
-        logger.exception("Failed to forward command error to the configured log channel")
+        logging.getLogger("casino.error_forwarding").exception(
+            "Failed to forward command error incident_id=%s", incident_id
+        )
 
     try:
         await _send_command_error(
             ctx,
-            "❌ حصلت مشكلة! تم تسجيل الخطأ؛ جرب تاني كمان شوية.",
+            f"حصل عطل أثناء تنفيذ الأمر. جرّب تاني بعد شوية، ولو تكرر ابعت للستاف رقم المتابعة {incident_id}.",
         )
-    except discord.HTTPException:
-        logger.exception("Could not send the command error acknowledgement")
+    except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+        logger.warning("Could not acknowledge failed prefix command incident_id=%s", incident_id, exc_info=True)
+
+
 @bot.tree.error
 async def on_app_command_error(interaction, error):
-    """Acknowledge slash-command failures safely without exposing internals."""
+    """Acknowledge slash-command errors once, with correlated diagnostics for real faults."""
     logger = logging.getLogger("casino.app_commands")
     command_name = (
         interaction.command.qualified_name
@@ -293,44 +458,73 @@ async def on_app_command_error(interaction, error):
     )
     user_id = getattr(getattr(interaction, "user", None), "id", "unknown")
     guild_id = getattr(interaction, "guild_id", None)
+    channel_id = getattr(getattr(interaction, "channel", None), "id", None)
 
-    if isinstance(error, app_commands.CheckFailure):
-        logger.warning(
-            "Rejected app command %s for user=%s guild=%s",
-            command_name,
-            user_id,
-            guild_id,
-        )
-        message = "الأمر ده مش متاح لصلاحيات حسابك."
+    if isinstance(error, app_commands.CommandOnCooldown):
+        logger.info("App command cooldown command=%s user_id=%s guild_id=%s retry_after=%.2f",
+                    command_name, user_id, guild_id, error.retry_after)
+        message = f"استنى {error.retry_after:.0f} ثانية قبل ما تستخدم الأمر تاني."
+    elif isinstance(error, app_commands.CheckFailure):
+        logger.warning("App command check rejected command=%s user_id=%s guild_id=%s error_type=%s",
+                       command_name, user_id, guild_id, type(error).__name__)
+        message = "الأمر ده مش متاح لصلاحيات حسابك أو في المكان الحالي."
+    elif isinstance(error, app_commands.TransformerError):
+        logger.info("App command input rejected command=%s user_id=%s guild_id=%s option=%s",
+                    command_name, user_id, guild_id, getattr(error, "param", None))
+        message = "فيه قيمة غير صحيحة في الاختيارات. راجع صيغة الأمر وجرب تاني."
     else:
-        original = getattr(error, "original", error)
-        logger.error(
-            "Unhandled app command error command=%s user=%s guild=%s",
-            command_name,
-            user_id,
-            guild_id,
-            exc_info=(type(original), original, original.__traceback__),
+        incident_id = new_incident_id()
+        original_error = log_unhandled_exception(
+            logger,
+            incident_id=incident_id,
+            surface="slash",
+            command_name=command_name,
+            user_id=user_id,
+            guild_id=guild_id,
+            channel_id=channel_id,
+            error=error,
         )
         try:
             await _forward_error_to_guild_log(
                 command_name,
                 user_id,
                 guild_id,
-                getattr(getattr(interaction, "channel", None), "id", None),
-                type(original).__name__,
+                channel_id,
+                type(original_error).__name__,
+                incident_id,
             )
         except Exception:
-            logger.exception("Failed to forward app-command error to the configured log channel")
-        message = "حصل عطل أثناء تنفيذ الأمر. تم تسجيل الخطأ من غير عرض تفاصيله للمستخدم."
+            logging.getLogger("casino.error_forwarding").exception(
+                "Failed to forward app-command error incident_id=%s", incident_id
+            )
+        message = f"حصل عطل أثناء تنفيذ الأمر. تم تسجيله؛ رقم المتابعة {incident_id}."
 
     try:
-        if interaction.response.is_done():
-            await interaction.followup.send(message, ephemeral=True)
-        else:
-            await interaction.response.send_message(message, ephemeral=True)
-    except discord.HTTPException:
-        logger.exception("Could not send the app-command error acknowledgement")
+        await _send_interaction_error(interaction, message)
+    except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+        logger.warning(
+            "Could not acknowledge app-command error command=%s user_id=%s guild_id=%s",
+            command_name,
+            user_id,
+            guild_id,
+            exc_info=True,
+        )
 
+
+@bot.event
+async def on_error(event_method, *args, **kwargs):
+    """Capture exceptions escaping ordinary Discord event callbacks."""
+    incident_id = new_incident_id()
+    logging.getLogger("casino.events").exception(
+        "Uncaught event failure incident_id=%s event=%s",
+        incident_id,
+        event_method,
+        extra={
+            "incident_id": incident_id,
+            "surface": "event",
+            "event_name": str(event_method),
+        },
+    )
 
 # --- EXTENSION LOADER ---
 NON_COG_MODULES = frozenset({
@@ -395,6 +589,8 @@ async def load_cogs():
 # --- APPLICATION STARTUP ---
 async def main():
     logger = logging.getLogger("casino.startup")
+    configure_file_logging()
+    install_asyncio_exception_handler(asyncio.get_running_loop())
     if not config.TOKEN:
         logger.error(
             "DISCORD_TOKEN is missing. Configure the host environment using .env.example."
@@ -410,9 +606,17 @@ async def main():
         async with bot:
             await load_cogs()
             await bot.start(config.TOKEN)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Bot startup/runtime failed")
+        raise
     finally:
         from cogs.casino import bank
-        bank.close_database()
+        try:
+            bank.close_database()
+        except Exception:
+            logger.exception("Failed to close the economy database cleanly")
 
 if __name__ == "__main__":
     asyncio.run(main())

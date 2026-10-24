@@ -15,7 +15,6 @@ from cogs.casino.game_registry import (
     release_game_task,
     set_game_view,
 )
-from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
     embed_to_v2,
     THEME,
@@ -23,17 +22,14 @@ from cogs.utility.theme import (
     lobby_embed,
     report_game_failure,
     result_embed,
+    send_status,
+    try_edit_view,
 )
 
 logger = logging.getLogger(__name__)
 
 
 # --- UI VIEWS ---
-
-class WatermarkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 class ChairPrepView(LayoutView):
     def __init__(self, round_num, num_chairs):
@@ -86,7 +82,7 @@ class ChairActionView(LayoutView):
         for index in range(num_chairs):
             button = discord.ui.Button(
                 style=discord.ButtonStyle.secondary,
-                label="🪑",
+                label="💥" if round_type == "forbidden" else "🪑",
                 custom_id=f"chair_{round_num}_{index}",
             )
             button.callback = self.make_callback(button)
@@ -164,20 +160,22 @@ class ChairActionView(LayoutView):
 
 
 class ChairsLobby(LayoutView):
+    MAX_TIME_EXTENSIONS = 3
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
         self.players = []
         self.game_started = False
         self.time_left = 35
+        self.extensions_left = self.MAX_TIME_EXTENSIONS
         self.message = None
         
         self.logo_url = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
-            ("انضمام (Join)", "chairs_join", "join_btn", None),
-            ("مغادرة (Leave)", "chairs_leave", "leave_btn", None),
+            ("انضمام", "chairs_join", "join_btn", None),
+            ("مغادرة", "chairs_leave", "leave_btn", None),
             ("ابدأ الآن", "chairs_start", "start_btn", None),
             ("+10 ثواني", "chairs_add_time", "add_time_btn", "⏱️"),
         ):
@@ -202,9 +200,9 @@ class ChairsLobby(LayoutView):
     def get_embed(self):
         rules = (
             "**طريقة اللعب:**\n"
-            "1- هتظهر كراسي رمادية في الشات لمدة 5 ثواني عشان تستعد.\n"
-            "2- لو الكراسي قلبت **أزرق**، اقعد بسرعة قبل ما الكراسي تخلص!\n"
-            "3- لو الكراسي قلبت **أحمر** (فخ)، إياك تضغط! اللي هيضغط هيطير.\n"
+            "1- هتظهر لوحة تجهيز لمدة 5 ثواني عشان تستعد.\n"
+            "2- في الجولة العادية، لوحة الجولة بتكون بلون تركوازي؛ اضغط على كرسي متاح بسرعة، لأن الكراسي أقل من اللاعبين.\n"
+            "3- في جولة الفخ، اللوحة بتكون حمراء وكل الأزرار عليها 💥؛ متضغطش على أي زر وإلا هتخرج.\n"
             "4- آخر واحد يتبقى هو الفائز.\n\n"
         )
         embed = lobby_embed(
@@ -213,6 +211,8 @@ class ChairsLobby(LayoutView):
             self.players,
             self.time_left,
             max_players=25,
+            host=self.ctx.author,
+            min_players=2,
         )
         embed.set_thumbnail(url=self.logo_url)
         embed.set_footer(text=f"كازينو الحفرة • {config.BRAND}", icon_url=self.logo_url)
@@ -221,10 +221,21 @@ class ChairsLobby(LayoutView):
     def _panel_content(self):
         embed = self.get_embed()
         description = embed.description or ""
-        return f"# {embed.title or 'لعبة الكراسي الموسيقية'}\n{description}\n\n-# كازينو الحفرة • {config.BRAND}"
+        return (
+            f"# {embed.title or 'لعبة الكراسي الموسيقية'}\n{description}\n\n"
+            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            f"-# كازينو الحفرة • {config.BRAND}"
+        )[:4000]
+
+    def _sync_extension_control(self):
+        exhausted = self.game_started or self.extensions_left <= 0
+        for button in self._buttons:
+            if button.custom_id == "chairs_add_time":
+                button.disabled = exhausted
 
     def _refresh_panel(self):
-        self._panel_text.content = self._panel_content()[:4000]
+        self._panel_text.content = self._panel_content()
+        self._sync_extension_control()
 
     def _disable_buttons(self):
         for button in self._buttons:
@@ -249,13 +260,13 @@ class ChairsLobby(LayoutView):
             self.game_started = True
             self._panel_text.content = "# العدد غير كافي\nمحتاجين لاعبين على الأقل عشان الجولة تبدأ."
             self._disable_buttons()
-            if self.message: await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="chairs_lobby_cancelled")
             return
 
         self.game_started = True
         self._panel_text.content = "# جاري تجهيز الكراسي الموسيقية\nهنبدأ الجولة دلوقتي. جهّز نفسك."
         self._disable_buttons()
-        if self.message: await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="chairs_lobby_start")
         
         task = self.ctx.bot.loop.create_task(self.run_game_loop())
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Chairs", replace_task=self.timer_task):
@@ -310,11 +321,25 @@ class ChairsLobby(LayoutView):
 
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
-            embed = discord.Embed(
-                description="للأدمن فقط!",
-                color=discord.Color.red()
+            return await interaction.response.send_message(
+                view=StatusPanel("مش مسموح", "صاحب اللوبي فقط يقدر يمدد وقت التسجيل.", "warning"),
+                ephemeral=True,
             )
-            return await interaction.response.send_message(view=embed_to_v2(embed), ephemeral=True)
+        if self.game_started:
+            return await interaction.response.send_message(
+                view=StatusPanel("اللوبي اتقفل", "الجولة بدأت بالفعل.", "warning"),
+                ephemeral=True,
+            )
+        if self.extensions_left <= 0:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "وصلنا للحد الأقصى",
+                    "استخدمت كل تمديدات الوقت المتاحة. ابدأ الجولة أو استنى العدّ التنازلي.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+        self.extensions_left -= 1
         self.time_left += 10
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
@@ -428,15 +453,24 @@ class Chairs(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='كراسي', description='بدء لعبة الكراسي الموسيقية')
-    @is_staff_or_admin()
     async def start_chairs(self, ctx):
         """يبدأ لعبة الكراسي الموسيقية"""
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         view = ChairsLobby(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "Chairs lobby", view=view):
             view.timer_task.cancel()
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         try:
             view.message = await ctx.send(view=view)
         except Exception:

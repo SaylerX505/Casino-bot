@@ -1,5 +1,6 @@
 """Regression tests for grouped slash command registration."""
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import discord
@@ -9,6 +10,7 @@ from discord.ui import LayoutView
 
 from cogs.utility.admin import AdminCommands
 from cogs.utility.help import HelpCommand, HelpEntryView
+from main import sync_slash_commands, validate_slash_command_metadata
 
 
 class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
@@ -24,11 +26,77 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.bot.close()
 
+    async def test_registered_slash_commands_have_visible_descriptions(self):
+        problems = validate_slash_command_metadata(self.bot.tree.get_commands())
+        self.assertEqual(problems, [])
+
+        command = self.bot.tree.get_command("commands")
+        self.assertIsInstance(command, app_commands.Command)
+        self.assertEqual(command.description, "فتح قائمة الأوامر والمساعدة")
+
+    async def test_metadata_validator_allows_context_menu_commands(self):
+        async def inspect_member(
+            interaction: discord.Interaction,
+            user: discord.User,
+        ):
+            return None
+
+        context_menu = app_commands.ContextMenu(
+            name="Inspect member",
+            callback=inspect_member,
+        )
+        self.bot.tree.add_command(context_menu)
+        problems = validate_slash_command_metadata(self.bot.tree.get_commands())
+        self.assertEqual(problems, [])
+
+    async def test_sync_preflight_blocks_invisible_description_and_names_command(self):
+        async def broken_command(interaction: discord.Interaction):
+            return None
+
+        self.bot.tree.add_command(
+            app_commands.Command(
+                name="broken",
+                description="\u200b",
+                callback=broken_command,
+            )
+        )
+        logger = Mock()
+
+        with patch.object(
+            self.bot.tree,
+            "sync",
+            new=AsyncMock(return_value=[]),
+        ) as sync:
+            synced = await sync_slash_commands(
+                self.bot.tree,
+                home_guild_id=123456,
+                logger=logger,
+            )
+
+        self.assertIsNone(synced)
+        # Only the global-command cleanup is synced; the invalid guild command
+        # batch is rejected locally before making a second API request.
+        sync.assert_awaited_once_with()
+        logger.error.assert_called_once()
+        log_message = " ".join(str(value) for value in logger.error.call_args.args)
+        self.assertIn("broken", log_message)
+        self.assertIn("invisible", log_message)
+        self.assertEqual(self.bot.tree.get_commands(), [])
+        guild_commands = self.bot.tree.get_commands(guild=discord.Object(id=123456))
+        self.assertIn("broken", {command.name for command in guild_commands})
+
     async def test_prefix_help_entry_uses_components_v2(self):
         view = HelpEntryView(self.bot)
 
         self.assertIsInstance(view, LayoutView)
         self.assertEqual(view.timeout, 180)
+        texts = [
+            item.content
+            for item in view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        ]
+        self.assertIn("مركز المساعدة", "\n".join(texts))
+        self.assertNotIn("Help Center", "\n".join(texts))
         buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
         self.assertEqual(len(buttons), 1)
         self.assertEqual(buttons[0].style, discord.ButtonStyle.secondary)
@@ -72,6 +140,40 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("owner", HELP_PAGES)
         self.assertNotIn("bankreset", SLASH_COMMANDS)
         self.assertNotIn("ai", SLASH_COMMANDS)
+    async def test_prefix_stop_errors_do_not_pass_ephemeral_argument(self):
+        fake_bot = SimpleNamespace(active_games={})
+        cog = HelpCommand(fake_bot)
+        context = SimpleNamespace(
+            bot=fake_bot,
+            channel=SimpleNamespace(id=9001),
+            author=SimpleNamespace(id=101),
+            interaction=None,
+            send=AsyncMock(),
+        )
+
+        await HelpCommand.stop_game.callback(cog, context)
+
+        context.send.assert_awaited_once()
+        self.assertNotIn("ephemeral", context.send.await_args.kwargs)
+        self.assertIsInstance(context.send.await_args.kwargs["view"], LayoutView)
+
+    async def test_slash_stop_errors_remain_ephemeral(self):
+        fake_bot = SimpleNamespace(active_games={})
+        cog = HelpCommand(fake_bot)
+        context = SimpleNamespace(
+            bot=fake_bot,
+            channel=SimpleNamespace(id=9002),
+            author=SimpleNamespace(id=101),
+            interaction=object(),
+            send=AsyncMock(),
+        )
+
+        await HelpCommand.stop_game.callback(cog, context)
+
+        context.send.assert_awaited_once()
+        self.assertTrue(context.send.await_args.kwargs["ephemeral"])
+        self.assertIsInstance(context.send.await_args.kwargs["view"], LayoutView)
+
     async def test_prefix_compatibility_is_preserved(self):
         self.assertIsNotNone(self.bot.get_command("help"))
         self.assertIsNotNone(self.bot.get_command("stop"))

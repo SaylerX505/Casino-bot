@@ -20,6 +20,10 @@ GAME_LABELS = {
     "wheel": "عجلة الحفرة",
     "rps": "حجرة ورقة مقص",
     "riddle": "الفزورة",
+    "coinflip": "رمي العملة",
+    "dice": "رمي النرد",
+    "slots": "ماكينة الحظ",
+    "blackjack": "Blackjack",
 }
 GAME_COMMAND_ALIASES = {
     "mafia": "mafia",
@@ -41,6 +45,21 @@ GAME_COMMAND_ALIASES = {
     "حومص": "rps",
     "riddle": "riddle",
     "فزورة": "riddle",
+    "coinflip": "coinflip",
+    "flip": "coinflip",
+    "عملة": "coinflip",
+    "رمي_العملة": "coinflip",
+    "dice": "dice",
+    "نرد": "dice",
+    "زهر": "dice",
+    "slots": "slots",
+    "slot": "slots",
+    "سلوت": "slots",
+    "ماكينة": "slots",
+    "blackjack": "blackjack",
+    "bj": "blackjack",
+    "بلجاك": "blackjack",
+    "بلاكجاك": "blackjack",
 }
 
 
@@ -181,7 +200,7 @@ def configured_manager_role_ids(guild_id: int) -> set[int]:
 
 
 def has_staff_access(user) -> bool:
-    """Discord admins, configured bot managers, and game-staff roles can host games."""
+    """Return access to protected management actions and staff-only controls."""
     if has_admin_access(user):
         return True
 

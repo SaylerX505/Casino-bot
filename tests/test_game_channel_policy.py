@@ -45,6 +45,18 @@ class GameChannelPolicyTests(unittest.TestCase):
             self.assertFalse(permissions.is_game_channel_allowed(100, 300, "mafia"))
             self.assertTrue(permissions.is_game_channel_allowed(101, 300, "mafia"))
             self.assertTrue(permissions.is_game_channel_allowed(100, 999, "roulette"))
+            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "coinflip"))
+            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "dice"))
+            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "slots"))
+            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "blackjack"))
+
+    def test_blackjack_channel_allowlist_is_enforced(self):
+        with patch(
+            "cogs.casino.permissions.bank.get_setting",
+            return_value=json.dumps([200]),
+        ):
+            self.assertTrue(permissions.is_game_channel_allowed(100, 200, "blackjack"))
+            self.assertFalse(permissions.is_game_channel_allowed(100, 201, "blackjack"))
 
     def test_game_name_aliases_resolve_to_one_persisted_key(self):
         cases = {
@@ -58,10 +70,29 @@ class GameChannelPolicyTests(unittest.TestCase):
             "عجلة": "wheel",
             "حومص": "rps",
             "فزورة": "riddle",
+            "coinflip": "coinflip",
+            "flip": "coinflip",
+            "عملة": "coinflip",
+            "dice": "dice",
+            "نرد": "dice",
+            "زهر": "dice",
+            "slots": "slots",
+            "slot": "slots",
+            "سلوت": "slots",
+            "blackjack": "blackjack",
+            "bj": "blackjack",
+            "بلاكجاك": "blackjack",
         }
         for name, expected in cases.items():
             with self.subTest(name=name):
                 self.assertEqual(permissions.game_key_from_command_name(name), expected)
+
+    def test_blackjack_slash_command_uses_its_configured_game_key(self):
+        interaction = SimpleNamespace(
+            command=SimpleNamespace(name="blackjack", qualified_name="blackjack"),
+            data={"name": "blackjack", "options": [{"name": "bet", "type": 3, "value": "100"}]},
+        )
+        self.assertEqual(permissions.game_key_from_interaction(interaction), "blackjack")
 
     def test_nested_slash_game_command_is_resolved(self):
         interaction = SimpleNamespace(

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import discord
 from discord import app_commands
@@ -10,18 +11,23 @@ from cogs.casino.game_registry import release_game_task
 from cogs.casino.permissions import has_staff_access
 from cogs.utility.theme import StatusPanel
 
+logger = logging.getLogger(__name__)
+
 
 def t(text: str) -> str:
     return f".ᐟ {text} .ᐟ"
 
 
 SLASH_COMMANDS = {
-    "مساعدة": "help",
     "رصيد": "bal",
     "شنطتي": "inv",
     "بروفايل [@عضو]": "بروفايل",
     "استخدم صندوق أو تذكرة": "استخدم",
     "حومص 100 @عضو": "حومص",
+    "عملة 100": "coinflip",
+    "نرد 100": "dice",
+    "سلوت 100": "slots",
+    "بلاكجاك 100": "blackjack",
     "فزورة": "فزورة",
     "اكشف": "اكشف",
     "مافيا": "مافيا",
@@ -31,38 +37,45 @@ SLASH_COMMANDS = {
     "كراسي": "كراسي",
     "عجلة": "عجلة",
     "ايقاف": "stop",
+    "stop": "stop",
+    "wizard": "wizard",
+    "admin": "admin",
 }
 
 
 HELP_PAGES = {
     "member": {
-        "title": "👤 أوامر الأعضاء",
-        "intro": "الأوامر المتاحة لكل أعضاء السيرفر.",
+        "title": "🎮 الألعاب والاقتصاد",
+        "intro": "ابدأ لعبة من القناة المسموحة، أو افتح الخزنة لإدارة رصيدك وأغراضك.",
         "fields": [
-            ("مساعدة / help", "عرض قائمة المساعدة دي."),
+            ("مافيا", "افتح لوبي مافيا؛ اللاعبين ينضموا من الزر، وصاحب اللوبي يقدر يبدأ بعد اكتمال العدد."),
+            ("روليت", "لعبة إقصاء جماعية؛ انضم للّوبي وخليك آخر لاعب صامد."),
+            ("غميضه", "افتح لعبة غميضة بخريطة وأماكن للاختباء والبحث."),
+            ("جيو / geo", "خمن الدولة من الصورة، ونافس باقي اللاعبين على لوحة النتائج."),
+            ("كراسي", "لعبة كراسي موسيقية بجولات وفخاخ؛ آخر لاعب صامد يفوز."),
+            ("عجلة / wheel", "لفة جماعية برسوم دخول؛ راجع صافي الربح والخسارة والرصيد في كل نتيجة."),
             ("رصيد / bal", "فتح مركز الاقتصاد: اليومية، التحويل، الترتيب، والمتجر."),
-            ("شنطتي / inv", "عرض الأدوات اللي في شنطتك."),
-            ("بروفايل [@عضو]", "عرض الرصيد والستريك والشنطة."),
+            ("شنطتي / inv", "عرض الأغراض اللي في شنطتك واستخدام المستهلكات المتاحة."),
+            ("بروفايل [@عضو]", "عرض الرصيد والستريك والشنطة لنفسك أو لعضو آخر."),
             ("استخدم صندوق أو تذكرة", "استخدام صندوق الحظ أو تذكرة الحظ من شنطتك."),
             ("حومص 100 @عضو", "تحدي حجرة ورقة مقص بمراهنة؛ لازم يكون معاك رصيد كفاية."),
+            ("عملة 100", "لعبة رهان فردية برمي العملة؛ إجمالي صرف الفوز 1.9x من الرهان."),
+            ("نرد 100", "لعبة رهان فردية: اختار رقمًا من 1 إلى 6؛ إجمالي صرف الفوز 5.7x من الرهان."),
+            ("سلوت 100", "لف ماكينة الحظ: الزوج المتطابق 1.7x وثلاثية الرموز 5x إلى 15x إجمالي الصرف."),
+            ("بلاكجاك 100", "العب Blackjack: إجمالي الصرف 2x للفوز العادي و2.5x للـ Blackjack الطبيعي؛ التعادل بيرجع الرهان."),
             ("فزورة", "جاوب صح قبل انتهاء الوقت واكسب المكافأة."),
-            ("اكشف", "استخدام أداة كشف المافيا أثناء لعبة مافيا نشطة وأنت لسه عايش."),
+            ("اكشف", "استخدم أداة كشف المافيا أثناء لعبة نشطة وأنت لسه عايش؛ النتيجة بتتبعت في الخاص."),
         ],
     },
     "staff": {
-        "title": "🛡️ أوامر الستاف",
-        "intro": "استضافة الألعاب دي تتطلب رتبة ستاف معتمدة أو صلاحية Administrator.",
+        "title": "🛡️ الإدارة والتحكم",
+        "intro": "الأدوات دي للستاف المعتمد أو مدير البوت أو الأدمن فقط.",
         "fields": [
-            ("مافيا", "بدء لعبة مافيا."),
-            ("روليت", "بدء لعبة الروليت الروسي."),
-            ("غميضه", "بدء لعبة الغميضة."),
-            ("جيو / geo", "بدء لعبة تخمين الموقع من الصورة."),
-            ("كراسي", "بدء لعبة الكراسي الموسيقية."),
-            ("عجلة / wheel", "بدء لعبة العجلة."),
-            ("ايقاف / انهاء", "إيقاف اللعبة النشطة: لصاحب اللعبة أو الستاف/الأدمن/مالك البوت."),
+            ("ايقاف / stop", "إيقاف اللعبة النشطة: لصاحب اللعبة أو الستاف/الأدمن/مالك البوت."),
+            ("wizard / إعداد", "تحديد قنوات الألعاب وأدوار الستاف وصلاحيات الوصول من داخل ديسكورد."),
+            ("admin / إدارة", "إدارة الوصول وحالة النظام وبعض إعدادات الاقتصاد؛ الأوامر الحساسة بتفضل محمية."),
         ],
     },
-
 }
 
 
@@ -83,7 +96,7 @@ class HelpSelect(Select):
                 label="أوامر الستاف",
                 value="staff",
                 emoji="🛡️",
-                description="استضافة الألعاب وإيقافها",
+                description="إدارة الصلاحيات وقنوات الألعاب والتحكم",
             ))
         super().__init__(
             placeholder="اختار قسم الأوامر...",
@@ -124,9 +137,10 @@ class HelpLayout(LayoutView):
 
         container = Container(
             TextDisplay(
-                f"# Çukur • Help Center\n"
-                f"**Prefix:** `{config.PREFIX}`  ·  **Latency:** {latency}ms\n\n"
-                "اختار القسم المناسب لصلاحياتك. هتظهر تفاصيل الأوامر بشكل خاص ليك."
+                f"# الحفرة • مركز المساعدة\n"
+                f"**البادئة:** `{config.PREFIX}`  ·  **زمن الاستجابة:** {latency}ms\n\n"
+                "اختار القسم المناسب لصلاحياتك. تفاصيل الأوامر هتظهر بشكل خاص ليك.\n"
+                "استخدم `/games` للألعاب و`/economy` للاقتصاد."
             ),
             Separator(),
             accent_color=config.EMBED_COLOR,
@@ -212,8 +226,8 @@ class HelpEntryView(LayoutView):
         self.bot = bot
         container = Container(
             TextDisplay(
-                f"# Çukur • Help Center\n"
-                f"**Prefix:** `{config.PREFIX}`\n\n"
+                f"# الحفرة • مركز المساعدة\n"
+                f"**البادئة:** `{config.PREFIX}`\n\n"
                 "افتح قائمة المساعدة الخاصة بيك عشان تشوف الأوامر المتاحة حسب صلاحياتك."
             ),
             Separator(),
@@ -276,27 +290,27 @@ class HelpCommand(commands.Cog):
                     ephemeral=True,
                 )
 
-    @games.command(name="mafia", description="بدء لعبة المافيا بصلاحية الستاف.")
+    @games.command(name="mafia", description="فتح لوبي مافيا جديد.")
     async def games_mafia(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "مافيا")
 
-    @games.command(name="roulette", description="بدء الروليت الروسي بصلاحية الستاف.")
+    @games.command(name="roulette", description="فتح لوبي الروليت الروسي.")
     async def games_roulette(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "روليت")
 
-    @games.command(name="hide-and-seek", description="بدء لعبة الغميضة بصلاحية الستاف.")
+    @games.command(name="hide-and-seek", description="فتح لوبي الغميضة.")
     async def games_hide_and_seek(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "غميضه")
 
-    @games.command(name="geo", description="بدء لعبة تخمين الموقع بصلاحية الستاف.")
+    @games.command(name="geo", description="فتح لوبي تخمين الدولة.")
     async def games_geo(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "جيو")
 
-    @games.command(name="chairs", description="بدء لعبة الكراسي بصلاحية الستاف.")
+    @games.command(name="chairs", description="فتح لوبي الكراسي الموسيقية.")
     async def games_chairs(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "كراسي")
 
-    @games.command(name="wheel", description="بدء عجلة الحظ بصلاحية الستاف.")
+    @games.command(name="wheel", description="فتح لوبي عجلة الحفرة.")
     async def games_wheel(self, interaction: discord.Interaction):
         await self._invoke_hybrid_command(interaction, "عجلة")
 
@@ -326,7 +340,7 @@ class HelpCommand(commands.Cog):
                 "مركز الاقتصاد مش جاهز حاليًا. جرّب بعد شوية.",
                 ephemeral=True,
             )
-        await CurrencyHubLayout(cog, interaction.user).daily_btn(interaction)
+        await CurrencyHubLayout(cog).daily_btn(interaction)
 
     @economy.command(name="top", description="عرض ترتيب أغنى الأعضاء بشكل خاص.")
     async def economy_top(self, interaction: discord.Interaction):
@@ -338,21 +352,36 @@ class HelpCommand(commands.Cog):
                 "مركز الاقتصاد مش جاهز حاليًا. جرّب بعد شوية.",
                 ephemeral=True,
             )
-        await CurrencyHubLayout(cog, interaction.user).top_btn(interaction)
+        await CurrencyHubLayout(cog).top_btn(interaction)
 
     @economy.command(name="shop", description="فتح المتجر واختيار غرض للشراء.")
     async def economy_shop(self, interaction: discord.Interaction):
-        from cogs.casino.currency import ShopView
+        from cogs.casino.currency_views import build_shop_view
 
         cog = self.bot.get_cog("Currency")
         if cog is None:
             return await interaction.response.send_message(
-                "المتجر مش جاهز حاليًا. جرّب بعد شوية.",
+                view=StatusPanel("المتجر غير جاهز", "المتجر مش جاهز حاليًا. جرّب بعد شوية.", "warning"),
                 ephemeral=True,
             )
-        await interaction.response.send_message(view=ShopView(cog), ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            view = await build_shop_view(cog, interaction.user)
+            await interaction.edit_original_response(view=view)
+            view.message = await interaction.original_response()
+        except Exception:
+            logger.exception("Could not open economy shop user_id=%s", interaction.user.id)
+            if interaction.response.is_done():
+                return await interaction.followup.send(
+                    view=StatusPanel("تعذر فتح المتجر", "حصل عطل أثناء تجهيز المتجر. جرّب تاني بعد شوية.", "warning"),
+                    ephemeral=True,
+                )
+            return await interaction.response.send_message(
+                view=StatusPanel("تعذر فتح المتجر", "حصل عطل أثناء تجهيز المتجر. جرّب تاني بعد شوية.", "warning"),
+                ephemeral=True,
+            )
 
-    @app_commands.command(name="commands", description="عرض قائمة الأوامر المتاحة حسب صلاحياتك")
+    @app_commands.command(name="commands", description="فتح قائمة الأوامر والمساعدة")
     @app_commands.guild_only()
     async def commands_menu(self, interaction: discord.Interaction):
         latency = round(self.bot.latency * 1000)
@@ -376,26 +405,27 @@ class HelpCommand(commands.Cog):
 
     @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
     async def stop_game(self, ctx):
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         active_games = getattr(self.bot, "active_games", {})
         game_info = active_games.get(ctx.channel.id)
         if game_info is None:
             return await ctx.send(
                 view=StatusPanel("مفيش لعبة شغالة", "مفيش لعبة نشطة في القناة دي.", "warning"),
-                ephemeral=ctx.interaction is not None,
+                **send_kwargs,
             )
 
         is_host = ctx.author.id == game_info.get("host_id")
         if not (is_host or has_staff_access(ctx.author)):
             return await ctx.send(
                 view=StatusPanel("صلاحية غير كافية", "إيقاف اللعبة متاح لصاحبها أو للستاف المصرح له.", "warning"),
-                ephemeral=ctx.interaction is not None,
+                **send_kwargs,
             )
 
         game_task = game_info.get("task")
         if game_task is None:
             return await ctx.send(
                 view=StatusPanel("تعذر إيقاف اللعبة", "مهمة اللعبة مش متاحة؛ بلّغ الستاف.", "warning"),
-                ephemeral=ctx.interaction is not None,
+                **send_kwargs,
             )
 
         view = game_info.get("view")

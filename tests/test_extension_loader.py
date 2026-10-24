@@ -29,7 +29,7 @@ class ExtensionLoaderClassificationTests(unittest.TestCase):
                 self.assertFalse(should_load_extension("cogs.casino", filename))
 
     def test_actual_game_cogs_remain_extensions(self):
-        for filename in ("mafia.py", "geoguessr.py", "currency.py", "roulette.py"):
+        for filename in ("mafia.py", "geoguessr.py", "currency.py", "roulette.py", "solo_betting.py", "blackjack.py"):
             with self.subTest(filename=filename):
                 self.assertTrue(should_load_extension("cogs.casino", filename))
 

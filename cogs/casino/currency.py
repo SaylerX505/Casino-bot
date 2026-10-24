@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import random
 
@@ -6,8 +7,13 @@ from discord.ext import commands
 
 import config
 from cogs.casino import bank
-from cogs.casino.currency_catalog import COIN_EMOJI, INVENTORY_ITEMS, fmt
-from cogs.casino.currency_views import CurrencyHubLayout, InventoryView
+from cogs.casino.currency_catalog import COIN_EMOJI, fmt
+from cogs.casino.currency_views import (
+    CurrencyHubLayout,
+    build_currency_hub_view,
+    build_inventory_view,
+    build_profile_panel,
+)
 from cogs.casino.permissions import configured_log_channel_id
 from cogs.utility.theme import StatusPanel, embed_to_v2
 
@@ -21,15 +27,24 @@ class Currency(commands.Cog):
         self._persistent_hub_view = None
 
     async def cog_load(self):
-        """Restore persistent public economy buttons when the extension loads."""
+        """Register exactly one persistent economy hub, including on extension reload."""
+        old_view = getattr(self.bot, "_currency_hub_layout", None)
+        if old_view is not None:
+            self.bot.remove_view(old_view)
+
         self._persistent_hub_view = CurrencyHubLayout(self)
         self.bot.add_view(self._persistent_hub_view)
+        self.bot._currency_hub_layout = self._persistent_hub_view
 
     def cog_unload(self):
-        """Unregister the view when reloading or unloading this extension."""
-        if self._persistent_hub_view is not None:
-            self.bot.remove_view(self._persistent_hub_view)
-            self._persistent_hub_view = None
+        """Unregister the same persistent view when reloading or unloading this extension."""
+        view = self._persistent_hub_view
+        if view is None:
+            return
+        self.bot.remove_view(view)
+        if getattr(self.bot, "_currency_hub_layout", None) is view:
+            delattr(self.bot, "_currency_hub_layout")
+        self._persistent_hub_view = None
 
     def check_whitelist(self, user: discord.Member) -> bool:
         permissions = getattr(user, "guild_permissions", None)
@@ -130,38 +145,44 @@ class Currency(commands.Cog):
 
     @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
     async def balance(self, ctx):
-        view = CurrencyHubLayout(self, ctx.author)
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        try:
+            view = await build_currency_hub_view(self, ctx.author)
+        except Exception:
+            logger.exception("Could not load economy hub requester_id=%s", ctx.author.id)
+            return await ctx.send(
+                view=StatusPanel("تعذر فتح الخزنة", "حصل عطل أثناء قراءة رصيدك. جرّب تاني بعد شوية.", "warning"),
+                **send_kwargs,
+            )
         await ctx.send(view=view, **send_kwargs)
 
     @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
-        view = InventoryView(self, ctx.author)
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        try:
+            view = await build_inventory_view(self, ctx.author)
+        except Exception:
+            logger.exception("Could not load inventory requester_id=%s", ctx.author.id)
+            return await ctx.send(
+                view=StatusPanel("تعذر فتح الشنطة", "حصل عطل أثناء قراءة الشنطة. جرّب تاني بعد شوية.", "warning"),
+                **send_kwargs,
+            )
         view.message = await ctx.send(view=view, **send_kwargs)
 
     @commands.hybrid_command(name='بروفايل', aliases=['profile', 'me', 'انا'], description='عرض بروفايلك أو بروفايل عضو')
     async def profile(self, ctx, target: discord.Member = None):
-        """كارت البروفايل بتاعك: رصيد + ستريك + اغراض"""
+        """عرض بطاقة البروفايل المشتركة من الأمر ومركز الاقتصاد."""
         user = target or ctx.author
-        bal = self.get_balance(user.id)
-        _last, streak = bank.get_daily(str(user.id))
-        inventory = self.get_inventory(user.id)
-        labels = {item[0]: f"{item[5]} {item[1]}" for item in INVENTORY_ITEMS}
-        items = " • ".join(
-            f"{labels.get(item_id, item_id)} ×{fmt(quantity)}"
-            for item_id, quantity in inventory.items()
-            if quantity > 0
-        ) or "الشنطة فاضية حاليًا"
-        description = (
-            f"**الرصيد:** {fmt(bal)} {COIN_EMOJI}\n"
-            f"**الستريك اليومي:** {streak} يوم\n\n"
-            f"**الأغراض:**\n{items[:2200]}"
-        )
-        await ctx.send(
-            view=StatusPanel(f"🪪 بروفايل {user.display_name}", description, "success"),
-            ephemeral=ctx.interaction is not None,
-        )
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        try:
+            panel = await build_profile_panel(self, user)
+        except Exception:
+            logger.exception("Could not load profile requester_id=%s target_id=%s", ctx.author.id, user.id)
+            return await ctx.send(
+                view=StatusPanel("تعذر فتح البروفايل", "حصل عطل أثناء قراءة بيانات العضو. جرّب تاني بعد شوية.", "warning"),
+                **send_kwargs,
+            )
+        await ctx.send(view=panel, **send_kwargs)
 
     @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
     async def use_item(self, ctx, item: str | None = None):
@@ -183,9 +204,33 @@ class Currency(commands.Cog):
                 ephemeral=private,
             )
 
-        redeemed, reward, balance_after = self.redeem_consumable(ctx.author.id, item_id)
+        try:
+            redeemed, reward, balance_after = await asyncio.to_thread(
+                self.redeem_consumable,
+                ctx.author.id,
+                item_id,
+            )
+        except Exception:
+            logger.exception("Consumable redemption failed user_id=%s item_id=%s", ctx.author.id, item_id)
+            return await ctx.send(
+                view=StatusPanel(
+                    "تعذر استخدام الغرض",
+                    "حصل عطل أثناء تسجيل العملية. راجع رصيدك والشنطة قبل إعادة المحاولة.",
+                    "warning",
+                ),
+                ephemeral=private,
+            )
+
         if not redeemed:
-            if self.get_item_count(ctx.author.id, item_id) > 0:
+            try:
+                item_count = await asyncio.to_thread(self.get_item_count, ctx.author.id, item_id)
+            except Exception:
+                logger.exception("Could not inspect item after failed redemption user_id=%s item_id=%s", ctx.author.id, item_id)
+                return await ctx.send(
+                    view=StatusPanel("تعذر التحقق من الغرض", "قاعدة البيانات لم تؤكد حالة الغرض. جرّب تاني بعد شوية.", "warning"),
+                    ephemeral=private,
+                )
+            if item_count > 0:
                 title = "الرصيد وصل للحد الأقصى"
                 description = "احتفظنا بالغرض في شنطتك، ومش هنستهلكه لحد ما يبقى فيه مساحة في الرصيد."
             else:
@@ -207,11 +252,5 @@ class Currency(commands.Cog):
         )
 
 async def setup(bot):
-    cog = Currency(bot)
-    await bot.add_cog(cog)
-    old_layout = getattr(bot, "_currency_hub_layout", None)
-    if old_layout is not None:
-        bot.remove_view(old_layout)
-    layout = CurrencyHubLayout(cog)
-    bot.add_view(layout)
-    bot._currency_hub_layout = layout
+    """Let Cog lifecycle own persistent-view registration and cleanup."""
+    await bot.add_cog(Currency(bot))

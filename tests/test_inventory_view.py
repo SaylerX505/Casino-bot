@@ -5,7 +5,8 @@ from unittest.mock import Mock
 
 import discord
 
-from cogs.casino.currency import Currency, CurrencyHubLayout, InventoryView
+from cogs.casino.currency import Currency, CurrencyHubLayout, setup
+from cogs.casino.currency_views import InventoryView
 
 
 class FakeCurrency:
@@ -30,7 +31,7 @@ class FakeCurrency:
         return False
 
 
-class InventoryViewTests(unittest.TestCase):
+class InventoryViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.owner = SimpleNamespace(
             id=123,
@@ -66,13 +67,13 @@ class InventoryViewTests(unittest.TestCase):
         self.assertIn("طلقة مزدوجة", tools)
         self.assertNotIn("صندوق حظ", tools)
 
-    def test_use_buttons_reflect_inventory_counts(self):
+    async def test_use_buttons_reflect_inventory_counts_after_off_loop_snapshot_refresh(self):
         self.assertFalse(self.button("inventory_use_box").disabled)
         self.assertTrue(self.button("inventory_use_ticket").disabled)
 
         self.cog.inventory["loot_box"] = 0
         self.cog.inventory["luck_ticket"] = 1
-        self.view.refresh_buttons()
+        await self.view.refresh_snapshot()
 
         self.assertTrue(self.button("inventory_use_box").disabled)
         self.assertFalse(self.button("inventory_use_ticket").disabled)
@@ -103,11 +104,29 @@ class PersistentEconomyViewLifecycleTests(unittest.IsolatedAsyncioTestCase):
         view = bot.add_view.call_args.args[0]
         self.assertIsInstance(view, CurrencyHubLayout)
         self.assertIsNone(view.timeout)
+        self.assertIs(bot._currency_hub_layout, view)
 
         cog.cog_unload()
 
         bot.remove_view.assert_called_once_with(view)
         self.assertIsNone(cog._persistent_hub_view)
+        self.assertFalse(hasattr(bot, "_currency_hub_layout"))
+
+    async def test_extension_setup_registers_persistent_hub_once(self):
+        bot = SimpleNamespace(add_view=Mock(), remove_view=Mock())
+
+        async def add_cog(cog):
+            self.assertIsInstance(cog, Currency)
+            await cog.cog_load()
+            bot.loaded_cog = cog
+
+        bot.add_cog = add_cog
+        await setup(bot)
+
+        bot.add_view.assert_called_once()
+        bot.remove_view.assert_not_called()
+        self.assertIsInstance(bot.loaded_cog._persistent_hub_view, CurrencyHubLayout)
+        self.assertIs(bot._currency_hub_layout, bot.loaded_cog._persistent_hub_view)
 
 
 if __name__ == "__main__":

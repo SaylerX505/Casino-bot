@@ -254,14 +254,21 @@ def transfer_balance(sender_id, recipient_id, amount):
             raise
 
 
+
 def settle_wheel(user_id, entry_fee, payout=0, target_loss=None):
-    uid, entry_fee, payout = str(user_id), int(entry_fee), int(payout)
-    sqlite_max_int = (1 << 63) - 1
-    if entry_fee <= 0 or payout < 0 or payout > sqlite_max_int:
+    """Settle a wheel round atomically after validating all coin amounts."""
+    uid = str(user_id)
+    sqlite_max_int = SQLITE_MAX_INT
+    if isinstance(entry_fee, bool) or not isinstance(entry_fee, int):
+        raise TypeError("entry_fee must be an integer")
+    if isinstance(payout, bool) or not isinstance(payout, int):
+        raise TypeError("payout must be an integer")
+    if not 0 < entry_fee <= sqlite_max_int or not 0 <= payout <= sqlite_max_int:
         raise ValueError("invalid wheel settlement values")
     if target_loss is not None:
-        target_loss = int(target_loss)
-        if target_loss < 0 or target_loss > sqlite_max_int or payout:
+        if isinstance(target_loss, bool) or not isinstance(target_loss, int):
+            raise TypeError("target_loss must be an integer")
+        if not 0 <= target_loss <= sqlite_max_int or payout:
             raise ValueError("invalid wheel loss")
 
     with _lock:
@@ -318,8 +325,6 @@ def settle_wheel(user_id, entry_fee, payout=0, target_loss=None):
         except Exception:
             c.rollback()
             raise
-
-
 def add_guild_admin(guild_id, user_id):
     with _lock:
         c = _connect()
@@ -359,10 +364,22 @@ def is_guild_admin(guild_id, user_id):
         ).fetchone()
         return row is not None
 
+
 def purchase_item(user_id, item, quantity, unit_price):
-    """Charge coins and add inventory in one transaction."""
-    uid, quantity, unit_price = str(user_id), int(quantity), int(unit_price)
-    sqlite_max_int = (1 << 63) - 1
+    """Charge coins and add inventory atomically, guarding both integer bounds."""
+    uid = str(user_id)
+    if (
+        not isinstance(item, str)
+        or not item.strip()
+        or isinstance(quantity, bool)
+        or not isinstance(quantity, int)
+        or isinstance(unit_price, bool)
+        or not isinstance(unit_price, int)
+    ):
+        return False, get_balance(uid)
+
+    item = item.strip()
+    sqlite_max_int = SQLITE_MAX_INT
     if (
         quantity <= 0
         or unit_price < 0
@@ -377,6 +394,17 @@ def purchase_item(user_id, item, quantity, unit_price):
         try:
             c.execute("BEGIN IMMEDIATE")
             c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            inventory_row = c.execute(
+                "SELECT qty FROM inventory WHERE user_id=? AND item=?",
+                (uid, item),
+            ).fetchone()
+            current_qty = int(inventory_row["qty"]) if inventory_row else 0
+            if current_qty < 0 or current_qty > sqlite_max_int - quantity:
+                row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+                balance = int(row["balance"]) if row else 0
+                c.rollback()
+                return False, balance
+
             changed = c.execute(
                 "UPDATE users SET balance=balance-? WHERE user_id=? AND balance>=?",
                 (total, uid, total),
@@ -386,11 +414,16 @@ def purchase_item(user_id, item, quantity, unit_price):
                 balance = int(row["balance"]) if row else 0
                 c.rollback()
                 return False, balance
-            c.execute(
-                "INSERT INTO inventory (user_id,item,qty) VALUES (?,?,?) "
-                "ON CONFLICT(user_id,item) DO UPDATE SET qty=qty+excluded.qty",
-                (uid, str(item), quantity),
-            )
+            if inventory_row is None:
+                c.execute(
+                    "INSERT INTO inventory (user_id,item,qty) VALUES (?,?,?)",
+                    (uid, item, quantity),
+                )
+            else:
+                c.execute(
+                    "UPDATE inventory SET qty=qty+? WHERE user_id=? AND item=?",
+                    (quantity, uid, item),
+                )
             row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
             balance_after = int(row["balance"]) if row else 0
             _record_ledger(
@@ -399,7 +432,7 @@ def purchase_item(user_id, item, quantity, unit_price):
                 user_id=uid,
                 delta=-total,
                 balance_after=balance_after,
-                metadata={"item": str(item), "quantity": quantity, "unit_price": unit_price},
+                metadata={"item": item, "quantity": quantity, "unit_price": unit_price},
             )
             c.commit()
             return True, balance_after
@@ -407,12 +440,23 @@ def purchase_item(user_id, item, quantity, unit_price):
             c.rollback()
             raise
 
-
 def claim_daily(user_id, now_ts, base_reward):
-    """Atomically enforce cooldown, update streak, and grant the daily reward."""
-    uid, now_ts, base_reward = str(user_id), float(now_ts), int(base_reward)
-    if base_reward < 0:
-        raise ValueError("base_reward must not be negative")
+    """Atomically enforce cooldown, update streak, and grant a validated reward."""
+    uid = str(user_id)
+    sqlite_max_int = SQLITE_MAX_INT
+    if isinstance(now_ts, bool) or not isinstance(now_ts, (int, float)):
+        raise TypeError("now_ts must be a numeric timestamp")
+    try:
+        now_ts = float(now_ts)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("now_ts must be finite and non-negative") from None
+    if not math.isfinite(now_ts) or now_ts < 0:
+        raise ValueError("now_ts must be finite and non-negative")
+    if isinstance(base_reward, bool) or not isinstance(base_reward, int):
+        raise TypeError("base_reward must be an integer")
+    if not 0 <= base_reward <= SQLITE_MAX_INT:
+        raise ValueError("base_reward must be a non-negative SQLite-safe integer")
+
     with _lock:
         c = _connect()
         try:
@@ -429,7 +473,7 @@ def claim_daily(user_id, now_ts, base_reward):
             if last and (now_ts - last) > 86400 * 2:
                 streak = 0
             reward = base_reward + min(streak, 7) * 10
-            if balance > ((1 << 63) - 1) - reward:
+            if balance > sqlite_max_int - reward:
                 c.rollback()
                 return {"claimed": False, "reason": "balance_limit", "last_daily": last,
                         "streak": streak, "amount": 0, "balance": balance}
@@ -454,12 +498,20 @@ def claim_daily(user_id, now_ts, base_reward):
             c.rollback()
             raise
 
-
 def redeem_item(user_id, item, reward):
     """Consume one inventory item and grant its reward atomically."""
-    uid, item, reward = str(user_id), str(item), int(reward)
-    if reward < 0:
-        raise ValueError("reward must not be negative")
+    uid = str(user_id)
+    if (
+        not isinstance(item, str)
+        or not item.strip()
+        or isinstance(reward, bool)
+        or not isinstance(reward, int)
+        or reward < 0
+        or reward > SQLITE_MAX_INT
+    ):
+        return False, get_balance(uid)
+
+    item = item.strip()
     with _lock:
         c = _connect()
         try:
@@ -467,7 +519,7 @@ def redeem_item(user_id, item, reward):
             c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
             balance_row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
             balance = int(balance_row["balance"]) if balance_row else 0
-            if balance > ((1 << 63) - 1) - reward:
+            if balance > SQLITE_MAX_INT - reward:
                 c.rollback()
                 return False, balance
             changed = c.execute(
@@ -493,11 +545,16 @@ def redeem_item(user_id, item, reward):
             c.rollback()
             raise
 
-
 def place_bet(player_a, player_b, amount):
     """Collect both stakes atomically; neither player is charged on failure."""
-    a, b, amount = str(player_a), str(player_b), int(amount)
-    if amount <= 0 or amount > (1 << 63) - 1 or a == b:
+    a, b = str(player_a), str(player_b)
+    if (
+        isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+        or amount > SQLITE_MAX_INT
+        or a == b
+    ):
         return False
     with _lock:
         c = _connect()
@@ -539,7 +596,297 @@ def place_bet(player_a, player_b, amount):
         except Exception:
             c.rollback()
             raise
+def create_rps_challenge(game_id, player_a, player_b, amount, *, channel_id=None):
+    """Create a challenge invitation without reserving either player's balance."""
+    game_id, a, b = str(game_id).strip(), str(player_a).strip(), str(player_b).strip()
+    if (
+        not game_id
+        or not a
+        or not b
+        or a == b
+        or isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+        or amount > SQLITE_MAX_INT // 2
+    ):
+        return False
+    if channel_id is not None and (
+        isinstance(channel_id, bool)
+        or not isinstance(channel_id, int)
+        or not 0 < channel_id <= SQLITE_MAX_INT
+    ):
+        raise ValueError("channel_id must be a positive integer")
 
+    timestamp = now()
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute(
+                "INSERT INTO rps_challenges "
+                "(game_id,player_a,player_b,amount,status,created_at,updated_at,channel_id) "
+                "VALUES (?,?,?,?,'pending',?,?,?)",
+                (game_id, a, b, amount, timestamp, timestamp, channel_id),
+            )
+            c.commit()
+            return True
+        except Exception:
+            c.rollback()
+            raise
+
+
+def set_rps_challenge_message_reference(game_id, channel_id, message_id):
+    """Persist the challenge panel for clean shutdown/restart behavior."""
+    game_id = str(game_id).strip()
+    if not game_id:
+        return False
+    for field_name, field_value in (("channel_id", channel_id), ("message_id", message_id)):
+        if (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, int)
+            or not 0 < field_value <= SQLITE_MAX_INT
+        ):
+            raise ValueError(f"{field_name} must be a positive integer")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            changed = c.execute(
+                "UPDATE rps_challenges SET channel_id=?,message_id=?,updated_at=? "
+                "WHERE game_id=? AND status IN ('pending','accepted')",
+                (channel_id, message_id, now(), game_id),
+            ).rowcount
+            if changed == 1:
+                # If acceptance raced with the command's message-reference write,
+                # update the escrow record too so startup can always close it.
+                c.execute(
+                    "UPDATE rps_wagers SET channel_id=?,message_id=? "
+                    "WHERE game_id=? AND status='active'",
+                    (channel_id, message_id, game_id),
+                )
+            c.commit()
+            return changed == 1
+        except Exception:
+            c.rollback()
+            raise
+
+
+def rps_challenge_status(game_id):
+    """Read the durable invite state without touching player balances."""
+    with _lock:
+        row = _connect().execute(
+            "SELECT game_id,player_a,player_b,amount,status,outcome,channel_id,message_id "
+            "FROM rps_challenges WHERE game_id=?",
+            (str(game_id),),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+
+def accept_rps_challenge(game_id, user_id):
+    """Atomically accept an invitation for its invited opponent and escrow both stakes."""
+    game_id, uid = str(game_id).strip(), str(user_id).strip()
+    if not game_id or not uid:
+        return {"accepted": False, "reason": "not_found"}
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            challenge = c.execute(
+                "SELECT player_a,player_b,amount,status,channel_id,message_id "
+                "FROM rps_challenges WHERE game_id=?",
+                (game_id,),
+            ).fetchone()
+            if challenge is None:
+                c.rollback()
+                return {"accepted": False, "reason": "not_found"}
+            if uid != str(challenge["player_b"]):
+                c.rollback()
+                return {"accepted": False, "reason": "not_authorized"}
+            status = str(challenge["status"])
+            if status == "accepted":
+                c.rollback()
+                return {"accepted": True, "already_accepted": True, "status": status}
+            if status != "pending":
+                c.rollback()
+                return {"accepted": False, "reason": status}
+
+            a, b = str(challenge["player_a"]), str(challenge["player_b"])
+            amount = int(challenge["amount"])
+            if c.execute("SELECT 1 FROM rps_wagers WHERE game_id=?", (game_id,)).fetchone():
+                c.execute(
+                    "UPDATE rps_challenges SET status='cancelled',outcome='duplicate_wager',updated_at=? "
+                    "WHERE game_id=? AND status='pending'",
+                    (now(), game_id),
+                )
+                c.commit()
+                return {"accepted": False, "reason": "duplicate_wager"}
+
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (a,))
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (b,))
+            row_a = c.execute("SELECT balance FROM users WHERE user_id=?", (a,)).fetchone()
+            row_b = c.execute("SELECT balance FROM users WHERE user_id=?", (b,)).fetchone()
+            balance_a = int(row_a["balance"]) if row_a else 0
+            balance_b = int(row_b["balance"]) if row_b else 0
+            if balance_a < amount or balance_b < amount:
+                c.execute(
+                    "UPDATE rps_challenges SET status='cancelled',outcome='insufficient_funds',updated_at=? "
+                    "WHERE game_id=? AND status='pending'",
+                    (now(), game_id),
+                )
+                c.commit()
+                return {
+                    "accepted": False,
+                    "reason": "insufficient_funds",
+                    "player_a_balance": balance_a,
+                    "player_b_balance": balance_b,
+                    "amount": amount,
+                }
+
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
+            c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
+            transaction_id = uuid.uuid4().hex
+            _record_ledger(
+                c,
+                event_type="rps_wager_stake",
+                user_id=a,
+                delta=-amount,
+                balance_after=balance_a - amount,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={"counterparty": b, "stake": amount},
+            )
+            _record_ledger(
+                c,
+                event_type="rps_wager_stake",
+                user_id=b,
+                delta=-amount,
+                balance_after=balance_b - amount,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={"counterparty": a, "stake": amount},
+            )
+            c.execute(
+                "INSERT INTO rps_wagers "
+                "(game_id,player_a,player_b,amount,status,created_at,channel_id,message_id) "
+                "VALUES (?,?,?,?,'active',?,?,?)",
+                (
+                    game_id,
+                    a,
+                    b,
+                    amount,
+                    now(),
+                    challenge["channel_id"],
+                    challenge["message_id"],
+                ),
+            )
+            c.execute(
+                "UPDATE rps_challenges SET status='accepted',outcome=NULL,updated_at=? "
+                "WHERE game_id=? AND status='pending'",
+                (now(), game_id),
+            )
+            c.commit()
+            return {
+                "accepted": True,
+                "already_accepted": False,
+                "status": "accepted",
+                "amount": amount,
+                "player_a_balance": balance_a - amount,
+                "player_b_balance": balance_b - amount,
+            }
+        except Exception:
+            c.rollback()
+            raise
+
+
+def decline_rps_challenge(game_id, user_id):
+    """Decline a pending challenge only when called by its invited opponent."""
+    return _close_rps_challenge(game_id, user_id, allowed_role="opponent", outcome="declined")
+
+
+def cancel_rps_challenge(game_id, user_id):
+    """Cancel an unaccepted challenge only when called by its original challenger."""
+    return _close_rps_challenge(game_id, user_id, allowed_role="challenger", outcome="cancelled")
+
+
+def _close_rps_challenge(game_id, user_id, *, allowed_role, outcome):
+    game_id, uid = str(game_id).strip(), str(user_id).strip()
+    if not game_id or not uid:
+        return {"closed": False, "reason": "not_found"}
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            challenge = c.execute(
+                "SELECT player_a,player_b,status FROM rps_challenges WHERE game_id=?",
+                (game_id,),
+            ).fetchone()
+            if challenge is None:
+                c.rollback()
+                return {"closed": False, "reason": "not_found"}
+            allowed_user = str(challenge["player_b"] if allowed_role == "opponent" else challenge["player_a"])
+            if uid != allowed_user:
+                c.rollback()
+                return {"closed": False, "reason": "not_authorized"}
+            if str(challenge["status"]) != "pending":
+                c.rollback()
+                return {"closed": False, "reason": str(challenge["status"])}
+            c.execute(
+                "UPDATE rps_challenges SET status=?,outcome=?,updated_at=? "
+                "WHERE game_id=? AND status='pending'",
+                (outcome, outcome, now(), game_id),
+            )
+            c.commit()
+            return {"closed": True, "reason": None, "status": outcome}
+        except Exception:
+            c.rollback()
+            raise
+
+
+def expire_rps_challenge(game_id):
+    """Expire a pending invite; it never transfers or refunds coins because none were reserved."""
+    game_id = str(game_id).strip()
+    if not game_id:
+        return False
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            changed = c.execute(
+                "UPDATE rps_challenges SET status='expired',outcome='timeout',updated_at=? "
+                "WHERE game_id=? AND status='pending'",
+                (now(), game_id),
+            ).rowcount
+            c.commit()
+            return changed == 1
+        except Exception:
+            c.rollback()
+            raise
+
+
+def expire_pending_rps_challenges():
+    """Close every pre-acceptance invite at startup and return panels needing cleanup."""
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            rows = c.execute(
+                "SELECT game_id,player_a,player_b,amount,channel_id,message_id "
+                "FROM rps_challenges WHERE status='pending' ORDER BY created_at"
+            ).fetchall()
+            records = [dict(row) for row in rows]
+            timestamp = now()
+            c.execute(
+                "UPDATE rps_challenges SET status='expired',outcome='restart',updated_at=? "
+                "WHERE status='pending'",
+                (timestamp,),
+            )
+            c.commit()
+            return records
+        except Exception:
+            c.rollback()
+            raise
 
 
 def create_rps_wager(game_id, player_a, player_b, amount):
@@ -795,6 +1142,644 @@ def active_rps_wager_ids():
         return [str(row["game_id"]) for row in rows]
 
 
+
+def create_casino_wager(
+    game_id,
+    user_id,
+    game_type,
+    amount,
+    choice,
+    result,
+    won,
+    win_payout,
+    *,
+    channel_id=None,
+    message_id=None,
+):
+    """Atomically debit one player's stake and persist the complete game outcome."""
+    game_id = str(game_id).strip()
+    uid = str(user_id).strip()
+    game_type = str(game_type).strip()
+    choice = str(choice).strip()
+    result = str(result).strip()
+    if not game_id or not uid or not game_type or not choice or not result:
+        raise ValueError("casino wager identifiers and outcome fields are required")
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
+        raise ValueError("casino wager stake must be a positive SQLite-safe integer")
+    if not isinstance(won, bool):
+        raise TypeError("casino wager won flag must be a boolean")
+    if (
+        isinstance(win_payout, bool)
+        or not isinstance(win_payout, int)
+        or not 0 <= win_payout <= SQLITE_MAX_INT
+    ):
+        raise ValueError("casino wager payout must be a non-negative SQLite-safe integer")
+    if won and win_payout < amount:
+        raise ValueError("winning casino wager gross payout cannot be smaller than its stake")
+    if not won and win_payout != 0:
+        raise ValueError("losing casino wagers cannot carry a payout")
+    for field_name, field_value in (("channel_id", channel_id), ("message_id", message_id)):
+        if field_value is not None and (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, int)
+            or not 0 < field_value <= SQLITE_MAX_INT
+        ):
+            raise ValueError(f"{field_name} must be a positive integer when provided")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            if c.execute("SELECT 1 FROM casino_wagers WHERE game_id=?", (game_id,)).fetchone():
+                c.rollback()
+                return {"created": False, "reason": "duplicate_game"}
+
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            balance = int(row["balance"]) if row is not None else 0
+            if balance < amount:
+                c.rollback()
+                return {"created": False, "reason": "insufficient_funds", "balance": balance}
+
+            balance_after = balance - amount
+            c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
+            transaction_id = uuid.uuid4().hex
+            _record_ledger(
+                c,
+                event_type="casino_wager_stake",
+                user_id=uid,
+                delta=-amount,
+                balance_after=balance_after,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={
+                    "game_type": game_type,
+                    "stake": amount,
+                    "choice": choice,
+                    "result": result,
+                    "won": won,
+                    "win_payout": win_payout,
+                },
+            )
+            c.execute(
+                "INSERT INTO casino_wagers "
+                "(game_id,user_id,game_type,stake,choice,result,won,win_payout,"
+                "status,outcome,payout,created_at,channel_id,message_id) "
+                "VALUES (?,?,?,?,?,?,?,?,'active',NULL,0,?,?,?)",
+                (
+                    game_id,
+                    uid,
+                    game_type,
+                    amount,
+                    choice,
+                    result,
+                    int(won),
+                    win_payout,
+                    now(),
+                    channel_id,
+                    message_id,
+                ),
+            )
+            c.commit()
+            return {"created": True, "balance_after": balance_after}
+        except Exception:
+            c.rollback()
+            raise
+
+
+
+def play_casino_wager(
+    game_id,
+    user_id,
+    game_type,
+    amount,
+    choice,
+    result,
+    won,
+    win_payout,
+    *,
+    channel_id=None,
+    message_id=None,
+):
+    """Create and settle a single-step wager in one transaction.
+
+    Unlike create_casino_wager(), this API never commits an active wager. The
+    stake, final outcome, balance receipt, wager row, and ledger entries either
+    commit together or do not happen. Multi-step games such as Blackjack should
+    continue to use create_casino_wager() followed by settle_casino_wager().
+    """
+    game_id = str(game_id).strip()
+    uid = str(user_id).strip()
+    game_type = str(game_type).strip()
+    choice = str(choice).strip()
+    result = str(result).strip()
+    if not game_id or not uid or not game_type or not choice or not result:
+        raise ValueError("casino wager identifiers and outcome fields are required")
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
+        raise ValueError("casino wager stake must be a positive SQLite-safe integer")
+    if not isinstance(won, bool):
+        raise TypeError("casino wager won flag must be a boolean")
+    if (
+        isinstance(win_payout, bool)
+        or not isinstance(win_payout, int)
+        or not 0 <= win_payout <= SQLITE_MAX_INT
+    ):
+        raise ValueError("casino wager payout must be a non-negative SQLite-safe integer")
+    if won and win_payout < amount:
+        raise ValueError("winning casino wager gross payout cannot be smaller than its stake")
+    if not won and win_payout != 0:
+        raise ValueError("losing casino wagers cannot carry a payout")
+    for field_name, field_value in (("channel_id", channel_id), ("message_id", message_id)):
+        if field_value is not None and (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, int)
+            or not 0 < field_value <= SQLITE_MAX_INT
+        ):
+            raise ValueError(f"{field_name} must be a positive integer when provided")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            if c.execute(
+                "SELECT 1 FROM casino_wagers WHERE game_id=?", (game_id,)
+            ).fetchone():
+                c.rollback()
+                return {"created": False, "reason": "duplicate_game"}
+
+            c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (uid,))
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            balance = int(row["balance"]) if row is not None else 0
+            if balance < amount:
+                c.rollback()
+                return {
+                    "created": False,
+                    "reason": "insufficient_funds",
+                    "balance": balance,
+                }
+
+            balance_after_stake = balance - amount
+            transaction_id = uuid.uuid4().hex
+            c.execute(
+                "UPDATE users SET balance=? WHERE user_id=?",
+                (balance_after_stake, uid),
+            )
+            _record_ledger(
+                c,
+                event_type="casino_wager_stake",
+                user_id=uid,
+                delta=-amount,
+                balance_after=balance_after_stake,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={
+                    "game_type": game_type,
+                    "stake": amount,
+                    "choice": choice,
+                    "result": result,
+                    "won": won,
+                    "win_payout": win_payout,
+                    "settlement_mode": "atomic",
+                },
+            )
+
+            reason = None
+            if won and balance_after_stake > SQLITE_MAX_INT - win_payout:
+                # Do not partially settle a winning round when the wallet is full.
+                balance_after = balance
+                c.execute(
+                    "UPDATE users SET balance=? WHERE user_id=?",
+                    (balance_after, uid),
+                )
+                _record_ledger(
+                    c,
+                    event_type="casino_wager_refund",
+                    user_id=uid,
+                    delta=amount,
+                    balance_after=balance_after,
+                    transaction_id=transaction_id,
+                    reference=game_id,
+                    metadata={
+                        "game_type": game_type,
+                        "stake": amount,
+                        "reason": "payout_balance_limit",
+                    },
+                )
+                status, outcome, payout = "refunded", "balance_limit", 0
+                reason = "balance_limit"
+            elif won:
+                payout = win_payout
+                balance_after = balance_after_stake + payout
+                c.execute(
+                    "UPDATE users SET balance=? WHERE user_id=?",
+                    (balance_after, uid),
+                )
+                _record_ledger(
+                    c,
+                    event_type="casino_wager_payout",
+                    user_id=uid,
+                    delta=payout,
+                    balance_after=balance_after,
+                    transaction_id=transaction_id,
+                    reference=game_id,
+                    metadata={
+                        "game_type": game_type,
+                        "stake": amount,
+                        "gross_payout": payout,
+                        "net_profit": payout - amount,
+                        "settlement_mode": "atomic",
+                    },
+                )
+                status, outcome = "settled", "win"
+            else:
+                payout = 0
+                balance_after = balance_after_stake
+                _record_ledger(
+                    c,
+                    event_type="casino_wager_loss",
+                    user_id=uid,
+                    delta=0,
+                    balance_after=balance_after,
+                    transaction_id=transaction_id,
+                    reference=game_id,
+                    metadata={
+                        "game_type": game_type,
+                        "stake": amount,
+                        "settlement_mode": "atomic",
+                    },
+                )
+                status, outcome = "settled", "loss"
+
+            timestamp = now()
+            c.execute(
+                "INSERT INTO casino_wagers "
+                "(game_id,user_id,game_type,stake,choice,result,won,win_payout,"
+                "status,outcome,payout,created_at,settled_at,channel_id,message_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    game_id,
+                    uid,
+                    game_type,
+                    amount,
+                    choice,
+                    result,
+                    int(won),
+                    win_payout,
+                    status,
+                    outcome,
+                    payout,
+                    timestamp,
+                    timestamp,
+                    channel_id,
+                    message_id,
+                ),
+            )
+            c.commit()
+            return {
+                "created": True,
+                "settled": True,
+                "already_settled": False,
+                "status": status,
+                "outcome": outcome,
+                "reason": reason,
+                "game_id": game_id,
+                "user_id": uid,
+                "game_type": game_type,
+                "stake": amount,
+                "choice": choice,
+                "result": result,
+                "won": won,
+                "payout": payout,
+                "balance_after": balance_after,
+            }
+        except Exception:
+            c.rollback()
+            raise
+
+
+def settle_casino_wager(
+    game_id,
+    *,
+    force_refund=False,
+    final_result=None,
+    final_won=None,
+    final_payout=None,
+    final_outcome=None,
+):
+    """Settle a persisted wager once; optionally commit a multi-step game's final result."""
+    game_id = str(game_id)
+    if not game_id:
+        return {"settled": False, "reason": "not_found"}
+    if not isinstance(force_refund, bool):
+        raise TypeError("force_refund must be a boolean")
+
+    final_fields = (final_result, final_won, final_payout)
+    has_final_fields = any(value is not None for value in final_fields)
+    if has_final_fields and not all(value is not None for value in final_fields):
+        raise ValueError("final_result, final_won, and final_payout must be provided together")
+    if not has_final_fields and final_outcome is not None:
+        raise ValueError("final_outcome requires final settlement fields")
+    if has_final_fields:
+        if not isinstance(final_result, str) or not final_result.strip():
+            raise ValueError("final result must be a non-empty string")
+        if not isinstance(final_won, bool):
+            raise TypeError("final won flag must be a boolean")
+        if (
+            isinstance(final_payout, bool)
+            or not isinstance(final_payout, int)
+            or not 0 <= final_payout <= SQLITE_MAX_INT
+        ):
+            raise ValueError("final payout must be a non-negative SQLite-safe integer")
+        if final_won and final_payout <= 0:
+            raise ValueError("a winning final result must have a positive gross payout")
+        if not final_won and final_payout != 0:
+            raise ValueError("a losing or push result must not carry a win payout")
+        if final_outcome not in (None, "win", "loss", "push"):
+            raise ValueError("unsupported final outcome")
+        if final_outcome == "win" and not final_won:
+            raise ValueError("win outcome requires final_won=True")
+        if final_outcome in ("loss", "push") and final_won:
+            raise ValueError("loss/push outcome requires final_won=False")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            wager = c.execute(
+                "SELECT game_id,user_id,game_type,stake,choice,result,won,win_payout,"
+                "status,outcome,payout FROM casino_wagers WHERE game_id=?",
+                (game_id,),
+            ).fetchone()
+            if wager is None:
+                c.rollback()
+                return {"settled": False, "reason": "not_found"}
+
+            def receipt(
+                *,
+                settled,
+                already_settled,
+                status,
+                outcome,
+                payout,
+                reason=None,
+                balance_after=None,
+                result=None,
+                won=None,
+            ):
+                return {
+                    "settled": settled,
+                    "already_settled": already_settled,
+                    "status": status,
+                    "outcome": outcome,
+                    "reason": reason,
+                    "game_id": str(wager["game_id"]),
+                    "user_id": str(wager["user_id"]),
+                    "game_type": str(wager["game_type"]),
+                    "stake": int(wager["stake"]),
+                    "choice": str(wager["choice"]),
+                    "result": str(wager["result"]) if result is None else result,
+                    "won": bool(wager["won"]) if won is None else won,
+                    "payout": int(payout),
+                    "balance_after": balance_after,
+                }
+
+            if wager["status"] != "active":
+                status = str(wager["status"])
+                outcome = str(wager["outcome"] or "")
+                payout = int(wager["payout"] or 0)
+                row = c.execute(
+                    "SELECT balance FROM users WHERE user_id=?",
+                    (str(wager["user_id"]),),
+                ).fetchone()
+                balance_after = int(row["balance"]) if row is not None else None
+                c.rollback()
+                return receipt(
+                    settled=True,
+                    already_settled=True,
+                    status=status,
+                    outcome=outcome,
+                    payout=payout,
+                    reason="balance_limit" if outcome == "balance_limit" else None,
+                    balance_after=balance_after,
+                )
+
+            uid = str(wager["user_id"])
+            stake = int(wager["stake"])
+            won = bool(wager["won"]) if not has_final_fields else final_won
+            win_payout = int(wager["win_payout"]) if not has_final_fields else final_payout
+            result_text = str(wager["result"]) if not has_final_fields else final_result.strip()
+            selected_outcome = final_outcome or ("win" if won else "loss")
+            if won and win_payout < stake:
+                c.rollback()
+                raise ValueError("gross payout cannot be smaller than the original stake")
+
+            row = c.execute("SELECT balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            if row is None:
+                c.rollback()
+                return {"settled": False, "reason": "wallet_missing"}
+            balance = int(row["balance"])
+            transaction_id = uuid.uuid4().hex
+
+            if force_refund:
+                if balance > SQLITE_MAX_INT - stake:
+                    c.rollback()
+                    return {"settled": False, "reason": "balance_limit"}
+                balance_after = balance + stake
+                c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
+                _record_ledger(
+                    c, event_type="casino_wager_refund", user_id=uid, delta=stake,
+                    balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
+                    metadata={"game_type": str(wager["game_type"]), "stake": stake, "reason": "interrupted"},
+                )
+                status, outcome, payout = "refunded", "refund", 0
+            elif selected_outcome == "push":
+                if balance > SQLITE_MAX_INT - stake:
+                    c.rollback()
+                    return {"settled": False, "reason": "balance_limit"}
+                balance_after = balance + stake
+                c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
+                _record_ledger(
+                    c, event_type="casino_wager_push", user_id=uid, delta=stake,
+                    balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
+                    metadata={"game_type": str(wager["game_type"]), "stake": stake, "gross_return": stake},
+                )
+                status, outcome, payout = "settled", "push", stake
+            elif won:
+                if balance <= SQLITE_MAX_INT - win_payout:
+                    balance_after = balance + win_payout
+                    c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
+                    _record_ledger(
+                        c, event_type="casino_wager_payout", user_id=uid, delta=win_payout,
+                        balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
+                        metadata={
+                            "game_type": str(wager["game_type"]),
+                            "stake": stake,
+                            "gross_payout": win_payout,
+                            "net_profit": win_payout - stake,
+                        },
+                    )
+                    status, outcome, payout = "settled", "win", win_payout
+                else:
+                    if balance > SQLITE_MAX_INT - stake:
+                        c.rollback()
+                        return {"settled": False, "reason": "balance_limit"}
+                    balance_after = balance + stake
+                    c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
+                    _record_ledger(
+                        c, event_type="casino_wager_refund", user_id=uid, delta=stake,
+                        balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
+                        metadata={"game_type": str(wager["game_type"]), "stake": stake, "reason": "payout_balance_limit"},
+                    )
+                    status, outcome, payout = "refunded", "balance_limit", 0
+            else:
+                balance_after = balance
+                _record_ledger(
+                    c, event_type="casino_wager_loss", user_id=uid, delta=0,
+                    balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
+                    metadata={"game_type": str(wager["game_type"]), "stake": stake},
+                )
+                status, outcome, payout = "settled", "loss", 0
+
+            c.execute(
+                "UPDATE casino_wagers SET result=?,won=?,win_payout=?,status=?,outcome=?,"
+                "payout=?,settled_at=? WHERE game_id=? AND status='active'",
+                (
+                    result_text,
+                    int(won),
+                    win_payout,
+                    status,
+                    outcome,
+                    payout,
+                    now(),
+                    game_id,
+                ),
+            )
+            c.commit()
+            return receipt(
+                settled=True,
+                already_settled=False,
+                status=status,
+                outcome=outcome,
+                payout=payout,
+                reason="balance_limit" if outcome == "balance_limit" else None,
+                balance_after=balance_after,
+                result=result_text,
+                won=won,
+            )
+        except Exception:
+            c.rollback()
+            raise
+
+def refund_orphaned_casino_wagers():
+    """Refund unfinished solo wagers during startup/recovery without blocking other records."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id FROM casino_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        game_ids = [str(row["game_id"]) for row in rows]
+
+    refunded = 0
+    pending = 0
+    for game_id in game_ids:
+        try:
+            result = settle_casino_wager(game_id, force_refund=True)
+        except Exception:
+            pending += 1
+            logger.exception("Could not refund interrupted casino wager game_id=%s; escrow remains recorded", game_id)
+            continue
+        if not result.get("settled"):
+            pending += 1
+            logger.error("Interrupted casino wager remains active game_id=%s reason=%s", game_id, result.get("reason", "unknown"))
+        elif result.get("status") == "refunded":
+            refunded += 1
+
+    if pending:
+        logger.error("%s interrupted solo casino wager(s) remain active and require retry or operator reconciliation", pending)
+    return refunded
+
+
+def active_casino_wager_ids():
+    """Return active casino wager IDs in stable order for recovery."""
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id FROM casino_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        return [str(row["game_id"]) for row in rows]
+
+
+def active_casino_wager_records():
+    """Return durable panel references for wagers that may need startup recovery."""
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id,user_id,game_type,stake,channel_id,message_id "
+            "FROM casino_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def casino_wager_status(game_id):
+    """Return the durable status and outcome needed to verify a recovery receipt."""
+    with _lock:
+        row = _connect().execute(
+            "SELECT status,outcome,stake,game_type FROM casino_wagers WHERE game_id=?",
+            (str(game_id),),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+
+def set_rps_wager_message_reference(game_id, channel_id, message_id):
+    """Attach the public challenge panel IDs to an active wager for restart cleanup."""
+    game_id = str(game_id).strip()
+    if not game_id:
+        return False
+    for field_name, field_value in (("channel_id", channel_id), ("message_id", message_id)):
+        if (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, int)
+            or not 0 < field_value <= SQLITE_MAX_INT
+        ):
+            raise ValueError(f"{field_name} must be a positive integer")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            changed = c.execute(
+                "UPDATE rps_wagers SET channel_id=?,message_id=? "
+                "WHERE game_id=? AND status='active'",
+                (channel_id, message_id, game_id),
+            ).rowcount
+            c.commit()
+            return changed == 1
+        except Exception:
+            c.rollback()
+            raise
+
+
+def active_rps_wager_records():
+    """Return active escrow and Discord panel references before startup refund."""
+    with _lock:
+        rows = _connect().execute(
+            "SELECT game_id,player_a,player_b,amount,channel_id,message_id "
+            "FROM rps_wagers WHERE status='active' ORDER BY created_at"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def rps_wager_status(game_id):
+    """Read a durable RPS receipt for recovery decisions without changing balances."""
+    with _lock:
+        row = _connect().execute(
+            "SELECT game_id,player_a,player_b,amount,status,outcome,channel_id,message_id "
+            "FROM rps_wagers WHERE game_id=?",
+            (str(game_id),),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+
 def charge_up_to(user_id, amount):
     """Charge at most the available integer balance; return (charged, new_balance)."""
     uid = str(user_id)
@@ -994,17 +1979,24 @@ def backup_database(destination):
 
 
 def reset_all():
-    """Reset wallets only when no persisted RPS wager needs those wallet rows."""
+    """Reset wallets only when no persisted wager depends on their balances."""
     with _lock:
         c = _connect()
         try:
             c.execute("BEGIN IMMEDIATE")
-            active_wager = c.execute(
+            active_rps_wager = c.execute(
                 "SELECT game_id FROM rps_wagers WHERE status='active' LIMIT 1"
             ).fetchone()
-            if active_wager is not None:
+            if active_rps_wager is not None:
                 raise RuntimeError(
                     "cannot reset the economy while active RPS wagers exist"
+                )
+            active_casino_wager = c.execute(
+                "SELECT game_id FROM casino_wagers WHERE status='active' LIMIT 1"
+            ).fetchone()
+            if active_casino_wager is not None:
+                raise RuntimeError(
+                    "cannot reset the economy while active casino wagers exist"
                 )
             transaction_id = uuid.uuid4().hex
             for row in c.execute("SELECT user_id,balance FROM users").fetchall():

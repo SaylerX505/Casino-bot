@@ -10,17 +10,11 @@ import io
 import random
 import config
 
-from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, private_status, report_game_failure, result_embed, send_status, try_edit_view
 
 
 logger = logging.getLogger(__name__)
 
-
-class WatermarkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
 
@@ -202,18 +196,21 @@ class SeekerView(LayoutView):
 
 
 class LobbyView(LayoutView):
+    MAX_TIME_EXTENSIONS = 3
+
     def __init__(self, ctx):
         super().__init__(timeout=120)
         self.ctx = ctx
         self.players = []
         self.game_started = False
         self.time_left = 30
+        self.extensions_left = self.MAX_TIME_EXTENSIONS
         self.message = None
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
             ("استخبى (Join)", "hide_seek_join", "join_btn", None),
-            ("مغادرة (Leave)", "hide_seek_leave", "leave_btn", None),
+            ("مغادرة", "hide_seek_leave", "leave_btn", None),
             ("ابدأ الآن", "hide_seek_start", "start_btn", None),
             ("+10 ثواني", "hide_seek_add_time", "add_time_btn", "⏱️"),
         ):
@@ -237,29 +234,39 @@ class LobbyView(LayoutView):
             self.players,
             self.time_left,
             max_players=25,
+            host=self.ctx.author,
+            min_players=2,
         )
         embed.color = discord.Color.dark_gray()
         embed.set_thumbnail(url=SERVER_LOGO_URL)
         return embed
 
+    def _sync_extension_control(self):
+        exhausted = self.game_started or self.extensions_left <= 0
+        for button in self._buttons:
+            if button.custom_id == "hide_seek_add_time":
+                button.disabled = exhausted
+
     def _panel_content(self):
         embed = self.get_embed()
         title = f"# {embed.title}\n" if embed.title else ""
         description = f"{embed.description or ''}\n\n"
-        return (title + description + f"-# كازينو الحفرة • {config.BRAND}")[:4000]
+        return (
+            title + description
+            + f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            + f"-# كازينو الحفرة • {config.BRAND}"
+        )[:4000]
 
     def _refresh_panel(self):
         self._panel_text.content = self._panel_content()
+        self._sync_extension_control()
 
     def _disable_buttons(self):
         for button in self._buttons:
             button.disabled = True
 
     async def _private_notice(self, interaction, title, description):
-        await interaction.response.send_message(
-            view=StatusPanel(title, description, "warning"),
-            ephemeral=True,
-        )
+        return await private_status(interaction, title, description, "warning")
 
     async def run_timer(self):
         while self.time_left > 0 and not self.game_started:
@@ -284,13 +291,13 @@ class LobbyView(LayoutView):
             )
             self._panel_text.content = "# تم إلغاء اللوبي\nمحتاجين لاعبين على الأقل لبدء الغميضة."
             self._disable_buttons()
-            if self.message: await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="hide_seek_lobby_cancelled")
             return
 
         self.game_started = True
         self._panel_text.content = "# جاري بدء الغميضة\nاللوبي اتقفل. جهّز نفسك."
         self._disable_buttons()
-        if self.message: await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="hide_seek_lobby_start")
         
         task = self.ctx.bot.loop.create_task(run_game_loop(self.ctx, self.players))
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "HideAndSeek", replace_task=self.timer_task):
@@ -299,19 +306,19 @@ class LobbyView(LayoutView):
     async def join_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
-                description="اللعبة بدأت خلاص!",
+                description="اللعبة بدأت بالفعل. لا يمكن الانضمام بعد إغلاق التسجيل.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if len(self.players) >= 25:
             embed = discord.Embed(
-                description="الخريطة اتملت (25 لاعب)!",
+                description="اكتمل اللوبي؛ الحد الأقصى 25 لاعب.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             embed = discord.Embed(
-                description="أنت مسجل اسمك!",
+                description="أنت مسجل بالفعل في اللوبي.",
                 color=discord.Color.red()
             )
             await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
@@ -333,7 +340,7 @@ class LobbyView(LayoutView):
             await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
-                description="أنت مش في اللعبة!",
+                description="أنت مش مسجل في اللوبي، فلازم تنضم الأول قبل المغادرة.",
                 color=discord.Color.red()
             )
             await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
@@ -341,7 +348,7 @@ class LobbyView(LayoutView):
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="للأدمن فقط!",
+                description="صاحب اللوبي فقط يقدر يتحكم في بدء الجولة.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
@@ -352,10 +359,23 @@ class LobbyView(LayoutView):
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="للأدمن فقط!",
+                description="صاحب اللوبي فقط يقدر يتحكم في بدء الجولة.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
+        if self.game_started:
+            return await self._private_notice(
+                interaction,
+                "اللوبي اتقفل",
+                "اللعبة بدأت بالفعل؛ مفيش تمديدات بعد إغلاق التسجيل.",
+            )
+        if self.extensions_left <= 0:
+            return await self._private_notice(
+                interaction,
+                "وصلنا للحد الأقصى",
+                "استخدمت كل تمديدات الوقت المتاحة. ابدأ الجولة أو استنى العدّ التنازلي.",
+            )
+        self.extensions_left -= 1
         self.time_left += 10
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
@@ -538,25 +558,50 @@ class HideAndSeek(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='غميضه', description='بدء لعبة الغميضة')
-    @is_staff_or_admin()
     async def start_hide_seek(self, ctx):
         """يبدأ لعبة الغميضة في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         view = LobbyView(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "HideAndSeek lobby", view=view):
             view.timer_task.cancel()
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         try:
             view.message = await ctx.send(view=view)
-        except Exception as e:
+        except Exception:
             release_game_task(self.bot, ctx.channel.id, view.timer_task)
             view.timer_task.cancel()
-            embed = discord.Embed(
-                description=f"⚠️ حدث خطأ: {e}",
-                color=discord.Color.red()
+            logger.exception(
+                "Could not create hide-and-seek lobby requester_id=%s channel_id=%s",
+                ctx.author.id,
+                ctx.channel.id,
             )
-            await ctx.send(view=embed_to_v2(embed))
+            send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+            try:
+                await ctx.send(
+                    view=StatusPanel(
+                        "تعذر فتح لوبي الغميضة",
+                        "حصل عطل أثناء تجهيز واجهة اللعبة. سجلنا التفاصيل؛ جرّب تاني بعد شوية.",
+                        "warning",
+                    ),
+                    **send_kwargs,
+                )
+            except (discord.HTTPException, discord.InteractionResponded):
+                logger.exception(
+                    "Could not send hide-and-seek startup error panel requester_id=%s channel_id=%s",
+                    ctx.author.id,
+                    ctx.channel.id,
+                )
             return
         if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
             view._disable_buttons()

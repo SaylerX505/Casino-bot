@@ -1,9 +1,21 @@
-discord.py==2.7.1
+# Complete pinned manifest for hosts that install requirements.txt.
+# Keep this list identical to requirements.lock; CI enforces the match.
+aiohappyeyeballs==2.7.1
 aiohttp==3.14.5
-Pillow==13.0.0
-yt-dlp==2026.10.21
-nest_asyncio==1.6.0
-geopy==2.5.0
+aiosignal==1.4.0
 arabic-reshaper==3.0.1
+attrs==26.1.0
+discord.py==2.7.1
+frozenlist==1.8.0
+geographiclib==2.1
+geopy==2.5.0
+idna==3.20
+multidict==7.1.0
+nest_asyncio==1.6.0
+Pillow==13.0.0
+propcache==0.5.4
 python-bidi==0.6.12
 python-dotenv==1.2.4
+typing_extensions==4.16.0
+yarl==1.25.1
+yt-dlp==2026.10.21

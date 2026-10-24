@@ -27,6 +27,150 @@ class RPSWagerTests(unittest.TestCase):
         bank.DB_FILE = self.previous_db_file
         self.temp_dir.cleanup()
 
+    def test_rps_panel_reference_and_status_persist_for_startup_recovery(self):
+        self.assertTrue(bank.create_rps_wager("match-panel-ref", 101, 202, 100))
+        self.assertTrue(bank.set_rps_wager_message_reference("match-panel-ref", 303, 404))
+        records = bank.active_rps_wager_records()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["game_id"], "match-panel-ref")
+        self.assertEqual(records[0]["player_a"], "101")
+        self.assertEqual(records[0]["player_b"], "202")
+        self.assertEqual(records[0]["amount"], 100)
+        self.assertEqual(records[0]["channel_id"], 303)
+        self.assertEqual(records[0]["message_id"], 404)
+        self.assertEqual(
+            bank.rps_wager_status("match-panel-ref"),
+            {
+                "game_id": "match-panel-ref",
+                "player_a": "101",
+                "player_b": "202",
+                "amount": 100,
+                "status": "active",
+                "outcome": None,
+                "channel_id": 303,
+                "message_id": 404,
+            },
+        )
+        self.assertFalse(bank.set_rps_wager_message_reference("missing-game", 303, 404))
+        with self.assertRaises(ValueError):
+            bank.set_rps_wager_message_reference("match-panel-ref", True, 404)
+
+    def test_challenge_is_not_escrowed_until_the_opponent_accepts(self):
+        self.assertTrue(
+            bank.create_rps_challenge(
+                "challenge-accept", 101, 202, 100, channel_id=303
+            )
+        )
+        self.assertEqual(bank.get_balance(101), 1_000)
+        self.assertEqual(bank.get_balance(202), 1_000)
+        self.assertEqual(bank.rps_challenge_status("challenge-accept")["status"], "pending")
+        self.assertIsNone(bank.rps_wager_status("challenge-accept"))
+
+        unauthorized = bank.accept_rps_challenge("challenge-accept", 101)
+        self.assertFalse(unauthorized["accepted"])
+        self.assertEqual(unauthorized["reason"], "not_authorized")
+        self.assertEqual(bank.get_balance(101), 1_000)
+        self.assertEqual(bank.get_balance(202), 1_000)
+
+        receipt = bank.accept_rps_challenge("challenge-accept", 202)
+        self.assertTrue(receipt["accepted"])
+        self.assertFalse(receipt["already_accepted"])
+        self.assertEqual(receipt["status"], "accepted")
+        self.assertEqual(bank.get_balance(101), 900)
+        self.assertEqual(bank.get_balance(202), 900)
+        wager = bank.rps_wager_status("challenge-accept")
+        self.assertEqual(wager["status"], "active")
+        self.assertEqual(wager["channel_id"], 303)
+
+        repeated = bank.accept_rps_challenge("challenge-accept", 202)
+        self.assertTrue(repeated["accepted"])
+        self.assertTrue(repeated["already_accepted"])
+        self.assertEqual(bank.get_balance(101), 900)
+        self.assertEqual(bank.get_balance(202), 900)
+        stake_entries = bank.get_economy_ledger(
+            event_type="rps_wager_stake", reference="challenge-accept"
+        )
+        self.assertEqual(len(stake_entries), 2)
+
+    def test_decline_closes_invite_without_touching_balances(self):
+        self.assertTrue(bank.create_rps_challenge("challenge-decline", 101, 202, 100))
+        unauthorized = bank.decline_rps_challenge("challenge-decline", 101)
+        self.assertFalse(unauthorized["closed"])
+        self.assertEqual(unauthorized["reason"], "not_authorized")
+
+        receipt = bank.decline_rps_challenge("challenge-decline", 202)
+        self.assertTrue(receipt["closed"])
+        self.assertEqual(receipt["status"], "declined")
+        self.assertEqual(bank.get_balance(101), 1_000)
+        self.assertEqual(bank.get_balance(202), 1_000)
+        self.assertIsNone(bank.rps_wager_status("challenge-decline"))
+
+    def test_challenger_can_cancel_own_invite_but_not_another_invite(self):
+        self.assertTrue(bank.create_rps_challenge("challenge-cancel", 101, 202, 100))
+        unauthorized = bank.cancel_rps_challenge("challenge-cancel", 202)
+        self.assertFalse(unauthorized["closed"])
+        self.assertEqual(unauthorized["reason"], "not_authorized")
+
+        receipt = bank.cancel_rps_challenge("challenge-cancel", 101)
+        self.assertTrue(receipt["closed"])
+        self.assertEqual(receipt["status"], "cancelled")
+        self.assertEqual(bank.get_balance(101), 1_000)
+        self.assertEqual(bank.get_balance(202), 1_000)
+
+    def test_insufficient_funds_on_acceptance_cancels_without_partial_debits(self):
+        bank.set_balance(202, 25)
+        self.assertTrue(bank.create_rps_challenge("challenge-insufficient", 101, 202, 100))
+
+        receipt = bank.accept_rps_challenge("challenge-insufficient", 202)
+        self.assertFalse(receipt["accepted"])
+        self.assertEqual(receipt["reason"], "insufficient_funds")
+        self.assertEqual(receipt["player_a_balance"], 1_000)
+        self.assertEqual(receipt["player_b_balance"], 25)
+        self.assertEqual(bank.get_balance(101), 1_000)
+        self.assertEqual(bank.get_balance(202), 25)
+        self.assertIsNone(bank.rps_wager_status("challenge-insufficient"))
+        self.assertEqual(
+            bank.rps_challenge_status("challenge-insufficient")["status"],
+            "cancelled",
+        )
+
+    def test_expiring_pending_challenges_never_refunds_or_debits_currency(self):
+        self.assertTrue(bank.create_rps_challenge("challenge-expire-a", 101, 202, 100))
+        self.assertTrue(bank.create_rps_challenge("challenge-expire-b", 101, 202, 200))
+
+        expired = bank.expire_pending_rps_challenges()
+        self.assertEqual({row["game_id"] for row in expired}, {"challenge-expire-a", "challenge-expire-b"})
+        self.assertEqual(bank.get_balance(101), 1_000)
+        self.assertEqual(bank.get_balance(202), 1_000)
+        self.assertEqual(bank.expire_pending_rps_challenges(), [])
+
+    def test_concurrent_acceptance_reserves_the_stakes_only_once(self):
+        self.assertTrue(bank.create_rps_challenge("challenge-concurrent", 101, 202, 1_000))
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            receipts = list(executor.map(lambda _index: bank.accept_rps_challenge("challenge-concurrent", 202), range(8)))
+
+        self.assertTrue(all(receipt["accepted"] for receipt in receipts))
+        self.assertEqual(sum(not receipt["already_accepted"] for receipt in receipts), 1)
+        self.assertEqual(bank.get_balance(101), 0)
+        self.assertEqual(bank.get_balance(202), 0)
+        self.assertEqual(
+            len(bank.get_economy_ledger(event_type="rps_wager_stake", reference="challenge-concurrent")),
+            2,
+        )
+
+    def test_challenge_reference_is_saved_before_or_after_acceptance(self):
+        self.assertTrue(bank.create_rps_challenge("challenge-reference", 101, 202, 100, channel_id=303))
+        self.assertTrue(bank.set_rps_challenge_message_reference("challenge-reference", 303, 404))
+        self.assertEqual(bank.rps_challenge_status("challenge-reference")["message_id"], 404)
+        self.assertTrue(bank.accept_rps_challenge("challenge-reference", 202))
+        self.assertEqual(bank.rps_wager_status("challenge-reference")["message_id"], 404)
+
+        self.assertTrue(bank.create_rps_challenge("challenge-reference-race", 101, 202, 100, channel_id=303))
+        self.assertTrue(bank.accept_rps_challenge("challenge-reference-race", 202)["accepted"])
+        self.assertTrue(bank.set_rps_challenge_message_reference("challenge-reference-race", 303, 405))
+        self.assertEqual(bank.rps_wager_status("challenge-reference-race")["message_id"], 405)
+
     def test_winner_settlement_pays_once_and_applies_tax(self):
         self.assertTrue(bank.create_rps_wager("match-1", 101, 202, 100))
         self.assertEqual(bank.get_balance(101), 900)

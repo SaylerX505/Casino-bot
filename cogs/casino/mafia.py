@@ -20,8 +20,7 @@ from cogs.casino.mafia_views import (
     RoleRevealView,
     SecretButtonView,
 )
-from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, send_status
 
 logger = logging.getLogger(__name__)
 
@@ -352,7 +351,7 @@ async def run_mafia_game(ctx, players):
                         except Exception:
                             logger.exception("Could not resolve the Currency cog for the Mafia item action")
                             cur_cog = None
-                        if cur_cog and cur_cog.remove_item(hanged_player.id, "veto", 1):
+                        if cur_cog and await asyncio.to_thread(cur_cog.remove_item, hanged_player.id, "veto", 1):
                             embed = discord.Embed(
                                 description=f"⛔ **{hanged_player.mention}** استخدم **فيتو**! الناس صوتت ضده بس الفيتو لغى الإعدام... عاش يا وحش!",
                                 color=discord.Color.gold()
@@ -431,31 +430,56 @@ class Mafia(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='مافيا', description='بدء لعبة المافيا')
-    @is_staff_or_admin()
     async def start_mafia(self, ctx):
         """يبدأ لعبة المافيا في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         view = None
         try:
             menu_file = discord.File("mafiagame/menu.jpg", filename="menu.jpg")
             view = MafiaLobbyView(ctx, start_game=run_mafia_game)
             if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "Mafia lobby", view=view):
                 view.timer_task.cancel()
-                return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+                return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
             view.message = await ctx.send(view=view, file=menu_file)
             if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
                 view._disable_buttons()
                 await view.message.edit(view=view)
-        except Exception as e:
+        except Exception:
             if view is not None:
                 release_game_task(self.bot, ctx.channel.id, view.timer_task)
                 view.timer_task.cancel()
-            embed = discord.Embed(
-                description=f"⚠️ تأكد من وجود مجلد `mafiagame` والصور بالأسماء الصحيحة. \nالخطأ: {e}",
-                color=discord.Color.red()
+            logger.exception(
+                "Could not create Mafia lobby requester_id=%s channel_id=%s",
+                ctx.author.id,
+                ctx.channel.id,
             )
-            await ctx.send(view=embed_to_v2(embed))
+            send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+            try:
+                await ctx.send(
+                    view=StatusPanel(
+                        "تعذر فتح لوبي المافيا",
+                        "حصل عطل أثناء تجهيز واجهة اللعبة أو تحميل ملفاتها. سجلنا التفاصيل؛ جرّب تاني بعد شوية.",
+                        "warning",
+                    ),
+                    **send_kwargs,
+                )
+            except (discord.HTTPException, discord.InteractionResponded):
+                logger.exception(
+                    "Could not send Mafia startup error panel requester_id=%s channel_id=%s",
+                    ctx.author.id,
+                    ctx.channel.id,
+                )
 
     @commands.hybrid_command(name='اكشف', aliases=['scan', 'كشف'], description='استخدم أداة كشف المافيا')
     async def mafia_scan(self, ctx):
@@ -470,7 +494,7 @@ class Mafia(commands.Cog):
         cur_cog = self.bot.get_cog("Currency")
         if cur_cog is None:
             return await respond("الاقتصاد غير متاح", "مركز الاقتصاد مش محمّل حاليًا. جرّب تاني بعد إصلاح البوت.")
-        if cur_cog.get_item_count(ctx.author.id, "mafia_scan") <= 0:
+        if await asyncio.to_thread(cur_cog.get_item_count, ctx.author.id, "mafia_scan") <= 0:
             return await respond(
                 "أداة الكشف مش موجودة",
                 "مفيش كشف مافيا في شنطتك. تقدر تشتريه من المتجر داخل مركز الاقتصاد.",
@@ -487,7 +511,7 @@ class Mafia(commands.Cog):
         alive_mafias = [member for member in game.mafias if member in game.alive and member != ctx.author]
         if not alive_mafias:
             return await respond("مفيش هدف صالح", "مفيش مافيا تانية عايشة تقدر تكشفها دلوقتي.")
-        if not cur_cog.remove_item(ctx.author.id, "mafia_scan", 1):
+        if not await asyncio.to_thread(cur_cog.remove_item, ctx.author.id, "mafia_scan", 1):
             return await respond(
                 "تعذر استخدام الأداة",
                 "الأداة اتستخدمت أو مش موجودة. اتأكد من شنطتك وحاول تاني.",
@@ -510,7 +534,7 @@ class Mafia(commands.Cog):
             )
         except discord.Forbidden:
             try:
-                cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
+                await asyncio.to_thread(cur_cog.add_item, ctx.author.id, "mafia_scan", 1)
             except Exception:
                 logger.exception(
                     "Failed to refund mafia_scan after DM Forbidden user_id=%s",
@@ -526,7 +550,7 @@ class Mafia(commands.Cog):
             )
         except discord.HTTPException:
             try:
-                cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
+                await asyncio.to_thread(cur_cog.add_item, ctx.author.id, "mafia_scan", 1)
             except Exception:
                 logger.exception(
                     "Failed to refund mafia_scan after DM HTTP error user_id=%s",

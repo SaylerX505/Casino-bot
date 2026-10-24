@@ -19,19 +19,14 @@ BRAND = getattr(config, "BRAND", "Çukur")
 PREFIX = getattr(config, "PREFIX", "+")
 
 
-class WatermarkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
-
-
 def base_embed(title: str = None, description: str = None, color: int = None) -> discord.Embed:
     e = discord.Embed(title=title, description=description, color=color or THEME["grey"])
+    footer_text = f"كازينو الحفرة • {BRAND}"
     if LOGO_URL:
         e.set_thumbnail(url=LOGO_URL)
-        e.set_footer(text=f"كازينو الحفرة • {BRAND} • Developed by @neglawy", icon_url=LOGO_URL)
+        e.set_footer(text=footer_text, icon_url=LOGO_URL)
     else:
-        e.set_footer(text=f"كازينو الحفرة • {BRAND} • Developed by @neglawy")
+        e.set_footer(text=footer_text)
     return e
 
 
@@ -103,13 +98,54 @@ class StatusPanel(LayoutView):
             "neutral": THEME["grey"],
         }
         body = f"# {title}\n{description}" if description else f"# {title}"
+        footer = f"-# كازينو الحفرة • {BRAND}"
+        content = f"{body[:3850]}\n\n{footer}"
         self.add_item(
             Container(
-                TextDisplay(body[:4000]),
+                TextDisplay(content),
                 Separator(),
                 accent_color=colors.get(outcome, THEME["grey"]),
             )
         )
+
+
+async def send_status(ctx, title: str, description: str, outcome: str = "neutral"):
+    """Send a branded Components V2 status panel from a prefix or slash command.
+
+    Slash-command errors are ephemeral to avoid polluting busy game channels;
+    prefix-command responses remain visible in the channel where the command ran.
+    """
+    kwargs = {"ephemeral": True} if getattr(ctx, "interaction", None) is not None else {}
+    return await ctx.send(view=StatusPanel(title, description, outcome), **kwargs)
+
+
+async def private_status(interaction, title: str, description: str, outcome: str = "warning"):
+    """Acknowledge an interaction with the standard private Components V2 status panel."""
+    panel = StatusPanel(title, description, outcome)
+    if interaction.response.is_done():
+        return await interaction.followup.send(view=panel, ephemeral=True)
+    return await interaction.response.send_message(view=panel, ephemeral=True)
+
+
+async def try_edit_view(message, view, *, context: str) -> bool:
+    """Best-effort lobby update that never lets an HTTP edit failure strand a game.
+
+    A missing/deleted lobby message should not prevent the actual round from
+    starting or prevent an empty lobby from releasing its channel reservation.
+    The reason is logged locally; exception details are never sent to Discord.
+    """
+    if message is None:
+        return False
+    try:
+        await message.edit(view=view)
+    except discord.HTTPException:
+        logging.getLogger("casino.ui").warning(
+            "Could not update a game lobby panel context=%s",
+            context,
+            exc_info=True,
+        )
+        return False
+    return True
 
 
 async def report_game_failure(ctx, title: str, description: str, fallback_view=None) -> bool:
@@ -165,16 +201,43 @@ def result_embed(
         embed.set_thumbnail(url=thumbnail_url)
     return embed
 
-def lobby_embed(title: str, rules: str, players, time_left: int, max_players: int = 25) -> discord.Embed:
-    if players:
-        plist = "\n".join([f"**{i+1}** : {p.mention}" for i, p in enumerate(players)])
-    else:
-        plist = "في انتظار اللاعبين... خش يا معلم يلا 🏃"
-    e = discord.Embed(
-        title=title,
-        description=f"{rules}\n**اللاعبين المنضمين ({len(players)}/{max_players}):**\n{plist}\n\n⏳ تبدأ بعد **{time_left}** ثانية...",
-        color=THEME["teal"],
+def lobby_embed(
+    title: str,
+    rules: str,
+    players,
+    time_left: int,
+    max_players: int = 25,
+    *,
+    host=None,
+    min_players: int = 2,
+) -> discord.Embed:
+    """Build a consistent lobby panel with host, capacity, minimum and countdown."""
+    player_list = (
+        "\n".join(f"**{index + 1}.** {player.mention}" for index, player in enumerate(players))
+        if players
+        else "مفيش لاعبين لسه. انضم للّوبي وابدأ اللعب مع المجموعة."
     )
+    host_mention = getattr(host, "mention", None)
+    host_name = host_mention or getattr(host, "display_name", getattr(host, "name", "مضيف اللوبي"))
+    host_line = f"**المضيف:** {host_name}\n" if host is not None else ""
+    minimum_line = (
+        f"**الحد الأدنى للبدء:** {min_players} لاعب\n"
+        if min_players > 1
+        else ""
+    )
+    early_start_line = (
+        "صاحب اللوبي يقدر يبدأ الجولة بدري؛ الأزرار بتتقفل أول ما اللعب يبدأ."
+        if host is not None
+        else ""
+    )
+    details = "\n".join(
+        line for line in (host_line.rstrip("\n"), minimum_line.rstrip("\n"), early_start_line) if line
+    )
+    roster = f"**اللاعبون ({len(players)}/{max_players}):**\n{player_list}"
+    countdown = f"**الوقت المتبقي:** {max(0, int(time_left))} ثانية"
+    sections = [rules.strip(), details, roster, countdown]
+    description = "\n\n".join(section for section in sections if section)
+    e = discord.Embed(title=title, description=description, color=THEME["teal"])
     if LOGO_URL:
         e.set_thumbnail(url=LOGO_URL)
         e.set_footer(text=f"كازينو الحفرة • {BRAND}", icon_url=LOGO_URL)
