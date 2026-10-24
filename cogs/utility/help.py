@@ -389,26 +389,27 @@ class HelpCommand(commands.Cog):
 
     @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
     async def stop_game(self, ctx):
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         active_games = getattr(self.bot, "active_games", {})
         game_info = active_games.get(ctx.channel.id)
         if game_info is None:
             return await ctx.send(
                 view=StatusPanel("مفيش لعبة شغالة", "مفيش لعبة نشطة في القناة دي.", "warning"),
-                ephemeral=ctx.interaction is not None,
+                **send_kwargs,
             )
 
         is_host = ctx.author.id == game_info.get("host_id")
         if not (is_host or has_staff_access(ctx.author)):
             return await ctx.send(
                 view=StatusPanel("صلاحية غير كافية", "إيقاف اللعبة متاح لصاحبها أو للستاف المصرح له.", "warning"),
-                ephemeral=ctx.interaction is not None,
+                **send_kwargs,
             )
 
         game_task = game_info.get("task")
         if game_task is None:
             return await ctx.send(
                 view=StatusPanel("تعذر إيقاف اللعبة", "مهمة اللعبة مش متاحة؛ بلّغ الستاف.", "warning"),
-                ephemeral=ctx.interaction is not None,
+                **send_kwargs,
             )
 
         view = game_info.get("view")
