@@ -1,4 +1,5 @@
 """Regression coverage for the riddle game and shared Components V2 status style."""
+# ruff: noqa: I001
 
 import json
 import unittest
