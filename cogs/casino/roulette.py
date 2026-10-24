@@ -100,8 +100,8 @@ class RouletteLobby(LayoutView):
         embed.color = discord.Color.dark_purple()
         return embed
 
-    def _panel_content(self):
-        embed = self.get_embed()
+    def _panel_content(self, embed=None):
+        embed = embed or self.get_embed()
         title = f"# {embed.title}\n" if embed.title else ""
         return (
             title
@@ -111,8 +111,7 @@ class RouletteLobby(LayoutView):
         )[:4000]
 
     def _refresh_panel(self, embed=None):
-        embed = embed or self.get_embed()
-        self._panel_text.content = self._panel_content()
+        self._panel_text.content = self._panel_content(embed)
 
     def _disable_buttons(self):
         for button in self._buttons:
