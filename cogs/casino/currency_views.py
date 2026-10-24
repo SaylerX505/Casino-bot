@@ -186,7 +186,11 @@ class InventoryView(LayoutView):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message(
-                "الشنطة دي شخصية لصاحبها؛ افتح +شنطتي عشان تستخدم أغراضك.",
+                view=StatusPanel(
+                    "الشنطة دي شخصية",
+                    "كل عضو له شنطته الخاصة. افتح مركز الاقتصاد واختار «الشنطة» عشان تشوف أغراضك.",
+                    "warning",
+                ),
                 ephemeral=True,
             )
             return False
@@ -322,7 +326,7 @@ class InventoryView(LayoutView):
             try:
                 await self.message.edit(view=self)
             except discord.HTTPException:
-                pass
+                logger.debug("Could not disable expired inventory controls", exc_info=True)
 
 class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
     def __init__(self, cog):
@@ -517,10 +521,9 @@ class CurrencyHubLayout(LayoutView):
         await interaction.response.send_modal(TransferModal(self.cog))
 
     async def inventory_btn(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            view=InventoryView(self.cog, interaction.user),
-            ephemeral=True,
-        )
+        view = InventoryView(self.cog, interaction.user)
+        await interaction.response.send_message(view=view, ephemeral=True)
+        view.message = await interaction.original_response()
 
     async def profile_btn(self, interaction: discord.Interaction):
         await interaction.response.send_message(
