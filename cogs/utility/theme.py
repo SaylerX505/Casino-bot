@@ -117,6 +117,14 @@ async def send_status(ctx, title: str, description: str, outcome: str = "neutral
     return await ctx.send(view=StatusPanel(title, description, outcome), **kwargs)
 
 
+async def private_status(interaction, title: str, description: str, outcome: str = "warning"):
+    """Acknowledge an interaction with the standard private Components V2 status panel."""
+    panel = StatusPanel(title, description, outcome)
+    if interaction.response.is_done():
+        return await interaction.followup.send(view=panel, ephemeral=True)
+    return await interaction.response.send_message(view=panel, ephemeral=True)
+
+
 async def try_edit_view(message, view, *, context: str) -> bool:
     """Best-effort lobby update that never lets an HTTP edit failure strand a game.
 
