@@ -30,7 +30,7 @@ async def _settle_wager(game_id, winner_id=None):
     logger = logging.getLogger(__name__)
     for attempt in range(3):
         try:
-            return bank.settle_rps_wager(game_id, winner_id)
+            return await asyncio.to_thread(bank.settle_rps_wager, game_id, winner_id)
         except Exception:
             logger.exception(
                 "Failed to settle persisted RPS wager %s (attempt %s/3)",
@@ -554,9 +554,9 @@ class RPS(commands.Cog):
         logger = logging.getLogger(__name__)
         try:
             # Capture panel references before the initial refund mutates escrow state.
-            records = bank.active_rps_wager_records()
-            refunded = bank.refund_orphaned_rps_wagers()
-            pending_wagers = bank.active_rps_wager_ids()
+            records = await asyncio.to_thread(bank.active_rps_wager_records)
+            refunded = await asyncio.to_thread(bank.refund_orphaned_rps_wagers)
+            pending_wagers = await asyncio.to_thread(bank.active_rps_wager_ids)
             active_ids = set(pending_wagers)
             records_by_id = {str(record["game_id"]): record for record in records}
 
@@ -571,7 +571,7 @@ class RPS(commands.Cog):
                     _schedule_wager_recovery(game_id, on_recovered=callback)
                     continue
 
-                receipt = bank.rps_wager_status(game_id)
+                receipt = await asyncio.to_thread(bank.rps_wager_status, game_id)
                 if (
                     has_panel
                     and receipt is not None
@@ -664,9 +664,9 @@ class RPS(commands.Cog):
         if currency is None:
             return await ctx.send(view=embed_to_v2(base_embed(description="❌ الفلوس واقعة! كلم نجلاوي.", color=THEME["red_dark"])))
         game_id = uuid.uuid4().hex
-        if not bank.create_rps_wager(game_id, ctx.author.id, opponent.id, amount):
-            player_balance = bank.get_balance(ctx.author.id)
-            opponent_balance = bank.get_balance(opponent.id)
+        if not await asyncio.to_thread(bank.create_rps_wager, game_id, ctx.author.id, opponent.id, amount):
+            player_balance = await asyncio.to_thread(bank.get_balance, ctx.author.id)
+            opponent_balance = await asyncio.to_thread(bank.get_balance, opponent.id)
             if player_balance < amount:
                 return await ctx.send(
                     view=embed_to_v2(base_embed(
@@ -716,7 +716,8 @@ class RPS(commands.Cog):
         try:
             view.message = await ctx.send(view=view)
             try:
-                stored_reference = bank.set_rps_wager_message_reference(
+                stored_reference = await asyncio.to_thread(
+                    bank.set_rps_wager_message_reference,
                     game_id,
                     int(ctx.channel.id),
                     int(view.message.id),
