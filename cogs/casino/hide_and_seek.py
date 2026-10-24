@@ -208,7 +208,7 @@ class LobbyView(LayoutView):
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
             ("استخبى (Join)", "hide_seek_join", "join_btn", None),
-            ("مغادرة (Leave)", "hide_seek_leave", "leave_btn", None),
+            ("مغادرة", "hide_seek_leave", "leave_btn", None),
             ("ابدأ الآن", "hide_seek_start", "start_btn", None),
             ("+10 ثواني", "hide_seek_add_time", "add_time_btn", "⏱️"),
         ):
@@ -232,6 +232,8 @@ class LobbyView(LayoutView):
             self.players,
             self.time_left,
             max_players=25,
+            host=self.ctx.author,
+            min_players=2,
         )
         embed.color = discord.Color.dark_gray()
         embed.set_thumbnail(url=SERVER_LOGO_URL)
