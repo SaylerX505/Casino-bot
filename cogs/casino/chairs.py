@@ -82,7 +82,7 @@ class ChairActionView(LayoutView):
         for index in range(num_chairs):
             button = discord.ui.Button(
                 style=discord.ButtonStyle.secondary,
-                label="🪑",
+                label="💥" if round_type == "forbidden" else "🪑",
                 custom_id=f"chair_{round_num}_{index}",
             )
             button.callback = self.make_callback(button)
@@ -200,9 +200,9 @@ class ChairsLobby(LayoutView):
     def get_embed(self):
         rules = (
             "**طريقة اللعب:**\n"
-            "1- هتظهر كراسي رمادية في الشات لمدة 5 ثواني عشان تستعد.\n"
-            "2- لو الكراسي قلبت **أزرق**، اقعد بسرعة قبل ما الكراسي تخلص!\n"
-            "3- لو الكراسي قلبت **أحمر** (فخ)، إياك تضغط! اللي هيضغط هيطير.\n"
+            "1- هتظهر لوحة تجهيز لمدة 5 ثواني عشان تستعد.\n"
+            "2- في الجولة العادية، لوحة الجولة بتكون بلون تركوازي؛ اضغط على كرسي متاح بسرعة، لأن الكراسي أقل من اللاعبين.\n"
+            "3- في جولة الفخ، اللوحة بتكون حمراء وكل الأزرار عليها 💥؛ متضغطش على أي زر وإلا هتخرج.\n"
             "4- آخر واحد يتبقى هو الفائز.\n\n"
         )
         embed = lobby_embed(
