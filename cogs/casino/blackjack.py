@@ -164,6 +164,14 @@ def _draw_card(draw, x: int, y: int, card, *, hidden: bool = False):
     )
 
 
+def _dealer_display_cards(dealer_cards, phase: str):
+    """Hide every dealer card except the up-card while the player can still act."""
+    cards = list(dealer_cards or [])
+    if phase == "playing" and len(cards) > 1:
+        return [(cards[0], False)] + [(None, True)] * (len(cards) - 1)
+    return [(card, False) for card in cards] or [(None, True), (None, True)]
+
+
 def render_blackjack_table(player_cards, dealer_cards, *, phase: str, amount: int) -> bytes:
     """Render a self-contained dark-felt blackjack table for the live V2 panel."""
     image = Image.new("RGB", (_ART_WIDTH, _ART_HEIGHT), (13, 24, 23))
@@ -215,14 +223,7 @@ def render_blackjack_table(player_cards, dealer_cards, *, phase: str, amount: in
     )
 
     # Dealer's cards: reveal only the up-card until the player's turn is over.
-    dealer_visible = list(dealer_cards or [])
-    hide_hole = phase == "playing" and len(dealer_visible) > 1
-    if hide_hole:
-        dealer_row = [(dealer_visible[0], False)] + [(None, True)] * (len(dealer_visible) - 1)
-    else:
-        dealer_row = [(card, False) for card in dealer_visible]
-    if not dealer_row:
-        dealer_row = [(None, True), (None, True)]
+    dealer_row = _dealer_display_cards(dealer_cards, phase)
 
     player_row = [(card, False) for card in (player_cards or [])]
     if not player_row:
