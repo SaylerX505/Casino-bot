@@ -54,7 +54,7 @@ def resolve_wheel_segment(segment_index, *, box_net=None):
 
     label, outcome = SEGMENTS[segment_index]
     if outcome == "x2":
-        return label, FEE * 2, None, "\nإجمالي الصرف يساوي ضعفي رسوم الدخول؛ صافي الربح +50."
+        return label, FEE * 2, None, f"\nإجمالي الصرف يساوي ضعفي رسوم الدخول؛ صافي الربح +{FEE:,} {COIN}."
     if outcome == "box":
         net = secrets.choice(BOX_NET_OUTCOMES) if box_net is None else box_net
         if isinstance(net, bool) or not isinstance(net, int) or net not in BOX_NET_OUTCOMES:
