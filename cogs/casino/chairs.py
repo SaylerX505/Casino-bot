@@ -15,7 +15,6 @@ from cogs.casino.game_registry import (
     release_game_task,
     set_game_view,
 )
-from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
     embed_to_v2,
     THEME,
@@ -427,7 +426,6 @@ class Chairs(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='كراسي', description='بدء لعبة الكراسي الموسيقية')
-    @is_staff_or_admin()
     async def start_chairs(self, ctx):
         """يبدأ لعبة الكراسي الموسيقية"""
         if is_active_game(self.bot, ctx.channel.id):
