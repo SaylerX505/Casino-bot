@@ -23,6 +23,7 @@ from cogs.utility.theme import (
     lobby_embed,
     report_game_failure,
     result_embed,
+    send_status,
     try_edit_view,
 )
 
@@ -433,11 +434,21 @@ class Chairs(commands.Cog):
     async def start_chairs(self, ctx):
         """يبدأ لعبة الكراسي الموسيقية"""
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         view = ChairsLobby(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "Chairs lobby", view=view):
             view.timer_task.cancel()
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         try:
             view.message = await ctx.send(view=view)
         except Exception:
