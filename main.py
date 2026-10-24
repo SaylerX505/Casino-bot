@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import unicodedata
 
 import discord
 from discord import app_commands
@@ -111,6 +112,88 @@ async def _send_command_error(ctx, message):
         return
     await _send_interaction_error(interaction, message)
 
+
+def _has_visible_text(value) -> bool:
+    """Reject empty and Unicode-invisible strings for required Discord text fields."""
+    if not isinstance(value, str):
+        return False
+    return any(
+        not character.isspace()
+        and unicodedata.category(character)[0] not in {"C", "Z"}
+        for character in value
+    )
+
+
+def validate_slash_command_metadata(command_list) -> list[str]:
+    """Validate local command/group metadata before an API sync can reject the batch."""
+    problems = []
+
+    def visit(commands_to_check):
+        for command in commands_to_check:
+            name = getattr(command, "qualified_name", None) or getattr(command, "name", "<unknown>")
+            local_name = getattr(command, "name", None)
+            description = getattr(command, "description", None)
+
+            if not isinstance(local_name, str) or not 1 <= len(local_name) <= 32:
+                problems.append(f"{name}: command name must contain 1–32 characters")
+
+            if not _has_visible_text(description):
+                problems.append(
+                    f"{name}: description is empty or contains only invisible characters"
+                )
+            elif len(description) > 100:
+                problems.append(f"{name}: description exceeds Discord's 100-character limit")
+
+            nested = getattr(command, "commands", None)
+            if nested:
+                visit(nested)
+
+    visit(command_list)
+    return problems
+
+
+async def sync_slash_commands(tree, home_guild_id, *, logger=None):
+    """Preflight and synchronize commands without sending invalid metadata to Discord.
+
+    In single-guild mode, clear the global command surface first, then validate
+    and sync the guild copy. This keeps the bot's one-server boundary even when
+    a local command definition is invalid and the guild sync must be skipped.
+    """
+    logger = logger or logging.getLogger("casino.startup")
+
+    if home_guild_id:
+        guild = discord.Object(id=int(home_guild_id))
+        tree.copy_global_to(guild=guild)
+        tree.clear_commands(guild=None)
+        await tree.sync()
+
+        local_commands = tree.get_commands(guild=guild)
+        problems = validate_slash_command_metadata(local_commands)
+        if problems:
+            logger.error(
+                "Skipped guild slash command sync because local command metadata is invalid: %s",
+                "; ".join(problems),
+            )
+            return None
+
+        synced = await tree.sync(guild=guild)
+        logger.info("Synced %s server-only slash command(s)", len(synced))
+        return synced
+
+    local_commands = tree.get_commands()
+    problems = validate_slash_command_metadata(local_commands)
+    if problems:
+        logger.error(
+            "Skipped global slash command sync because local command metadata is invalid: %s",
+            "; ".join(problems),
+        )
+        return None
+
+    synced = await tree.sync()
+    logger.info("Synced %s global slash command(s)", len(synced))
+    return synced
+
+
 @bot.check
 async def enforce_home_guild_for_prefix(ctx):
     home_guild_id = getattr(config, "HOME_GUILD_ID", None)
@@ -169,21 +252,15 @@ async def on_ready():
     
     if not getattr(bot, "_slash_commands_synced", False):
         try:
-            if config.HOME_GUILD_ID:
-                guild = discord.Object(id=config.HOME_GUILD_ID)
-                bot.tree.copy_global_to(guild=guild)
-                synced = await bot.tree.sync(guild=guild)
-                # Remove the global command surface so new command registrations stay
-                # scoped to the one configured server.
-                bot.tree.clear_commands(guild=None)
-                await bot.tree.sync()
-                logger.info("Synced %s server-only slash command(s)", len(synced))
-            else:
-                synced = await bot.tree.sync()
-                logger.info("Synced %s global slash command(s)", len(synced))
-            bot._slash_commands_synced = True
+            synced = await sync_slash_commands(
+                bot.tree,
+                getattr(config, "HOME_GUILD_ID", None),
+                logger=logger,
+            )
+            if synced is not None:
+                bot._slash_commands_synced = True
         except Exception:
-            logging.getLogger("casino.startup").exception("Failed to sync slash commands")
+            logger.exception("Failed to sync slash commands")
 
 async def _forward_error_to_guild_log(
     command_name: str,

@@ -5,6 +5,7 @@ This checklist is a release gate, not a claim that every item is already complet
 ## Automated gate
 
 - [ ] Latest commit on the release candidate has a green GitHub Actions run.
+- [x] Slash command metadata is preflight-validated; empty/invisible descriptions block guild sync and identify the offending command locally.
 - [ ] Python compilation and the full isolated test suite pass, including diagnostic formatter, rotation, incident correlation, and command acknowledgement tests.
 - [ ] Docker build and startup smoke tests pass.
 - [ ] Docker seed verification confirms that static data is present and runtime data/secrets are absent from the image.

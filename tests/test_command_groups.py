@@ -9,6 +9,7 @@ from discord.ui import LayoutView
 
 from cogs.utility.admin import AdminCommands
 from cogs.utility.help import HelpCommand, HelpEntryView
+from main import sync_slash_commands, validate_slash_command_metadata
 
 
 class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
@@ -23,6 +24,50 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.bot.close()
+
+    async def test_registered_slash_commands_have_visible_descriptions(self):
+        problems = validate_slash_command_metadata(self.bot.tree.get_commands())
+        self.assertEqual(problems, [])
+
+        command = self.bot.tree.get_command("commands")
+        self.assertIsInstance(command, app_commands.Command)
+        self.assertEqual(command.description, "فتح قائمة الأوامر والمساعدة")
+
+    async def test_sync_preflight_blocks_invisible_description_and_names_command(self):
+        async def broken_command(interaction: discord.Interaction):
+            return None
+
+        self.bot.tree.add_command(
+            app_commands.Command(
+                name="broken",
+                description="\u200b",
+                callback=broken_command,
+            )
+        )
+        logger = Mock()
+
+        with patch.object(
+            self.bot.tree,
+            "sync",
+            new=AsyncMock(return_value=[]),
+        ) as sync:
+            synced = await sync_slash_commands(
+                self.bot.tree,
+                home_guild_id=123456,
+                logger=logger,
+            )
+
+        self.assertIsNone(synced)
+        # Only the global-command cleanup is synced; the invalid guild command
+        # batch is rejected locally before making a second API request.
+        sync.assert_awaited_once_with()
+        logger.error.assert_called_once()
+        log_message = " ".join(str(value) for value in logger.error.call_args.args)
+        self.assertIn("broken", log_message)
+        self.assertIn("invisible", log_message)
+        self.assertEqual(self.bot.tree.get_commands(), [])
+        guild_commands = self.bot.tree.get_commands(guild=discord.Object(id=123456))
+        self.assertIn("broken", {command.name for command in guild_commands})
 
     async def test_prefix_help_entry_uses_components_v2(self):
         view = HelpEntryView(self.bot)
