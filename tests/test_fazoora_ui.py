@@ -95,19 +95,25 @@ class HubInventoryButtonTests(unittest.IsolatedAsyncioTestCase):
         )
         hub = CurrencyHubLayout(cog, owner)
         message = object()
-        response = SimpleNamespace(send_message=AsyncMock())
+        response = SimpleNamespace(
+            defer=AsyncMock(),
+            is_done=Mock(return_value=True),
+            send_message=AsyncMock(),
+        )
         interaction = SimpleNamespace(
             user=owner,
             response=response,
+            edit_original_response=AsyncMock(),
             original_response=AsyncMock(return_value=message),
+            followup=SimpleNamespace(send=AsyncMock()),
         )
 
         await hub.inventory_btn(interaction)
 
-        view = response.send_message.await_args.kwargs["view"]
+        response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+        view = interaction.edit_original_response.await_args.kwargs["view"]
         self.assertIsInstance(view, InventoryView)
         self.assertIs(view.message, message)
-        self.assertTrue(response.send_message.await_args.kwargs["ephemeral"])
 
 
 class InventoryViewLifecycleTests(unittest.IsolatedAsyncioTestCase):
