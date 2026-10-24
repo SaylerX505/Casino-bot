@@ -349,6 +349,59 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
+    async def _assert_lobby_extension_budget(self, view_type):
+        loop = asyncio.get_running_loop()
+        host = _FakeMember(200)
+        ctx = SimpleNamespace(
+            bot=SimpleNamespace(loop=loop),
+            channel=SimpleNamespace(id=100),
+            author=host,
+        )
+        view = view_type(ctx)
+        try:
+            self.assertEqual(view.extensions_left, 3)
+            self.assertIn("تمديدات الوقت المتبقية:** 3", view._panel_text.content)
+
+            async def click_extension():
+                interaction = SimpleNamespace(
+                    user=host,
+                    response=SimpleNamespace(
+                        is_done=lambda: False,
+                        edit_message=AsyncMock(),
+                        send_message=AsyncMock(),
+                    ),
+                    followup=SimpleNamespace(send=AsyncMock()),
+                )
+                await view.add_time_btn(interaction, button=None)
+                return interaction
+
+            for remaining in (2, 1, 0):
+                interaction = await click_extension()
+                self.assertEqual(view.extensions_left, remaining)
+                self.assertEqual(view.time_left, 35 + (3 - remaining) * 10)
+                self.assertIn(
+                    f"تمديدات الوقت المتبقية:** {remaining}",
+                    view._panel_text.content,
+                )
+                interaction.response.edit_message.assert_awaited_once_with(view=view)
+
+            capped_interaction = await click_extension()
+            self.assertEqual(view.extensions_left, 0)
+            self.assertEqual(view.time_left, 65)
+            self.assertTrue(capped_interaction.response.send_message.await_count == 1)
+        finally:
+            task = getattr(view, "timer_task", None) or getattr(view, "lobby_task", None)
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+    async def test_roulette_lobby_extension_budget_is_finite(self):
+        await self._assert_lobby_extension_budget(RouletteLobby)
+
+    async def test_chairs_lobby_extension_budget_is_finite(self):
+        await self._assert_lobby_extension_budget(ChairsLobby)
+
     async def test_geoguessr_lobby_uses_v2_components(self):
         await self._assert_v2_lobby(
             GuessGameMenu,
