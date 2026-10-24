@@ -130,9 +130,10 @@ class HelpLayout(LayoutView):
 
         container = Container(
             TextDisplay(
-                f"# Çukur • Help Center\n"
-                f"**Prefix:** `{config.PREFIX}`  ·  **Latency:** {latency}ms\n\n"
-                "اختار القسم المناسب لصلاحياتك. هتظهر تفاصيل الأوامر بشكل خاص ليك."
+                f"# الحفرة • مركز المساعدة\n"
+                f"**البادئة:** `{config.PREFIX}`  ·  **زمن الاستجابة:** {latency}ms\n\n"
+                "اختار القسم المناسب لصلاحياتك. تفاصيل الأوامر هتظهر بشكل خاص ليك.
+استخدم `/games` للألعاب و`/economy` للاقتصاد."
             ),
             Separator(),
             accent_color=config.EMBED_COLOR,
@@ -218,8 +219,8 @@ class HelpEntryView(LayoutView):
         self.bot = bot
         container = Container(
             TextDisplay(
-                f"# Çukur • Help Center\n"
-                f"**Prefix:** `{config.PREFIX}`\n\n"
+                f"# الحفرة • مركز المساعدة\n"
+                f"**البادئة:** `{config.PREFIX}`\n\n"
                 "افتح قائمة المساعدة الخاصة بيك عشان تشوف الأوامر المتاحة حسب صلاحياتك."
             ),
             Separator(),
