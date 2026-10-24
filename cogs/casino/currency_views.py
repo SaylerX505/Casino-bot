@@ -11,7 +11,7 @@ from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 import config
 from cogs.casino import bank
 from cogs.casino.currency_catalog import COIN_EMOJI, INVENTORY_ITEMS, fmt
-from cogs.utility.theme import StatusPanel
+from cogs.utility.theme import StatusPanel, private_status
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +46,42 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
             )
 
         total_cost = quantity * self.price
-        purchased, balance_after = bank.purchase_item(
-            interaction.user.id, self.item_id, quantity, self.price
-        )
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning(
+                "Could not acknowledge shop purchase interaction user_id=%s item_id=%s",
+                interaction.user.id,
+                self.item_id,
+                exc_info=True,
+            )
+            return
+
+        try:
+            purchased, balance_after = await asyncio.to_thread(
+                bank.purchase_item,
+                interaction.user.id,
+                self.item_id,
+                quantity,
+                self.price,
+            )
+        except Exception:
+            logger.exception(
+                "Shop purchase transaction failed user_id=%s item_id=%s",
+                interaction.user.id,
+                self.item_id,
+            )
+            return await interaction.followup.send(
+                view=StatusPanel(
+                    "تعذر تأكيد الشراء",
+                    "حصل عطل أثناء معالجة العملية. راجع رصيدك والشنطة قبل إعادة المحاولة؛ ما هنعلنش شراء ناجح من غير تأكيد قاعدة البيانات.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+
         if not purchased:
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 view=StatusPanel(
                     "تعذر الشراء",
                     f"رصيدك الحالي **{fmt(balance_after)} {COIN_EMOJI}**، ومحتاج **{fmt(total_cost)} {COIN_EMOJI}** لشراء {quantity} × {self.item_name}.",
@@ -59,10 +90,10 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
                 ephemeral=True,
             )
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             view=StatusPanel(
                 "تم الشراء",
-                f"اشتريت **{quantity} × {self.item_name}** بمبلغ **{fmt(total_cost)} {COIN_EMOJI}**.\nرصيدك الجديد: **{fmt(self.cog.get_balance(interaction.user.id))} {COIN_EMOJI}**.",
+                f"اشتريت **{quantity} × {self.item_name}** بمبلغ **{fmt(total_cost)} {COIN_EMOJI}**.\nرصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**.",
                 "success",
             ),
             ephemeral=True,
@@ -392,9 +423,41 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
                 ephemeral=True,
             )
 
-        transferred, balance_after = bank.transfer_balance(interaction.user.id, recipient.id, amount)
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning(
+                "Could not acknowledge currency transfer interaction user_id=%s recipient_id=%s",
+                interaction.user.id,
+                recipient.id,
+                exc_info=True,
+            )
+            return
+
+        try:
+            transferred, balance_after = await asyncio.to_thread(
+                bank.transfer_balance,
+                interaction.user.id,
+                recipient.id,
+                amount,
+            )
+        except Exception:
+            logger.exception(
+                "Currency transfer transaction failed sender_id=%s recipient_id=%s",
+                interaction.user.id,
+                recipient.id,
+            )
+            return await interaction.followup.send(
+                view=StatusPanel(
+                    "تعذر تأكيد التحويل",
+                    "حصل عطل أثناء معالجة التحويل. اتأكد من الرصيد قبل إعادة المحاولة؛ ما هنعتبرش العملية ناجحة من غير تأكيد قاعدة البيانات.",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+
         if not transferred:
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 view=StatusPanel(
                     "رصيد غير كافٍ",
                     f"رصيدك الحالي **{fmt(balance_after)} {COIN_EMOJI}** ولا يكفي لتحويل **{fmt(amount)} {COIN_EMOJI}**.",
@@ -403,7 +466,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
                 ephemeral=True,
             )
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             view=StatusPanel(
                 "تم التحويل بنجاح",
                 f"حوّلت **{fmt(amount)} {COIN_EMOJI}** إلى {recipient.mention}.\nرصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**.",
@@ -411,12 +474,19 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
             ),
             ephemeral=True,
         )
-        await self.cog.log_action(
-            interaction.guild,
-            "💸 Transfer",
-            f"From {interaction.user.mention} to {recipient.mention}: {fmt(amount)}",
-            discord.Color.orange(),
-        )
+        try:
+            await self.cog.log_action(
+                interaction.guild,
+                "💸 Transfer",
+                f"From {interaction.user.mention} to {recipient.mention}: {fmt(amount)}",
+                discord.Color.orange(),
+            )
+        except Exception:
+            logger.exception(
+                "Transfer committed but its audit-log notification failed sender_id=%s recipient_id=%s",
+                interaction.user.id,
+                recipient.id,
+            )
 def profile_panel(cog, user):
     """Build the shared V2 profile card used by both commands and the economy hub."""
     balance = cog.get_balance(user.id)
@@ -479,38 +549,77 @@ class CurrencyHubLayout(LayoutView):
         row.add_item(button)
 
     async def daily_btn(self, interaction: discord.Interaction):
-        claim = bank.claim_daily(interaction.user.id, bank.now(), random.randint(20, 45))
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning("Could not acknowledge daily claim interaction user_id=%s", interaction.user.id, exc_info=True)
+            return
+        try:
+            claim = await asyncio.to_thread(
+                bank.claim_daily,
+                interaction.user.id,
+                bank.now(),
+                random.randint(20, 45),
+            )
+        except Exception:
+            logger.exception("Daily reward transaction failed user_id=%s", interaction.user.id)
+            return await private_status(
+                interaction,
+                "تعذر استلام اليومية",
+                "حصل عطل أثناء تسجيل المكافأة. حاول تاني بعد شوية، وهنحافظ على مطالبتك لحد ما قاعدة البيانات تأكد النتيجة.",
+                "warning",
+            )
+
         if not claim["claimed"]:
             if claim.get("reason") == "balance_limit":
-                return await interaction.response.send_message(
-                    view=StatusPanel("المكافأة غير متاحة", "رصيدك وصل للحد الأقصى المدعوم؛ المكافأة لم تُصرف ولم تُستهلك مطالبتك اليومية.", "warning"),
-                    ephemeral=True,
+                return await private_status(
+                    interaction,
+                    "المكافأة غير متاحة",
+                    "رصيدك وصل للحد الأقصى المدعوم؛ المكافأة لم تُصرف ولم تُستهلك مطالبتك اليومية.",
+                    "warning",
                 )
             next_available_time = int(claim["last_daily"] + 86400)
-            return await interaction.response.send_message(
-                view=StatusPanel("اليومية مستلمة بالفعل", f"تقدر ترجع تطالب بيها <t:{next_available_time}:R>.", "warning"),
-                ephemeral=True,
+            return await private_status(
+                interaction,
+                "اليومية مستلمة بالفعل",
+                f"تقدر ترجع تطالب بيها <t:{next_available_time}:R>.",
+                "warning",
             )
 
         amount = claim["amount"]
         streak = claim["streak"]
-        await interaction.response.send_message(
-            view=StatusPanel(
-                "استلمت اليومية",
-                f"المكافأة: **{fmt(amount)} {COIN_EMOJI}**\nالستريك الحالي: **{streak}** يوم.",
-                "success",
-            ),
-            ephemeral=True,
+        await private_status(
+            interaction,
+            "استلمت اليومية",
+            f"المكافأة: **{fmt(amount)} {COIN_EMOJI}**\nالستريك الحالي: **{streak}** يوم.",
+            "success",
         )
+
     async def top_btn(self, interaction: discord.Interaction):
-        ranking = bank.top_balances(10)
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning("Could not acknowledge leaderboard interaction user_id=%s", interaction.user.id, exc_info=True)
+            return
+        try:
+            ranking = await asyncio.to_thread(bank.top_balances, 10)
+        except Exception:
+            logger.exception("Economy leaderboard query failed user_id=%s", interaction.user.id)
+            return await private_status(
+                interaction,
+                "تعذر فتح الترتيب",
+                "حصل عطل أثناء قراءة الرصيد. جرّب تاني بعد شوية.",
+                "warning",
+            )
         description = "\n".join(
             f"**#{index + 1}** <@{user_id}> — **{fmt(balance)}** {COIN_EMOJI}"
             for index, (user_id, balance) in enumerate(ranking)
         )
-        await interaction.response.send_message(
-            view=StatusPanel("🏆 أغنى الأعضاء", description or "الخزنة فاضية لسه!"),
-            ephemeral=True,
+        await private_status(
+            interaction,
+            "🏆 أغنى الأعضاء",
+            description or "الخزنة فاضية لسه!",
+            "neutral",
         )
     async def shop_btn(self, interaction: discord.Interaction):
         view = ShopView(self.cog, interaction.user)
