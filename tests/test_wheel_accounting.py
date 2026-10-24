@@ -1,7 +1,60 @@
 """Regression tests for transparent wheel accounting."""
 import unittest
 
-from cogs.casino.wheel import COIN, FEE, format_wheel_breakdown
+from cogs.casino.wheel import (
+    BOX_NET_OUTCOMES,
+    COIN,
+    FEE,
+    SEGMENTS,
+    format_wheel_breakdown,
+    resolve_wheel_segment,
+)
+
+
+class WheelPayoutModelTests(unittest.TestCase):
+    def test_positive_sector_numbers_are_net_profit_not_gross_payout(self):
+        label, payout, target_loss, _note = resolve_wheel_segment(0)
+
+        self.assertEqual(label, "+20")
+        self.assertIsNone(target_loss)
+        self.assertEqual(payout, FEE + 20)
+        self.assertEqual(payout - FEE, 20)
+
+    def test_multiplier_sector_shows_the_correct_gross_and_net(self):
+        label, payout, target_loss, note = resolve_wheel_segment(2)
+
+        self.assertEqual(label, "x2")
+        self.assertIsNone(target_loss)
+        self.assertEqual(payout, FEE * 2)
+        self.assertEqual(payout - FEE, FEE)
+        self.assertIn("صافي الربح +50", note)
+
+    def test_zero_sector_refunds_entry_fee(self):
+        _label, payout, target_loss, note = resolve_wheel_segment(4)
+
+        self.assertEqual(payout, FEE)
+        self.assertIsNone(target_loss)
+        self.assertIn("لا ربح ولا خسارة", note)
+
+    def test_box_results_are_bounded_and_settle_to_the_disclosed_net(self):
+        for net in BOX_NET_OUTCOMES:
+            _label, payout, target_loss, note = resolve_wheel_segment(3, box_net=net)
+            self.assertIsNone(target_loss)
+            self.assertEqual(payout - FEE, net)
+            self.assertIn(f"{net:+,}", note)
+
+    def test_wheel_expected_value_has_a_small_house_edge(self):
+        net_outcomes = []
+        for index, (_label, outcome) in enumerate(SEGMENTS):
+            if outcome == "box":
+                net_outcomes.append(sum(BOX_NET_OUTCOMES) / len(BOX_NET_OUTCOMES))
+                continue
+            _label, payout, target_loss, _note = resolve_wheel_segment(index)
+            net_outcomes.append(-target_loss if target_loss is not None else payout - FEE)
+
+        expected_net = sum(net_outcomes) / len(net_outcomes)
+        self.assertAlmostEqual(expected_net, -3.75)
+        self.assertLess(expected_net, 0)
 
 
 class WheelAccountingTests(unittest.TestCase):
