@@ -1,8 +1,8 @@
 """Repository-wide guardrails for the Components V2 message policy."""
 
 import ast
-import unittest
 from pathlib import Path
+import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
