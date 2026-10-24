@@ -5,7 +5,8 @@ from unittest.mock import Mock
 
 import discord
 
-from cogs.casino.currency import Currency, CurrencyHubLayout, InventoryView, setup
+from cogs.casino.currency import Currency, CurrencyHubLayout, setup
+from cogs.casino.currency_views import InventoryView
 
 
 class FakeCurrency:
