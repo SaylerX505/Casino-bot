@@ -352,7 +352,13 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
-    async def _assert_lobby_extension_budget(self, view_type):
+    async def _assert_lobby_extension_budget(
+        self,
+        view_type,
+        *,
+        initial_time=35,
+        extension_method="add_time_btn",
+    ):
         loop = asyncio.get_running_loop()
         host = _FakeMember(200)
         ctx = SimpleNamespace(
@@ -360,7 +366,13 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             channel=SimpleNamespace(id=100),
             author=host,
         )
-        view = view_type(ctx)
+        if view_type is GuessGameMenu:
+            async def start_game(_ctx, _players):
+                return None
+
+            view = view_type(ctx, start_game=start_game)
+        else:
+            view = view_type(ctx)
         try:
             self.assertEqual(view.extensions_left, 3)
             self.assertIn("تمديدات الوقت المتبقية:** 3", view._panel_text.content)
@@ -375,23 +387,41 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
                     ),
                     followup=SimpleNamespace(send=AsyncMock()),
                 )
-                await view.add_time_btn(interaction, button=None)
+                await getattr(view, extension_method)(interaction, button=None)
                 return interaction
 
             for remaining in (2, 1, 0):
                 interaction = await click_extension()
                 self.assertEqual(view.extensions_left, remaining)
-                self.assertEqual(view.time_left, 35 + (3 - remaining) * 10)
+                self.assertEqual(view.time_left, initial_time + (3 - remaining) * 10)
                 self.assertIn(
                     f"تمديدات الوقت المتبقية:** {remaining}",
                     view._panel_text.content,
                 )
                 interaction.response.edit_message.assert_awaited_once_with(view=view)
 
+            time_button_id = {
+                RouletteLobby: "roulette_add_time",
+                ChairsLobby: "chairs_add_time",
+                GuessGameMenu: "geoguessr_add_time",
+                LobbyView: "hide_seek_add_time",
+            }[view_type]
+            time_button = next(
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Button) and item.custom_id == time_button_id
+            )
+            self.assertTrue(time_button.disabled)
+
             capped_interaction = await click_extension()
             self.assertEqual(view.extensions_left, 0)
-            self.assertEqual(view.time_left, 65)
+            self.assertEqual(view.time_left, initial_time + 30)
             self.assertTrue(capped_interaction.response.send_message.await_count == 1)
+
+            view.game_started = True
+            closed_interaction = await click_extension()
+            self.assertEqual(view.extensions_left, 0)
+            self.assertEqual(view.time_left, initial_time + 30)
+            self.assertEqual(closed_interaction.response.send_message.await_count, 1)
         finally:
             task = getattr(view, "timer_task", None) or getattr(view, "lobby_task", None)
             if task is not None:
@@ -404,6 +434,19 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
 
     async def test_chairs_lobby_extension_budget_is_finite(self):
         await self._assert_lobby_extension_budget(ChairsLobby)
+
+    async def test_geoguessr_lobby_extension_budget_is_finite(self):
+        await self._assert_lobby_extension_budget(
+            GuessGameMenu,
+            initial_time=40,
+            extension_method="add_time",
+        )
+
+    async def test_hide_and_seek_lobby_extension_budget_is_finite(self):
+        await self._assert_lobby_extension_budget(
+            LobbyView,
+            initial_time=30,
+        )
 
     async def test_geoguessr_lobby_uses_v2_components(self):
         await self._assert_v2_lobby(
