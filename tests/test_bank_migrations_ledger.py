@@ -35,7 +35,7 @@ class BankMigrationsAndLedgerTests(unittest.TestCase):
 
         bank.close_database()
         self.assertEqual(bank.get_balance(10), 100)
-        self.assertEqual(bank.schema_version(), 5)
+        self.assertEqual(bank.schema_version(), 6)
         self.assertEqual(
             [row["version"] for row in bank._connect().execute(
                 "SELECT version FROM schema_migrations ORDER BY version"
@@ -58,7 +58,7 @@ class BankMigrationsAndLedgerTests(unittest.TestCase):
             connection.close()
 
         self.assertEqual(bank.get_balance(99), 321)
-        self.assertEqual(bank.schema_version(), 5)
+        self.assertEqual(bank.schema_version(), 6)
         self.assertEqual(bank.get_economy_ledger(user_id=99), [])
 
     def test_balance_operations_write_ledger_entries_atomically(self):
