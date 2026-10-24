@@ -98,9 +98,11 @@ class StatusPanel(LayoutView):
             "neutral": THEME["grey"],
         }
         body = f"# {title}\n{description}" if description else f"# {title}"
+        footer = f"-# كازينو الحفرة • {BRAND}"
+        content = f"{body[:3850]}\n\n{footer}"
         self.add_item(
             Container(
-                TextDisplay(body[:4000]),
+                TextDisplay(content),
                 Separator(),
                 accent_color=colors.get(outcome, THEME["grey"]),
             )
@@ -215,7 +217,8 @@ def lobby_embed(
         if players
         else "مفيش لاعبين لسه. انضم للّوبي وابدأ اللعب مع المجموعة."
     )
-    host_name = getattr(host, "display_name", getattr(host, "name", "مضيف اللوبي"))
+    host_mention = getattr(host, "mention", None)
+    host_name = host_mention or getattr(host, "display_name", getattr(host, "name", "مضيف اللوبي"))
     host_line = f"**المضيف:** {host_name}\n" if host is not None else ""
     minimum_line = (
         f"**الحد الأدنى للبدء:** {min_players} لاعب\n"
