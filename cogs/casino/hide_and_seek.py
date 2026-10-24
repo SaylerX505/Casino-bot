@@ -11,7 +11,7 @@ import random
 import config
 
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, send_status, try_edit_view
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, private_status, report_game_failure, result_embed, send_status, try_edit_view
 
 
 logger = logging.getLogger(__name__)
@@ -253,10 +253,7 @@ class LobbyView(LayoutView):
             button.disabled = True
 
     async def _private_notice(self, interaction, title, description):
-        await interaction.response.send_message(
-            view=StatusPanel(title, description, "warning"),
-            ephemeral=True,
-        )
+        return await private_status(interaction, title, description, "warning")
 
     async def run_timer(self):
         while self.time_left > 0 and not self.game_started:
@@ -296,19 +293,19 @@ class LobbyView(LayoutView):
     async def join_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
-                description="اللعبة بدأت خلاص!",
+                description="اللعبة بدأت بالفعل. لا يمكن الانضمام بعد إغلاق التسجيل.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if len(self.players) >= 25:
             embed = discord.Embed(
-                description="الخريطة اتملت (25 لاعب)!",
+                description="اكتمل اللوبي؛ الحد الأقصى 25 لاعب.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             embed = discord.Embed(
-                description="أنت مسجل اسمك!",
+                description="أنت مسجل بالفعل في اللوبي.",
                 color=discord.Color.red()
             )
             await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
@@ -330,7 +327,7 @@ class LobbyView(LayoutView):
             await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
-                description="أنت مش في اللعبة!",
+                description="أنت مش مسجل في اللوبي، فلازم تنضم الأول قبل المغادرة.",
                 color=discord.Color.red()
             )
             await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
@@ -338,7 +335,7 @@ class LobbyView(LayoutView):
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="للأدمن فقط!",
+                description="صاحب اللوبي فقط يقدر يتحكم في بدء الجولة.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
@@ -349,7 +346,7 @@ class LobbyView(LayoutView):
     async def add_time_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="للأدمن فقط!",
+                description="صاحب اللوبي فقط يقدر يتحكم في بدء الجولة.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
