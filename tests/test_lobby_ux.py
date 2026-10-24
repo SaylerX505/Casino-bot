@@ -10,7 +10,7 @@ from cogs.utility.theme import embed_to_v2, lobby_embed
 
 class LobbyUXTests(unittest.TestCase):
     def setUp(self):
-        self.host = SimpleNamespace(mention="<@100>")
+        self.host = SimpleNamespace(display_name="LobbyHost")
         self.player = SimpleNamespace(mention="<@200>")
 
     def test_lobby_surfaces_host_minimum_capacity_and_countdown(self):
@@ -25,7 +25,7 @@ class LobbyUXTests(unittest.TestCase):
         )
         text = panel.description
         self.assertIn("المضيف:", text)
-        self.assertIn("<@100>", text)
+        self.assertIn("LobbyHost", text)
         self.assertIn("الحد الأدنى للبدء:** 5 لاعب", text)
         self.assertIn("اللاعبون (1/12)", text)
         self.assertIn("الوقت المتبقي:** 17 ثانية", text)
