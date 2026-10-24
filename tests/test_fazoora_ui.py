@@ -4,7 +4,7 @@
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, mock_open, patch
+from unittest.mock import AsyncMock, Mock, mock_open, patch
 
 import discord
 from discord.ui import LayoutView
