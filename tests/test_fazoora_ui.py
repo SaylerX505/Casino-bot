@@ -84,6 +84,21 @@ class EconomyHubUXTests(unittest.TestCase):
         self.assertIn("250", content)
 
 
+class ShopTimeoutTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expired_shop_disables_controls_and_edits_the_message(self):
+        user = SimpleNamespace(id=7)
+        cog = SimpleNamespace(get_balance=lambda _user_id: 50)
+        view = ShopView(cog, user)
+        view.message = SimpleNamespace(edit=AsyncMock())
+
+        await view.on_timeout()
+
+        controls = [item for item in view.walk_children() if hasattr(item, "disabled")]
+        self.assertTrue(controls)
+        self.assertTrue(all(item.disabled for item in controls))
+        view.message.edit.assert_awaited_once_with(view=view)
+
+
 class SharedStatusPanelTests(unittest.IsolatedAsyncioTestCase):
     async def test_prefix_status_is_visible_and_uses_components_v2(self):
         ctx = SimpleNamespace(interaction=None, send=AsyncMock())
