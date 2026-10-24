@@ -234,11 +234,11 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             return base_embed(
                 title="✊ تحدي حومص",
                 description=(
-                    f"{self.player.mention} **تحدى** {self.opponent.mention}\\n"
-                    f"**الرهان:** {self.bet:,} عملة لكل لاعب\\n"
-                    f"**جائزة الفائز:** {prize:,} عملة · **صافي الربح:** +{net_profit:,}\\n\\n"
-                    f"**الرسوم:** ضريبة البنك {self.bet * 2 - prize:,} عملة من مجموع الرهانات.\\n"
-                    "لسه مفيش رصيد اتحجز. الخصم المحدد يقدر يقبل أو يرفض، وصاحب التحدي يقدر يلغيه.\\n"
+                    f"{self.player.mention} **تحدى** {self.opponent.mention}\n"
+                    f"**الرهان:** {self.bet:,} عملة لكل لاعب\n"
+                    f"**جائزة الفائز:** {prize:,} عملة · **صافي الربح:** +{net_profit:,}\n\n"
+                    f"**الرسوم:** ضريبة البنك {self.bet * 2 - prize:,} عملة من مجموع الرهانات.\n"
+                    "لسه مفيش رصيد اتحجز. الخصم المحدد يقدر يقبل أو يرفض، وصاحب التحدي يقدر يلغيه.\n"
                     "لو التحدي انتهى من غير قبول، مفيش أي خصم."
                 ),
                 color=THEME["teal"],
@@ -249,11 +249,11 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         return base_embed(
             title="✊ حومص · الجولة بدأت",
             description=(
-                f"{self.player.mention} **VS** {self.opponent.mention}\\n"
-                f"**الرهان المحجوز:** {self.bet:,} عملة لكل لاعب\\n"
-                f"**إجمالي الصرف للفائز:** {prize:,} · **صافي ربحه:** +{net_profit:,}\\n\\n"
-                f"{self.player.mention}: {player_status}\\n"
-                f"{self.opponent.mention}: {opponent_status}\\n\\n"
+                f"{self.player.mention} **VS** {self.opponent.mention}\n"
+                f"**الرهان المحجوز:** {self.bet:,} عملة لكل لاعب\n"
+                f"**إجمالي الصرف للفائز:** {prize:,} · **صافي ربحه:** +{net_profit:,}\n\n"
+                f"{self.player.mention}: {player_status}\n"
+                f"{self.opponent.mention}: {opponent_status}\n\n"
                 "اختار حركتك بسرية؛ الحركة مش هتظهر للخصم قبل ما الطرفين يختاروا. "
                 "التعادل أو انتهاء الوقت يرجّع الرهان للطرفين."
             ),
@@ -436,7 +436,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 )
                 try:
                     status = await asyncio.to_thread(bank.rps_challenge_status, self.game_id)
-                except Exception:
+                except Exception:  # noqa: BLE001 - persistence verification must fail closed.
                     status = None
                     logging.getLogger(__name__).exception(
                         "Could not verify RPS challenge after acceptance error game_id=%s",
