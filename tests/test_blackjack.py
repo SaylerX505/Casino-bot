@@ -8,11 +8,30 @@ from discord.ui import Container, LayoutView
 
 from cogs.casino.blackjack import (
     BlackjackView,
+    _dealer_display_cards,
     _final_outcome,
     _hand_value,
     _initial_outcome,
     _is_natural_blackjack,
+    render_blackjack_table,
 )
+
+
+class BlackjackArtTests(unittest.TestCase):
+    def test_generated_table_is_a_png_and_hides_the_hole_card_in_play(self):
+        player = [("10", "♠"), ("7", "♥")]
+        dealer = [("9", "♣"), ("8", "♦")]
+
+        playing_row = _dealer_display_cards(dealer, "playing")
+        finished_row = _dealer_display_cards(dealer, "finished")
+        self.assertEqual(playing_row, [(dealer[0], False), (None, True)])
+        self.assertEqual(finished_row, [(dealer[0], False), (dealer[1], False)])
+
+        playing_png = render_blackjack_table(player, dealer, phase="playing", amount=100)
+        finished_png = render_blackjack_table(player, dealer, phase="finished", amount=100)
+        self.assertTrue(playing_png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertGreater(len(playing_png), 5000)
+        self.assertNotEqual(playing_png, finished_png)
 
 
 class BlackjackScoringTests(unittest.TestCase):
