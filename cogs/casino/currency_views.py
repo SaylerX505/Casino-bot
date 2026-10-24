@@ -92,13 +92,19 @@ class ShopDropdown(discord.ui.Select):
 
 
 class ShopView(LayoutView):
-    def __init__(self, cog):
+    def __init__(self, cog, owner=None):
         super().__init__(timeout=180)
+        balance_line = (
+            f"**رصيدك الحالي:** {fmt(cog.get_balance(owner.id))} {COIN_EMOJI}\n"
+            if owner is not None
+            else ""
+        )
         container = Container(
             TextDisplay(
                 "# 🛒 دكان الحفرة\n"
-                "اختار الغرض اللي محتاجه، راجع سعره، وحدد الكمية قبل الشراء.\n"
-                "عملية الشراء بتتأكد من الرصيد وتضيف الغرض بشكل ذري."
+                f"{balance_line}"
+                "اختار الغرض اللي محتاجه، راجع السعر، وحدد الكمية قبل الشراء.\n"
+                "السعر ظاهر لكل غرض، والشراء بيتأكد من الرصيد قبل إضافة الأغراض."
             ),
             Separator(),
             accent_color=config.EMBED_COLOR,
@@ -107,6 +113,7 @@ class ShopView(LayoutView):
         row.add_item(ShopDropdown(cog))
         container.add_item(row)
         self.add_item(container)
+
 
 class InventoryView(LayoutView):
     def __init__(self, cog, owner, category="all", notice=None):
