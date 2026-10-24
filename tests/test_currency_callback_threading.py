@@ -5,7 +5,15 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from cogs.casino.currency_views import BuyForm, CurrencyHubLayout, TransferModal
+from cogs.casino.currency_views import (
+    BuyForm,
+    CurrencyHubLayout,
+    TransferModal,
+    build_currency_hub_view,
+    build_inventory_view,
+    build_profile_panel,
+    build_shop_view,
+)
 
 
 def fake_interaction(*, user_id=101, guild=None):
@@ -63,6 +71,67 @@ class EconomyCallbackThreadingTests(unittest.IsolatedAsyncioTestCase):
         mocked.assert_called_once()
         self.assertEqual(len(transaction_threads), 1)
         self.assertNotEqual(transaction_threads[0], main_thread)
+
+    async def test_inventory_snapshot_load_runs_in_worker_thread(self):
+        main_thread = threading.get_ident()
+        snapshot_threads = []
+        owner = SimpleNamespace(id=101, display_name="Test player")
+
+        def load_snapshot(_cog, user_id):
+            snapshot_threads.append(threading.get_ident())
+            return {"loot_box": 1}, 123
+
+        cog = SimpleNamespace(get_inventory=Mock(), get_balance=Mock(), get_item_count=Mock())
+        with patch("cogs.casino.currency_views._load_inventory_snapshot", side_effect=load_snapshot):
+            view = await build_inventory_view(cog, owner)
+
+        self.assertEqual(view.inventory, {"loot_box": 1})
+        self.assertEqual(view.balance, 123)
+        self.assertEqual(len(snapshot_threads), 1)
+        self.assertNotEqual(snapshot_threads[0], main_thread)
+        cog.get_inventory.assert_not_called()
+        cog.get_balance.assert_not_called()
+
+    async def test_profile_snapshot_load_runs_in_worker_thread(self):
+        main_thread = threading.get_ident()
+        snapshot_threads = []
+        user = SimpleNamespace(id=101, display_name="Test player")
+
+        def load_snapshot(_cog, user_id):
+            snapshot_threads.append(threading.get_ident())
+            return 123, 4, {"luck_ticket": 2}
+
+        cog = SimpleNamespace()
+        with patch("cogs.casino.currency_views._load_profile_snapshot", side_effect=load_snapshot):
+            panel = await build_profile_panel(cog, user)
+
+        self.assertIsNotNone(panel)
+        self.assertEqual(len(snapshot_threads), 1)
+        self.assertNotEqual(snapshot_threads[0], main_thread)
+
+    async def test_shop_and_hub_balance_loads_run_in_worker_threads(self):
+        main_thread = threading.get_ident()
+        read_threads = []
+
+        def get_balance(user_id):
+            read_threads.append(threading.get_ident())
+            return 300
+
+        owner = SimpleNamespace(id=101, display_name="Test player")
+        cog = SimpleNamespace(get_balance=get_balance)
+        shop = await build_shop_view(cog, owner)
+        hub = await build_currency_hub_view(cog, owner)
+
+        self.assertIn("300", "\n".join(
+            item.content for item in shop.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        ))
+        self.assertIn("300", "\n".join(
+            item.content for item in hub.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        ))
+        self.assertEqual(len(read_threads), 2)
+        self.assertTrue(all(thread_id != main_thread for thread_id in read_threads))
 
     async def test_currency_transfer_runs_atomically_off_the_event_loop(self):
         main_thread = threading.get_ident()
