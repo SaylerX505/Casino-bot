@@ -21,7 +21,7 @@ from cogs.casino.mafia_views import (
     SecretButtonView,
 )
 from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, send_status
 
 logger = logging.getLogger(__name__)
 
@@ -435,14 +435,24 @@ class Mafia(commands.Cog):
     async def start_mafia(self, ctx):
         """يبدأ لعبة المافيا في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         view = None
         try:
             menu_file = discord.File("mafiagame/menu.jpg", filename="menu.jpg")
             view = MafiaLobbyView(ctx, start_game=run_mafia_game)
             if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "Mafia lobby", view=view):
                 view.timer_task.cancel()
-                return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+                return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
             view.message = await ctx.send(view=view, file=menu_file)
             if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
                 view._disable_buttons()
