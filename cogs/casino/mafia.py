@@ -20,7 +20,6 @@ from cogs.casino.mafia_views import (
     RoleRevealView,
     SecretButtonView,
 )
-from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, send_status
 
 logger = logging.getLogger(__name__)
@@ -431,7 +430,6 @@ class Mafia(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name='مافيا', description='بدء لعبة المافيا')
-    @is_staff_or_admin()
     async def start_mafia(self, ctx):
         """يبدأ لعبة المافيا في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
