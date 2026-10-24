@@ -1,13 +1,14 @@
-import discord
-from discord.ext import commands
 import asyncio
-import random
 import json
 import logging
+import random
 import re
 import unicodedata
-from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task, set_game_message
 
+import discord
+from discord.ext import commands
+
+from cogs.casino.game_registry import is_active_game, register_game_task, release_game_task, set_game_message
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
@@ -125,7 +126,7 @@ class Fazoora(commands.Cog):
 
             try:
                 winner_message = await self.bot.wait_for("message", check=check, timeout=30.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 timeout_panel = StatusPanel(
                     "⏰ انتهى الوقت",
                     f"محدش وصل للإجابة المرة دي. الإجابة كانت **{item['a'][0]}**. جربوا فزورة تانية.",
