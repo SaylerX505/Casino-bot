@@ -29,6 +29,53 @@ def _load_profile_snapshot(cog, user_id):
     return balance, int(streak), inventory
 
 
+async def build_shop_view(cog, owner=None):
+    balance = None
+    if owner is not None:
+        balance = await asyncio.to_thread(cog.get_balance, owner.id)
+    return ShopView(cog, owner, balance=balance)
+
+
+async def build_inventory_view(cog, owner, category="all", notice=None):
+    inventory, balance = await asyncio.to_thread(_load_inventory_snapshot, cog, owner.id)
+    return InventoryView(
+        cog,
+        owner,
+        category=category,
+        notice=notice,
+        inventory=inventory,
+        balance=balance,
+    )
+
+
+def render_profile_panel(user, balance, streak, inventory):
+    """Render the V2 profile card from an already-loaded account snapshot."""
+    labels = {item[0]: f"{item[5]} {item[1]}" for item in INVENTORY_ITEMS}
+    items = " • ".join(
+        f"{labels.get(item_id, item_id)} ×{fmt(quantity)}"
+        for item_id, quantity in inventory.items()
+        if quantity > 0
+    ) or "الشنطة فاضية حاليًا"
+    description = (
+        f"**الرصيد:** {fmt(balance)} {COIN_EMOJI}\n"
+        f"**الستريك اليومي:** {streak} يوم\n\n"
+        f"**الأغراض:**\n{items[:2200]}"
+    )
+    return StatusPanel(f"🪪 بروفايل {user.display_name}", description, "success")
+
+
+async def build_profile_panel(cog, user):
+    balance, streak, inventory = await asyncio.to_thread(_load_profile_snapshot, cog, user.id)
+    return render_profile_panel(user, balance, streak, inventory)
+
+
+async def build_currency_hub_view(cog, requester=None):
+    balance = None
+    if requester is not None:
+        balance = await asyncio.to_thread(cog.get_balance, requester.id)
+    return CurrencyHubLayout(cog, requester, balance=balance)
+
+
 # --- UI VIEWS ---
 class BuyForm(discord.ui.Modal, title="شراء غرض"):
     def __init__(self, cog, item_id, price, item_name):
@@ -263,6 +310,16 @@ class InventoryView(LayoutView):
         self.box_button.disabled = self.inventory.get("loot_box", 0) < 1
         self.ticket_button.disabled = self.inventory.get("luck_ticket", 0) < 1
 
+    async def refresh_snapshot(self):
+        """Refresh wallet and inventory off the event loop after a state mutation."""
+        self.inventory, self.balance = await asyncio.to_thread(
+            _load_inventory_snapshot,
+            self.cog,
+            self.owner_id,
+        )
+        self.refresh_buttons()
+        self._panel_text.content = self.make_description()
+
     def make_description(self, notice=None):
         inventory = self.inventory
         lines = []
@@ -343,10 +400,27 @@ class InventoryView(LayoutView):
             )
 
         if not redeemed:
-            if self.cog.get_item_count(self.owner_id, item_id) > 0:
+            try:
+                await self.refresh_snapshot()
+            except Exception:
+                logger.exception("Could not refresh inventory after rejected redemption user_id=%s", self.owner_id)
+                return await interaction.followup.send(
+                    view=StatusPanel(
+                        "تعذر تحديث الشنطة",
+                        "لم نستهلك الغرض، لكن تعذر قراءة الشنطة حاليًا. افتح الشنطة من جديد للتحقق.",
+                        "warning",
+                    ),
+                    ephemeral=True,
+                )
+            if self.inventory.get(item_id, 0) > 0:
                 message = "رصيدك وصل للحد الأقصى؛ احتفظنا بالغرض في شنطتك ولم نستهلكه."
             else:
                 message = "الغرض ده مش موجود في شنطتك. افتح المتجر من مركز الاقتصاد لشرائه."
+            self._panel_text.content = self.make_description(message)
+            try:
+                await interaction.edit_original_response(view=self)
+            except discord.HTTPException:
+                logger.warning("Could not refresh inventory after rejected redemption user_id=%s", self.owner_id, exc_info=True)
             return await interaction.followup.send(
                 view=StatusPanel("الغرض غير مستخدم", message, "warning"),
                 ephemeral=True,
@@ -358,8 +432,14 @@ class InventoryView(LayoutView):
             notice = f"🎟️ استخدمت تذكرة الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
         notice += f"\nرصيدك الجديد: **{fmt(balance_after)}** {COIN_EMOJI}"
         self.notice = notice
-        self._panel_text.content = self.make_description()
-        self.refresh_buttons()
+        try:
+            await self.refresh_snapshot()
+        except Exception:
+            logger.exception("Item redeemed but inventory snapshot refresh failed user_id=%s", self.owner_id)
+            self.inventory[item_id] = max(0, self.inventory.get(item_id, 0) - 1)
+            self.balance = int(balance_after)
+            self.refresh_buttons()
+            self._panel_text.content = self.make_description()
         try:
             await interaction.edit_original_response(view=self)
         except discord.HTTPException:
@@ -519,32 +599,28 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
                 recipient.id,
             )
 def profile_panel(cog, user):
-    """Build the shared V2 profile card used by both commands and the economy hub."""
-    balance = cog.get_balance(user.id)
-    _last_daily, streak = bank.get_daily(str(user.id))
-    inventory = cog.get_inventory(user.id)
-    labels = {item[0]: f"{item[5]} {item[1]}" for item in INVENTORY_ITEMS}
-    items = " • ".join(
-        f"{labels.get(item_id, item_id)} ×{fmt(quantity)}"
-        for item_id, quantity in inventory.items()
-        if quantity > 0
-    ) or "الشنطة فاضية حاليًا"
-    description = (
-        f"**الرصيد:** {fmt(balance)} {COIN_EMOJI}\n"
-        f"**الستريك اليومي:** {streak} يوم\n\n"
-        f"**الأغراض:**\n{items[:2200]}"
-    )
-    return StatusPanel(f"🪪 بروفايل {user.display_name}", description, "success")
+    """Compatibility renderer for direct callers; interaction paths use build_profile_panel."""
+    balance, streak, inventory = _load_profile_snapshot(cog, user.id)
+    return render_profile_panel(user, balance, streak, inventory)
+
+
+async def build_currency_hub_view(cog, requester=None):
+    balance = None
+    if requester is not None:
+        balance = await asyncio.to_thread(cog.get_balance, requester.id)
+    return CurrencyHubLayout(cog, requester, balance=balance)
 
 
 class CurrencyHubLayout(LayoutView):
-    def __init__(self, cog, requester=None):
+    def __init__(self, cog, requester=None, *, balance=None):
         super().__init__(timeout=None)
         self.cog = cog
 
         balance_line = "افتح خزنتك وتابع رصيدك وأدِر أغراضك من مكان واحد."
         if requester is not None:
-            balance_line = f"**الرصيد الحالي:** {fmt(cog.get_balance(requester.id))} {COIN_EMOJI}"
+            if balance is None:
+                balance = cog.get_balance(requester.id)
+            balance_line = f"**الرصيد الحالي:** {fmt(balance)} {COIN_EMOJI}"
 
         container = Container(
             TextDisplay(
@@ -653,20 +729,45 @@ class CurrencyHubLayout(LayoutView):
             "neutral",
         )
     async def shop_btn(self, interaction: discord.Interaction):
-        view = ShopView(self.cog, interaction.user)
-        await interaction.response.send_message(view=view, ephemeral=True)
-        view.message = await interaction.original_response()
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning("Could not acknowledge shop interaction user_id=%s", interaction.user.id, exc_info=True)
+            return
+        try:
+            view = await build_shop_view(self.cog, interaction.user)
+            await interaction.edit_original_response(view=view)
+            view.message = await interaction.original_response()
+        except Exception:
+            logger.exception("Could not open economy shop user_id=%s", interaction.user.id)
+            await private_status(interaction, "تعذر فتح المتجر", "حصل عطل أثناء تجهيز المتجر. جرّب تاني بعد شوية.", "warning")
 
     async def transfer_btn(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TransferModal(self.cog))
 
     async def inventory_btn(self, interaction: discord.Interaction):
-        view = InventoryView(self.cog, interaction.user)
-        await interaction.response.send_message(view=view, ephemeral=True)
-        view.message = await interaction.original_response()
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning("Could not acknowledge inventory interaction user_id=%s", interaction.user.id, exc_info=True)
+            return
+        try:
+            view = await build_inventory_view(self.cog, interaction.user)
+            await interaction.edit_original_response(view=view)
+            view.message = await interaction.original_response()
+        except Exception:
+            logger.exception("Could not open economy inventory user_id=%s", interaction.user.id)
+            await private_status(interaction, "تعذر فتح الشنطة", "حصل عطل أثناء قراءة الشنطة. جرّب تاني بعد شوية.", "warning")
 
     async def profile_btn(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            view=profile_panel(self.cog, interaction.user),
-            ephemeral=True,
-        )
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning("Could not acknowledge profile interaction user_id=%s", interaction.user.id, exc_info=True)
+            return
+        try:
+            panel = await build_profile_panel(self.cog, interaction.user)
+            await interaction.edit_original_response(view=panel)
+        except Exception:
+            logger.exception("Could not open economy profile user_id=%s", interaction.user.id)
+            await private_status(interaction, "تعذر فتح البروفايل", "حصل عطل أثناء قراءة بياناتك. جرّب تاني بعد شوية.", "warning")
