@@ -1,5 +1,6 @@
 """Regression tests for grouped slash command registration."""
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import discord
