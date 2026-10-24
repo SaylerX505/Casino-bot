@@ -120,12 +120,30 @@ def _migration_5_rps_wager_message_refs(connection):
         connection.execute("ALTER TABLE rps_wagers ADD COLUMN message_id INTEGER")
 
 
+def _migration_6_rps_challenge_handshake(connection):
+    """Persist invite/accept state separately from money that has actually been escrowed."""
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS rps_challenges ("
+        "game_id TEXT PRIMARY KEY, player_a TEXT NOT NULL, player_b TEXT NOT NULL, "
+        "amount INTEGER NOT NULL CHECK(amount > 0), "
+        "status TEXT NOT NULL CHECK(status IN "
+        "('pending', 'accepted', 'declined', 'cancelled', 'expired')), "
+        "outcome TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL, "
+        "channel_id INTEGER, message_id INTEGER)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rps_challenges_pending "
+        "ON rps_challenges(created_at) WHERE status='pending'"
+    )
+
+
 _SCHEMA_MIGRATIONS = (
     (1, "core_schema", _migration_1_core_schema),
     (2, "economy_ledger", _migration_2_economy_ledger),
     (3, "single_player_casino_wagers", _migration_3_single_player_casino_wagers),
     (4, "casino_wager_message_refs", _migration_4_casino_wager_message_refs),
     (5, "rps_wager_message_refs", _migration_5_rps_wager_message_refs),
+    (6, "rps_challenge_handshake", _migration_6_rps_challenge_handshake),
 )
 
 
