@@ -2,14 +2,14 @@
 
 import json
 import unittest
-from unittest.mock import mock_open, patch
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, mock_open, patch
 
 from discord.ui import LayoutView
 
 from cogs.casino.fazoora import DEFAULT_QUESTIONS, load_bank, normalize
 from cogs.utility.theme import StatusPanel, WatermarkView, base_embed, embed_to_v2, send_status
+
 
 
 class RiddleInputTests(unittest.TestCase):
