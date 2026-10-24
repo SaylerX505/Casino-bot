@@ -347,6 +347,25 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
             f"From {interaction.user.mention} to {recipient.mention}: {fmt(amount)}",
             discord.Color.orange(),
         )
+def profile_panel(cog, user):
+    """Build the shared V2 profile card used by both commands and the economy hub."""
+    balance = cog.get_balance(user.id)
+    _last_daily, streak = bank.get_daily(str(user.id))
+    inventory = cog.get_inventory(user.id)
+    labels = {item[0]: f"{item[5]} {item[1]}" for item in INVENTORY_ITEMS}
+    items = " • ".join(
+        f"{labels.get(item_id, item_id)} ×{fmt(quantity)}"
+        for item_id, quantity in inventory.items()
+        if quantity > 0
+    ) or "الشنطة فاضية حاليًا"
+    description = (
+        f"**الرصيد:** {fmt(balance)} {COIN_EMOJI}\n"
+        f"**الستريك اليومي:** {streak} يوم\n\n"
+        f"**الأغراض:**\n{items[:2200]}"
+    )
+    return StatusPanel(f"🪪 بروفايل {user.display_name}", description, "success")
+
+
 class CurrencyHubLayout(LayoutView):
     def __init__(self, cog, requester=None):
         super().__init__(timeout=None)
@@ -373,6 +392,8 @@ class CurrencyHubLayout(LayoutView):
 
         second_row = ActionRow()
         self._add_button(second_row, "تحويل", "💸", discord.ButtonStyle.secondary, "hubv2_transfer", self.transfer_btn)
+        self._add_button(second_row, "الشنطة", "🎒", discord.ButtonStyle.secondary, "hubv2_inventory", self.inventory_btn)
+        self._add_button(second_row, "بروفايل", "🪪", discord.ButtonStyle.secondary, "hubv2_profile", self.profile_btn)
         container.add_item(second_row)
         self.add_item(container)
 
@@ -426,3 +447,15 @@ class CurrencyHubLayout(LayoutView):
 
     async def transfer_btn(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TransferModal(self.cog))
+
+    async def inventory_btn(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            view=InventoryView(self.cog, interaction.user),
+            ephemeral=True,
+        )
+
+    async def profile_btn(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            view=profile_panel(self.cog, interaction.user),
+            ephemeral=True,
+        )
