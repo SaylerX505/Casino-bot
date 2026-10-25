@@ -41,6 +41,11 @@ def normalize(s: str) -> str:
     return " ".join(s.split())
 
 
+async def credit_riddle_reward(currency, user_id: int) -> int:
+    """Write the reward without blocking the Discord event loop on SQLite."""
+    return await asyncio.to_thread(currency.update_balance, user_id, REWARD)
+
+
 def load_bank():
     """Load only usable questions; an empty or malformed file falls back safely."""
     try:
@@ -142,7 +147,7 @@ class Fazoora(commands.Cog):
                 return
 
             try:
-                balance = await asyncio.to_thread(currency.update_balance, winner_message.author.id, REWARD)
+                balance = await credit_riddle_reward(currency, winner_message.author.id)
             except OverflowError:
                 panel = StatusPanel(
                     "إجابة صحيحة، لكن المكافأة لم تُصرف",
