@@ -263,7 +263,7 @@ class HideAndSeekRoundV2Tests(unittest.TestCase):
         self.assertEqual(len(dropdowns), 1)
         self.assertIn("<@202>", view._panel_text.content)
         self.assertIn("\n", view._panel_text.content)
-        self.assertNotIn("\\\\n", view._panel_text.content)
+        self.assertNotIn("\\n", view._panel_text.content)
         view.disable_controls()
         self.assertTrue(dropdowns[0].disabled)
 
