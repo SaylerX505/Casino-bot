@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from functools import partial
 
 import discord
@@ -43,6 +44,15 @@ class MafiaDropdown(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if time.monotonic() >= self.view_parent.deadline or self.view_parent.is_finished():
+            self.view_parent.disable_controls()
+            self.view_parent._panel_text.content = (
+                "# انتهى الوقت\nمفيش اختيار اتسجل؛ الحركة هتعدي من غير قرار."
+            )
+            await interaction.response.edit_message(view=self.view_parent)
+            self.view_parent.stop()
+            return
+
         self.view_parent.selected_id = int(self.values[0])
         self.view_parent._panel_text.content = (
             "# تم تسجيل الاختيار\nالأمر اتسجل بسرية. ارجع للشات الأساسي."
@@ -53,9 +63,11 @@ class MafiaDropdown(discord.ui.Select):
 
 
 class EphemeralActionView(LayoutView):
-    def __init__(self, targets):
-        super().__init__(timeout=20.0)
+    def __init__(self, targets, *, timeout=20.0):
+        super().__init__(timeout=max(0.1, timeout))
+        self.deadline = time.monotonic() + max(0.1, timeout)
         self.selected_id = None
+        self.message = None
         self.dropdown = MafiaDropdown(targets, self)
         self._panel_text = TextDisplay(
             "# اختيار سري\nاختار هدفًا واحدًا من القائمة. اختيارك مش هيظهر في القناة."
@@ -72,6 +84,17 @@ class EphemeralActionView(LayoutView):
     def disable_controls(self):
         self.dropdown.disabled = True
 
+    async def on_timeout(self):
+        self.disable_controls()
+        self._panel_text.content = (
+            "# انتهى وقت الاختيار\nمفيش اختيار اتسجل. الحركة هتعدي من غير قرار."
+        )
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                logger.debug("Could not disable expired Mafia private action controls", exc_info=True)
+
 
 class SecretButtonView(LayoutView):
     def __init__(self, active_user, role_users, targets, role_name):
@@ -82,6 +105,7 @@ class SecretButtonView(LayoutView):
         self.role_name = role_name
         self.selected_id = None
         self.message = None
+        self.deadline = time.monotonic() + 20.0
 
         if role_name == "mafia":
             button_label = "افتح قائمة الاغتيال"
@@ -123,6 +147,25 @@ class SecretButtonView(LayoutView):
         self.button.disabled = True
 
     async def btn_callback(self, interaction: discord.Interaction):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0 or self.is_finished():
+            self.disable_controls()
+            self._panel_text.content = (
+                "# انتهى وقت الحركة السرية\nمفيش اختيار اتسجل قبل انتهاء المهلة."
+            )
+            await try_edit_view(
+                self.message or interaction.message,
+                self,
+                context=f"mafia_{self.role_name}_action_expired",
+            )
+            self.stop()
+            return await private_status(
+                interaction,
+                "انتهى وقت الحركة",
+                "الجولة اتقفلت؛ مفيش اختيار اتسجل.",
+                "warning",
+            )
+
         if interaction.user not in self.role_users:
             role_ar = "المافيا" if self.role_name == "mafia" else "الدكتور"
             return await interaction.response.send_message(
@@ -141,24 +184,44 @@ class SecretButtonView(LayoutView):
                 ephemeral=True,
             )
 
-        ephemeral_view = EphemeralActionView(self.targets)
+        ephemeral_view = EphemeralActionView(self.targets, timeout=remaining)
         await interaction.response.send_message(
             view=ephemeral_view,
             ephemeral=True,
         )
+        ephemeral_view.message = await interaction.original_response()
         await ephemeral_view.wait()
 
         self.selected_id = ephemeral_view.selected_id
+        self.disable_controls()
         if self.selected_id is not None:
-            self.disable_controls()
             self._panel_text.content = (
                 "# الحركة اتسجلت\nتم تسجيل الاختيار السري. النتيجة هتظهر بعد نهاية الليل."
             )
-            try:
-                await interaction.message.edit(view=self)
-            except discord.HTTPException:
-                logger.debug("Could not disable Mafia secret-action V2 controls", exc_info=True)
-            self.stop()
+        else:
+            self._panel_text.content = (
+                "# انتهى وقت الحركة السرية\nلم يتم تسجيل اختيار؛ الجولة هتعدي من غير حركة."
+            )
+        await try_edit_view(
+            self.message or interaction.message,
+            self,
+            context=f"mafia_{self.role_name}_action_closed",
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        if self.selected_id is not None:
+            return
+        self.disable_controls()
+        self._panel_text.content = (
+            "# انتهى وقت الحركة السرية\nلم يتم تسجيل اختيار؛ الجولة هتعدي من غير حركة."
+        )
+        if self.message is not None:
+            await try_edit_view(
+                self.message,
+                self,
+                context=f"mafia_{self.role_name}_action_expired",
+            )
 
 
 class VoteDropdown(discord.ui.Select):
