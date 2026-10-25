@@ -142,7 +142,7 @@ class Fazoora(commands.Cog):
                 return
 
             try:
-                balance = currency.update_balance(winner_message.author.id, REWARD)
+                balance = await asyncio.to_thread(currency.update_balance, winner_message.author.id, REWARD)
             except OverflowError:
                 panel = StatusPanel(
                     "إجابة صحيحة، لكن المكافأة لم تُصرف",
