@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import time
 import uuid
 from functools import partial
 
@@ -230,9 +231,69 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         self.resolving = False
         self.done = False
         self.message = None
+        self.deadline = None
+        self._deadline_task = None
         self._panel_text = TextDisplay(self._embed_content(self.make_embed()))
         self._buttons = []
         self._render_view()
+
+    def schedule_deadline(self, timeout: float = 60.0):
+        """Start an absolute gameplay deadline unaffected by unauthorized clicks."""
+        timeout = max(0.0, float(timeout))
+        self.deadline = time.monotonic() + timeout
+        existing = self._deadline_task
+        if existing is not None and not existing.done():
+            try:
+                current = asyncio.current_task()
+            except RuntimeError:
+                current = None
+            if existing is not current:
+                existing.cancel()
+        self._deadline_task = asyncio.create_task(self._enforce_deadline(self.deadline))
+        return self.deadline
+
+    async def _enforce_deadline(self, deadline: float):
+        try:
+            await asyncio.sleep(max(0.0, deadline - time.monotonic()))
+            if self.deadline == deadline and not self.done:
+                await self.finish()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "RPS absolute deadline handler failed game_id=%s",
+                self.game_id,
+            )
+            # If a deadline callback itself fails, never leave accepted escrow
+            # unattended. Settlement is idempotent; recovery retries safely.
+            if self.accepted:
+                _schedule_wager_recovery(
+                    self.game_id,
+                    on_recovered=self._publish_recovered_settlement,
+                )
+            else:
+                try:
+                    await asyncio.to_thread(bank.expire_rps_challenge, self.game_id)
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Could not close expired RPS invite after watchdog error game_id=%s",
+                        self.game_id,
+                    )
+        finally:
+            if self._deadline_task is asyncio.current_task():
+                self._deadline_task = None
+
+    def stop(self):
+        task = self._deadline_task
+        self._deadline_task = None
+        if task is not None and not task.done():
+            try:
+                current = asyncio.current_task()
+            except RuntimeError:
+                current = None
+            if task is not current:
+                task.cancel()
+        return super().stop()
 
     def make_embed(self):
         prize = int(self.bet * 2 * PAYOUT_RATE)
@@ -332,13 +393,21 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             button.disabled = True
 
     async def _private_notice(self, interaction, content):
+        """Show private feedback using the same Components V2 status layout as other flows."""
+        panel = StatusPanel("تحديث التحدي", content, "neutral")
         if interaction.response.is_done():
-            await interaction.edit_original_response(
-                content=content,
+            return await interaction.edit_original_response(
+                content=None,
+                embeds=[],
+                attachments=[],
+                view=panel,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
-        else:
-            await interaction.response.send_message(content, ephemeral=True)
+        return await interaction.response.send_message(
+            view=panel,
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     async def _defer_private(self, interaction) -> bool:
         if interaction.response.is_done():
@@ -442,6 +511,15 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 return await self._private_notice(interaction, "التحدي خلص بالفعل.")
             if interaction.user.id != self.opponent.id:
                 return await self._private_notice(interaction, "الخصم المحدد في التحدي فقط هو اللي يقدر يقبله.")
+            if (
+                not self.accepted
+                and self.deadline is not None
+                and time.monotonic() >= self.deadline
+            ):
+                return await self._private_notice(
+                    interaction,
+                    "انتهت مهلة القبول؛ الدعوة هتتقفل بأمان ومش هيتحجز أي رصيد.",
+                )
             if self.accepted:
                 return await self._private_notice(interaction, "التحدي اتقبل بالفعل؛ اختار حركتك من لوحة الجولة.")
             if self.resolving:
@@ -521,6 +599,9 @@ class RPSView(DiagnosticViewMixin, LayoutView):
 
             self.accepted = True
             self.resolving = False
+            # Acceptance starts a fresh, fixed round-selection window. Later
+            # component activity cannot extend it indefinitely.
+            self.schedule_deadline(60.0)
             self._refresh_panel()
             await self._update_live_panel()
             return await self._private_notice(
@@ -555,6 +636,11 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                     else "صاحب التحدي الأصلي فقط يقدر يلغيه."
                 )
                 return await self._private_notice(interaction, message)
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                return await self._private_notice(
+                    interaction,
+                    "انتهت مهلة الدعوة؛ مش هنقبل تغيير حالتها بعد الوقت المحدد.",
+                )
 
             operation = bank.decline_rps_challenge if action == "decline" else bank.cancel_rps_challenge
             try:
@@ -933,6 +1019,11 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 return await self._private_notice(interaction, "الخصم لازم يقبل التحدي الأول؛ لسه مفيش رهان اتحجز.")
             if interaction.user.id not in (self.player.id, self.opponent.id):
                 return await self._private_notice(interaction, "مش طرف في التحدي.")
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                return await self._private_notice(
+                    interaction,
+                    "انتهى وقت الاختيار؛ الاختيارات المتأخرة مش هتغيّر نتيجة الجولة.",
+                )
             if interaction.user.id in self.choices:
                 return await self._private_notice(interaction, "اختارت خلاص!")
 
@@ -1245,6 +1336,7 @@ class RPS(commands.Cog):
                     "Could not persist pending RPS invitation panel reference game_id=%s",
                     game_id,
                 )
+            view.schedule_deadline(60.0)
             await view.wait()
         except asyncio.CancelledError:
             await view.abort()
