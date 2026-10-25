@@ -73,6 +73,9 @@ bot = commands.Bot(
     case_insensitive=True,
     owner_ids=config.OWNER_IDS,
     tree_cls=HomeGuildCommandTree,
+    # Game recap mentions stay readable but do not notify an entire lobby.
+    # RPS challenge invitations explicitly allow only the invited opponent.
+    allowed_mentions=discord.AllowedMentions.none(),
 )
 bot.remove_command('help')
 
