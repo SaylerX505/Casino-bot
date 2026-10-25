@@ -5,6 +5,7 @@ from cogs.casino.game_registry import is_active_game, owns_game_task, register_g
 import asyncio
 import logging
 import random
+import time
 from functools import partial
 import config
 
@@ -130,7 +131,7 @@ async def run_mafia_game(ctx, players):
                     reminder_tasks.add(reminder)
                     reminder.add_done_callback(reminder_tasks.discard)
 
-                    mafia_timed_out = await wait_for_view_fixed_timeout(m_view, 20.0)
+                    mafia_timed_out = await wait_for_view_fixed_timeout(m_view, max(0.0, m_view.deadline - time.monotonic()))
                     mafia_target_id = m_view.selected_id
 
                     if mafia_target_id is None:
@@ -193,7 +194,7 @@ async def run_mafia_game(ctx, players):
                     reminder_tasks.add(reminder)
                     reminder.add_done_callback(reminder_tasks.discard)
 
-                    doctor_timed_out = await wait_for_view_fixed_timeout(d_view, 20.0)
+                    doctor_timed_out = await wait_for_view_fixed_timeout(d_view, max(0.0, d_view.deadline - time.monotonic()))
                     doctor_target_id = d_view.selected_id
 
                     if doctor_target_id is None:
@@ -302,7 +303,7 @@ async def run_mafia_game(ctx, players):
             vote_msg = await ctx.send(view=vote_view)
             vote_view.message = vote_msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), vote_view)
-            await wait_for_view_fixed_timeout(vote_view, 20.0)
+            await wait_for_view_fixed_timeout(vote_view, max(0.0, vote_view.deadline - time.monotonic()))
 
             vote_view.disable_controls()
             vote_view._panel_text.content = (
