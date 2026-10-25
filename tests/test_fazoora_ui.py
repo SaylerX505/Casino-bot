@@ -191,5 +191,20 @@ class SharedStatusPanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(embed_to_v2(legacy), LayoutView)
 
 
+    def test_status_panel_places_footer_after_the_content_separator(self):
+        panel = StatusPanel("الحالة", "تفاصيل الحالة", "success")
+        items = [
+            item
+            for item in panel.walk_children()
+            if isinstance(item, (discord.ui.TextDisplay, discord.ui.Separator))
+        ]
+        self.assertEqual(len(items), 3)
+        self.assertIsInstance(items[0], discord.ui.TextDisplay)
+        self.assertIn("تفاصيل الحالة", items[0].content)
+        self.assertIsInstance(items[1], discord.ui.Separator)
+        self.assertIsInstance(items[2], discord.ui.TextDisplay)
+        self.assertIn("كازينو الحفرة", items[2].content)
+
+
 if __name__ == "__main__":
     unittest.main()
