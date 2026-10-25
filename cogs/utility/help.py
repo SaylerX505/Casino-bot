@@ -45,6 +45,17 @@ SLASH_COMMANDS = {
 }
 
 
+def format_help_command(label: str) -> str:
+    """Render both prefix and slash forms, preserving example arguments."""
+    command_label = label.split(" / ", 1)[0].strip()
+    command_token = command_label.split(maxsplit=1)[0]
+    slash_name = SLASH_COMMANDS.get(command_token)
+    prefix_form = f"**`{config.PREFIX}{command_label}`**"
+    if slash_name:
+        return f"{prefix_form} · **`/{slash_name}`**"
+    return prefix_form
+
+
 HELP_PAGES = {
     "member": {
         "title": "🎮 الألعاب والاقتصاد",
@@ -179,14 +190,7 @@ class HelpPageView(LayoutView):
             entries = fields[index:index + 3]
             lines = []
             for name, description in entries:
-                command_label = name.split(" / ", 1)[0].strip()
-                command_token = command_label.split(maxsplit=1)[0]
-                slash_name = SLASH_COMMANDS.get(command_token)
-                lines.append(
-                    f"**\`{config.PREFIX}{command_label}\`**"
-                    + (f" · **\`/{slash_name}\`**" if slash_name else "")
-                    + f"\n{description}"
-                )
+                lines.append(f"{format_help_command(name)}\n{description}")
             container.add_item(TextDisplay("\n\n".join(lines)))
 
         row = ActionRow()
