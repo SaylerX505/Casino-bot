@@ -22,6 +22,7 @@ from cogs.utility.theme import (
     StatusPanel,
     get_currency,
     lobby_embed,
+    private_status,
     report_game_failure,
     send_status,
     try_edit_view,
@@ -338,8 +339,22 @@ class WheelLobby(LayoutView):
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.ctx.author.id:
             return await self._private_notice(interaction, "الهوست بس يقدر يبدأ الجولة.")
+        if self.started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
 
         await interaction.response.defer()
+        if self.started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         self.time_left = 0
         await self.start_game()
 
