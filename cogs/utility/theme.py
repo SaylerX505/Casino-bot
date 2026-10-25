@@ -100,11 +100,11 @@ class StatusPanel(LayoutView):
         }
         body = f"# {title}\n{description}" if description else f"# {title}"
         footer = f"-# كازينو الحفرة • {BRAND}"
-        content = f"{body[:3850]}\n\n{footer}"
         self.add_item(
             Container(
-                TextDisplay(content),
+                TextDisplay(body[:3850]),
                 Separator(),
+                TextDisplay(footer),
                 accent_color=colors.get(outcome, THEME["grey"]),
             )
         )
