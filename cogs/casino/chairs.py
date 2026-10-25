@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import time
 from functools import partial
 
 import discord
@@ -56,7 +57,9 @@ class ChairPrepView(LayoutView):
 
 class ChairActionView(LayoutView):
     def __init__(self, active_players, num_chairs, round_type, round_num=1):
-        super().__init__(timeout=15.0 if round_type == "normal" else 4.0)
+        timeout = 15.0 if round_type == "normal" else 4.0
+        super().__init__(timeout=timeout)
+        self.deadline = time.monotonic() + timeout
         self.active_players = active_players
         self.num_chairs = num_chairs
         self.round_type = round_type
@@ -369,7 +372,7 @@ class ChairsLobby(LayoutView):
                 await msg.edit(view=action_view)
                 action_view.message = msg
                 set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)
-                await wait_for_view_fixed_timeout(action_view, action_view.timeout)
+                await wait_for_view_fixed_timeout(action_view, max(0.0, action_view.deadline - time.monotonic()))
 
                 if round_type == "normal":
                     losers = [
