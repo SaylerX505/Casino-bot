@@ -7,6 +7,7 @@ from discord.ext import commands
 
 import config
 from cogs.casino import bank
+from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.currency_catalog import COIN_EMOJI, fmt
 from cogs.casino.currency_views import (
     CurrencyHubLayout,
@@ -19,7 +20,6 @@ from cogs.utility.theme import StatusPanel, embed_to_v2
 
 LOG_CHANNEL_ID = int(getattr(config, "CURRENCY_LOG_CHANNEL_ID", 0) or 0)
 logger = logging.getLogger(__name__)
-SERVER_LOGO = "https://media.discordapp.net/attachments/1509650275164749994/1513741255786627162/c51bafdd9c1feb13e22458c35067c718.webp"
 
 class Currency(commands.Cog):
     def __init__(self, bot):
@@ -137,7 +137,7 @@ class Currency(commands.Cog):
 
         embed = discord.Embed(title=title, description=description, color=color)
         embed.set_footer(text=f"Bank Log • {config.BRAND}")
-        embed.set_thumbnail(url=SERVER_LOGO)
+        embed.set_thumbnail(url=SERVER_LOGO_URL)
         try:
             await channel.send(view=embed_to_v2(embed), allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException as exc:
