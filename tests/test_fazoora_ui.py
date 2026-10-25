@@ -10,7 +10,7 @@ import discord
 from discord.ui import LayoutView
 
 from cogs.casino.currency_views import CurrencyHubLayout, InventoryView, ShopView, profile_panel
-from cogs.casino.fazoora import DEFAULT_QUESTIONS, load_bank, normalize
+from cogs.casino.fazoora import DEFAULT_QUESTIONS, credit_riddle_reward, load_bank, normalize
 from cogs.utility.theme import (
     StatusPanel,
     base_embed,
@@ -39,6 +39,19 @@ class RiddleInputTests(unittest.TestCase):
         }
         with patch("builtins.open", mock_open(read_data=json.dumps(payload, ensure_ascii=False))):
             self.assertEqual(load_bank(), [{"q": "سؤال صالح؟", "a": ["إجابة!"]}])
+
+
+class RiddleRewardThreadingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reward_write_is_dispatched_off_the_event_loop(self):
+        currency = SimpleNamespace(update_balance=Mock())
+        with patch(
+            "cogs.casino.fazoora.asyncio.to_thread",
+            new=AsyncMock(return_value=130),
+        ) as to_thread:
+            result = await credit_riddle_reward(currency, 101)
+
+        self.assertEqual(result, 130)
+        to_thread.assert_awaited_once_with(currency.update_balance, 101, 30)
 
 
 class EconomyHubUXTests(unittest.TestCase):
