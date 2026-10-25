@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, call, patch
 import discord
 from discord.ui import LayoutView
 
-from cogs.utility.theme import StatusPanel
+
 
 from cogs.casino.rps import (
     _RECOVERY_TASKS,
@@ -19,7 +19,6 @@ from cogs.casino.rps import (
     _settle_wager,
 )
 from cogs.utility.theme import StatusPanel
-
 
 class RPSComponentsV2Tests(unittest.TestCase):
     def test_match_panel_uses_three_secondary_v2_buttons(self):
