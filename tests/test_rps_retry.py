@@ -374,10 +374,10 @@ class RPSChoiceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         second_response.edit_message.assert_not_awaited()
         second_interaction.edit_original_response.assert_awaited_once()
         acknowledgement = second_interaction.edit_original_response.await_args.kwargs
-        self.assertEqual(
-            acknowledgement["content"],
-            "اتسجل اختيارك، والنتيجة النهائية ظاهرة في رسالة التحدي.",
-        )
+        self.assertIsNone(acknowledgement["content"])
+        self.assertEqual(acknowledgement["embeds"], [])
+        self.assertEqual(acknowledgement["attachments"], [])
+        self.assertIsInstance(acknowledgement["view"], StatusPanel)
         mentions = acknowledgement["allowed_mentions"]
         self.assertIsInstance(mentions, discord.AllowedMentions)
         self.assertFalse(mentions.everyone)
