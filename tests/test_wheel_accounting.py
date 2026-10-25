@@ -7,6 +7,7 @@ from cogs.casino.wheel import (
     FEE,
     SEGMENTS,
     format_wheel_breakdown,
+    format_wheel_summary,
     resolve_wheel_segment,
 )
 
@@ -56,6 +57,25 @@ class WheelPayoutModelTests(unittest.TestCase):
         self.assertAlmostEqual(expected_net, -3.75)
         self.assertLess(expected_net, 0)
 
+
+class WheelSummaryTests(unittest.TestCase):
+    def test_final_summary_uses_confirmed_net_delta_not_separate_balance_reads(self):
+        player = type("Player", (), {"mention": "<@123>"})()
+        summary = format_wheel_summary([(player, "+20", 20)])
+        self.assertIn("<@123>", summary)
+        self.assertIn("+20", summary)
+        self.assertNotIn("+25", summary)
+
+    def test_final_summary_keeps_refused_rounds_out_of_net_profit(self):
+        player = type("Player", (), {"mention": "<@123>"})()
+        summary = format_wheel_summary([
+            (player, None, 0),
+            (player, "balance_limit", 0),
+            (player, "x2", 50),
+        ])
+        self.assertIn("رصيد غير كافٍ", summary)
+        self.assertIn("حد الرصيد", summary)
+        self.assertIn("+50", summary)
 
 class WheelAccountingTests(unittest.TestCase):
     def test_full_loss_is_reported_once_as_the_final_loss(self):
