@@ -310,64 +310,50 @@ async def run_game_loop(ctx, players):
                     'avatar_url': player.display_avatar.url, 'coords': guess_data_cache.get(player, {}).get('coords'), 'correct': is_correct
                 })
 
-            await msg.edit(
-                view=GeoGuessrResultPanel(
-                    "📊 ملخص الجولة",
-                    summary_text,
-                    outcome="neutral",
-                ),
-                attachments=[],
-            )
-            await asyncio.sleep(2) 
-
             map_bytes = await generate_result_map(actual_country_center_coords, player_results)
-            map_file = discord.File(fp=map_bytes, filename="result_map.png")
-            await msg.edit(
-                view=GeoGuessrResultPanel(
-                    "خريطة نتائج الجولة",
-                    "أماكن التخمينات بالنسبة للدولة الصحيحة.",
-                    outcome="neutral",
-                    image_name="result_map.png",
-                ),
-                attachments=[map_file],
-            )
-            await asyncio.sleep(3)
-
             board_bytes = await generate_dashboard_image(player_results, round_num, total_rounds)
+            map_file = discord.File(fp=map_bytes, filename="result_map.png")
             board_file = discord.File(fp=board_bytes, filename="dashboard.png")
-            await msg.edit(
-                view=GeoGuessrResultPanel(
-                    "🏆 لوحة النتائج",
-                    "ملخص ترتيب اللاعبين بعد الجولة.",
-                    outcome="neutral",
-                    image_name="dashboard.png",
-                ),
-                attachments=[board_file],
+            result_view = GeoGuessrResultPanel(
+                f"📊 نتيجة الجولة {round_num} من {total_rounds}",
+                summary_text,
+                outcome="neutral",
+                image_names=("result_map.png", "dashboard.png"),
             )
-            await asyncio.sleep(4) 
+            await msg.edit(
+                view=result_view,
+                attachments=[map_file, board_file],
+            )
+            # Keep a readable round receipt in the channel; the next round gets
+            # its own message so players can revisit scores/maps without racing
+            # edits that replace one result panel with another.
+            await asyncio.sleep(4)
 
-        # --- TIE BREAKER ANNOUNCEMENT ---
+        # --- FINAL WINNER ANNOUNCEMENT ---
         final_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         top_score = final_scores[0][1]
-        
-        winners = [p for p, s in final_scores if s == top_score]
-        
+
+        winners = [player for player, score in final_scores if score == top_score]
+
         if len(winners) > 1:
-            winner_mentions = " و ".join([w.mention for w in winners])
-            desc = f"🏆 **تعادل!** الفائزون هم {winner_mentions} برصيد `{top_score} نقطة`!"
-            thumb = SERVER_LOGO_URL
+            winner_mentions = " و ".join(player.mention for player in winners)
+            description = f"🏆 **تعادل!** الفائزون هم {winner_mentions} برصيد `{top_score} نقطة`!"
+            winner_image = SERVER_LOGO_URL
+            outcome = "neutral"
         else:
             winner = winners[0]
-            desc = f"🏆 **{winner.mention}** هو الفائز برصيد `{top_score} نقطة`!"
-            thumb = winner.display_avatar.url
-            
-        await msg.edit(
-            view=StatusPanel(
+            description = f"🏆 **{winner.mention}** هو الفائز برصيد `{top_score} نقطة`!"
+            winner_image = winner.display_avatar.url
+            outcome = "success"
+
+        await ctx.send(
+            view=GeoGuessrResultPanel(
                 "🏁 انتهت اللعبة!",
-                desc,
-                "success" if len(winners) == 1 else "neutral",
+                description,
+                outcome=outcome,
+                image_url=winner_image,
             ),
-            attachments=[],
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
     except asyncio.CancelledError:
