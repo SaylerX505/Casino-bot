@@ -768,6 +768,46 @@ class WheelLobbyStartRaceTests(unittest.IsolatedAsyncioTestCase):
             with contextlib.suppress(asyncio.CancelledError):
                 await view.lobby_task
 
+class MafiaLobbyStartRaceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_duplicate_start_after_defer_gets_private_v2_feedback(self):
+        loop = asyncio.get_running_loop()
+        host = _FakeMember(9101)
+        ctx = SimpleNamespace(
+            bot=SimpleNamespace(loop=loop, active_games={}),
+            channel=SimpleNamespace(id=9102),
+            author=host,
+            send=AsyncMock(),
+        )
+        view = MafiaLobbyView(ctx, start_game=AsyncMock())
+        start_button = next(
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Button) and item.custom_id == "mafia_start"
+        )
+
+        async def another_click_starts_first():
+            view.game_started = True
+
+        interaction = SimpleNamespace(
+            user=host,
+            response=SimpleNamespace(
+                defer=AsyncMock(side_effect=another_click_starts_first),
+                is_done=lambda: True,
+                send_message=AsyncMock(),
+            ),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        try:
+            await view.start_button(interaction, start_button)
+            interaction.response.defer.assert_awaited_once()
+            interaction.followup.send.assert_awaited_once()
+            self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
+            view.start_game.assert_not_awaited()
+            ctx.send.assert_not_awaited()
+        finally:
+            view.timer_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await view.timer_task
+
 class GeoGuessrRoundExtensionPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def test_round_extensions_are_limited_and_button_disables_at_cap(self):
         executor = _FakeMember(8101)
