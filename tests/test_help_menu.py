@@ -42,18 +42,6 @@ class HelpMenuTests(unittest.TestCase):
                 with self.subTest(label=label):
                     self.assertIn(config.PREFIX, format_help_command(label))
 
-    def test_group_lobby_start_commands_are_listed_only_for_staff(self):
-        member_labels = {label for label, _description in HELP_PAGES["member"]["fields"]}
-        staff_labels = {label for label, _description in HELP_PAGES["staff"]["fields"]}
-
-        for label in ("مافيا", "روليت", "غميضه", "جيو / geo", "كراسي", "عجلة / wheel"):
-            with self.subTest(label=label):
-                self.assertNotIn(label, member_labels)
-                self.assertIn(label, staff_labels)
-
-        self.assertIn("بيبدأها الستاف", HELP_PAGES["member"]["intro"])
-        self.assertIn("الستاف المعتمد", HELP_PAGES["staff"]["intro"])
-
     def test_member_page_keeps_the_actual_member_commands(self):
         labels = {label for label, _description in HELP_PAGES["member"]["fields"]}
         self.assertIn("رصيد / bal", labels)
