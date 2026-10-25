@@ -510,36 +510,37 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
                 ephemeral=True,
             )
 
-        recipient = guild.get_member(target_id)
-        if recipient is None:
-            try:
-                recipient = await guild.fetch_member(target_id)
-            except discord.NotFound:
-                return await interaction.response.send_message(
-                    view=StatusPanel("المستلم غير موجود", "العضو ده مش موجود في السيرفر.", "warning"),
-                    ephemeral=True,
-                )
-            except discord.HTTPException:
-                return await interaction.response.send_message(
-                    view=StatusPanel("تعذر التحقق", "مقدرناش نتحقق من العضو دلوقتي. حاول تاني.", "warning"),
-                    ephemeral=True,
-                )
-        if recipient.bot:
-            return await interaction.response.send_message(
-                view=StatusPanel("تحويل غير متاح", "التحويل لحسابات البوتات غير متاح.", "warning"),
-                ephemeral=True,
-            )
-
+        # Acknowledge before the uncached-member API lookup so this modal cannot expire.
         try:
             await interaction.response.defer(ephemeral=True, thinking=True)
         except (discord.HTTPException, discord.InteractionResponded):
             logger.warning(
                 "Could not acknowledge currency transfer interaction user_id=%s recipient_id=%s",
                 interaction.user.id,
-                recipient.id,
+                target_id,
                 exc_info=True,
             )
             return
+
+        recipient = guild.get_member(target_id)
+        if recipient is None:
+            try:
+                recipient = await guild.fetch_member(target_id)
+            except discord.NotFound:
+                return await interaction.followup.send(
+                    view=StatusPanel("المستلم غير موجود", "العضو ده مش موجود في السيرفر.", "warning"),
+                    ephemeral=True,
+                )
+            except discord.HTTPException:
+                return await interaction.followup.send(
+                    view=StatusPanel("تعذر التحقق", "مقدرناش نتحقق من العضو دلوقتي. حاول تاني.", "warning"),
+                    ephemeral=True,
+                )
+        if recipient.bot:
+            return await interaction.followup.send(
+                view=StatusPanel("تحويل غير متاح", "التحويل لحسابات البوتات غير متاح.", "warning"),
+                ephemeral=True,
+            )
 
         try:
             transferred, balance_after = await asyncio.to_thread(
