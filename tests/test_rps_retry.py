@@ -27,6 +27,7 @@ class RPSComponentsV2Tests(unittest.TestCase):
         view = RPSView(SimpleNamespace(), player, opponent, 100, "game-ui-test")
 
         self.assertIsInstance(view, LayoutView)
+        self.assertIsNone(view.timeout)
         buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
         self.assertEqual(len(buttons), 3)
         self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
@@ -89,6 +90,22 @@ class RPSAbsoluteDeadlineTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(view.accepted)
         notice.assert_awaited_once()
         self.assertIn("انتهت مهلة القبول", notice.await_args.args[1])
+        view.stop()
+
+    async def test_repeated_finish_closes_the_deferred_interaction(self):
+        view = self.make_view()
+        view.done = True
+        interaction = SimpleNamespace(
+            response=SimpleNamespace(is_done=lambda: True),
+            edit_original_response=AsyncMock(),
+        )
+
+        await view.finish(interaction)
+
+        interaction.edit_original_response.assert_awaited_once()
+        kwargs = interaction.edit_original_response.await_args.kwargs
+        self.assertIsInstance(kwargs["view"], StatusPanel)
+        self.assertEqual(kwargs["embeds"], [])
         view.stop()
 
     async def test_private_notice_uses_components_v2_even_after_defer(self):
