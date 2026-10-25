@@ -278,6 +278,23 @@ class HideAndSeekRoundV2Tests(unittest.TestCase):
         view.disable_controls()
         self.assertTrue(dropdowns[0].disabled)
 
+    async def test_late_hide_selection_is_rejected_without_mutating_state(self):
+        player = _FakeMember(210)
+        view = HidingView([player])
+        view.deadline = 0.0
+        interaction = SimpleNamespace(
+            user=player,
+            response=SimpleNamespace(is_done=lambda: False, send_message=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await view.dropdown.callback(interaction)
+
+        self.assertEqual(view.hiding_spots, {})
+        self.assertTrue(view.dropdown.disabled)
+        interaction.response.send_message.assert_awaited_once()
+        self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+
     def test_seeker_panel_is_v2_and_has_only_a_select_action(self):
         view = SeekerView(_FakeMember(202), set())
         self.assertIsInstance(view, LayoutView)
@@ -291,6 +308,23 @@ class HideAndSeekRoundV2Tests(unittest.TestCase):
         self.assertNotIn("\\n", view._panel_text.content)
         view.disable_controls()
         self.assertTrue(dropdowns[0].disabled)
+
+
+    async def test_late_search_selection_is_rejected_without_setting_choice(self):
+        seeker = _FakeMember(220)
+        view = SeekerView(seeker, set())
+        view.deadline = 0.0
+        interaction = SimpleNamespace(
+            user=seeker,
+            response=SimpleNamespace(is_done=lambda: False, send_message=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await view.dropdown.callback(interaction)
+
+        self.assertIsNone(view.choice)
+        self.assertTrue(view.dropdown.disabled)
+        interaction.response.send_message.assert_awaited_once()
 
 
 class MusicalChairsRoundV2Tests(unittest.TestCase):
@@ -338,6 +372,47 @@ class MusicalChairsRoundV2Tests(unittest.TestCase):
             self.assertTrue(all(button.disabled for button in buttons))
         finally:
             action.stop()
+
+
+class RouletteDeadlineTests(unittest.IsolatedAsyncioTestCase):
+    async def test_late_target_selection_is_rejected(self):
+        chosen = _FakeMember(7001)
+        targets = [chosen, _FakeMember(7002)]
+        view = KickView(chosen, targets, False, None, round_num=2)
+        view.deadline = 0.0
+        select = next(
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Select)
+        )
+        interaction = SimpleNamespace(
+            user=chosen,
+            response=SimpleNamespace(is_done=lambda: False, send_message=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await select.callback(interaction)
+
+        self.assertEqual(view.kicked_ids, [])
+        self.assertTrue(all(item.disabled for item in view._selects))
+        interaction.response.send_message.assert_awaited_once()
+
+    async def test_late_weapon_action_does_not_consume_inventory(self):
+        chosen = _FakeMember(7101)
+        consumed = []
+        currency = SimpleNamespace(remove_item=lambda *args: consumed.append(args) or True)
+        view = KickView(chosen, [chosen, _FakeMember(7102)], True, currency, round_num=3)
+        view.deadline = 0.0
+        interaction = SimpleNamespace(
+            user=chosen,
+            response=SimpleNamespace(is_done=lambda: False, send_message=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await view.weapon_callback(interaction)
+
+        self.assertEqual(consumed, [])
+        self.assertTrue(view.weapon_btn.disabled)
+        interaction.response.send_message.assert_awaited_once()
 
 
 class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
