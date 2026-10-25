@@ -244,7 +244,16 @@ class GuessGameMenu(LayoutView):
         await interaction.response.edit_message(view=self)
 
 class GeoGuessrResultPanel(LayoutView):
-    def __init__(self, title, description, outcome="neutral", image_name=None):
+    def __init__(
+        self,
+        title,
+        description,
+        outcome="neutral",
+        image_name=None,
+        *,
+        image_names=None,
+        image_url=None,
+    ):
         super().__init__(timeout=120)
         accents = {
             "success": THEME["green"],
@@ -253,16 +262,26 @@ class GeoGuessrResultPanel(LayoutView):
             "neutral": THEME["grey"],
         }
         children = [TextDisplay(f"# {title}\n{description}"[:4000])]
-        if image_name:
-            children.extend([
-                Separator(),
-                MediaGallery(
-                    discord.MediaGalleryItem(
-                        media=f"attachment://{image_name}",
-                        description="صورة من نتائج جولة GeoGuessr",
-                    )
-                ),
-            ])
+        gallery_items = []
+        filenames = list(image_names or ())
+        if image_name and image_name not in filenames:
+            filenames.insert(0, image_name)
+        for filename in filenames[:9]:
+            gallery_items.append(
+                discord.MediaGalleryItem(
+                    media=f"attachment://{filename}",
+                    description=f"صورة من نتائج جولة GeoGuessr: {filename}"[:256],
+                )
+            )
+        if image_url and len(gallery_items) < 10:
+            gallery_items.append(
+                discord.MediaGalleryItem(
+                    media=image_url,
+                    description="صورة الفائز أو غلاف النتيجة",
+                )
+            )
+        if gallery_items:
+            children.extend([Separator(), MediaGallery(*gallery_items)])
         self.add_item(Container(*children, accent_color=accents.get(outcome, THEME["grey"])))
 
 
