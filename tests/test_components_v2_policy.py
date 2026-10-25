@@ -81,6 +81,56 @@ def _promotional_button_labels():
     return sorted(findings)
 
 
+def _mention_policy_is_safe():
+    """Check that the client suppresses broad pings while RPS opts in to its invitee."""
+    try:
+        with open(os.path.join(ROOT, "main.py"), "r", encoding="utf-8") as source_file:
+            main_tree = ast.parse(source_file.read(), filename="main.py")
+        with open(os.path.join(COGS, "casino", "rps.py"), "r", encoding="utf-8") as source_file:
+            rps_tree = ast.parse(source_file.read(), filename="cogs/casino/rps.py")
+    except (OSError, SyntaxError):
+        return False, False
+
+    has_safe_default = False
+    for node in ast.walk(main_tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "Bot":
+            continue
+        for keyword in node.keywords:
+            value = keyword.value
+            if (
+                keyword.arg == "allowed_mentions"
+                and isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Attribute)
+                and value.func.attr == "none"
+                and isinstance(value.func.value, ast.Attribute)
+                and value.func.value.attr == "AllowedMentions"
+            ):
+                has_safe_default = True
+
+    challenge_invite_can_ping_only_target = False
+    for node in ast.walk(rps_tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "send":
+            continue
+        for keyword in node.keywords:
+            value = keyword.value
+            if keyword.arg != "allowed_mentions" or not isinstance(value, ast.Call):
+                continue
+            names = {item.arg: item.value for item in value.keywords}
+            if (
+                "users" in names
+                and isinstance(names.get("everyone"), ast.Constant)
+                and names["everyone"].value is False
+                and isinstance(names.get("roles"), ast.Constant)
+                and names["roles"].value is False
+            ):
+                challenge_invite_can_ping_only_target = True
+    return has_safe_default, challenge_invite_can_ping_only_target
+
+
 class ComponentsV2PolicyTests(unittest.TestCase):
     def test_no_game_or_utility_message_sends_legacy_embed_keyword(self):
         findings = _direct_embed_sends()
@@ -99,6 +149,12 @@ class ComponentsV2PolicyTests(unittest.TestCase):
             "Remove legacy promotional UI labels:\n"
             + "\n".join(f"{path}:{line}: {reason}" for path, line, reason in findings),
         )
+
+
+    def test_mentions_are_silent_by_default_with_explicit_rps_invitation_opt_in(self):
+        safe_default, controlled_invite = _mention_policy_is_safe()
+        self.assertTrue(safe_default, "The bot must not ping users in routine game recaps.")
+        self.assertTrue(controlled_invite, "RPS challenge should explicitly notify only the invited opponent.")
 
 
 if __name__ == "__main__":
