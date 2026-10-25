@@ -10,7 +10,7 @@ import io
 import random
 import config
 
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, private_status, report_game_failure, result_embed, send_status, try_edit_view
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, private_status, report_game_failure, result_embed, send_status, try_edit_view, wait_for_view_fixed_timeout
 
 
 logger = logging.getLogger(__name__)
@@ -392,9 +392,19 @@ async def run_game_loop(ctx, players):
         )
         hide_view.message = hide_msg
         set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), hide_view)
-        await hide_view.wait()
-        
+        hiding_timed_out = await wait_for_view_fixed_timeout(hide_view, 50.0)
+
         hide_view.disable_controls()
+        if hiding_timed_out:
+            hide_view._panel_text.content = (
+                "# انتهى وقت الاختباء\n"
+                f"تم إغلاق الاختيارات. اتسجل مكان لـ **{len(hide_view.hiding_spots)}/{len(players)}** لاعب."
+            )
+        else:
+            hide_view._panel_text.content = (
+                "# اكتمل الاختباء\n"
+                f"كل اللاعبين سجلوا أماكنهم (**{len(hide_view.hiding_spots)}/{len(players)}**). جاري بدء التفتيش."
+            )
         try:
             await hide_msg.edit(view=hide_view)
         except discord.HTTPException:
@@ -450,9 +460,19 @@ async def run_game_loop(ctx, players):
             seek_msg = await ctx.send(view=seek_view)
             seek_view.message = seek_msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), seek_view)
-            await seek_view.wait()
-            
+            seek_timed_out = await wait_for_view_fixed_timeout(seek_view, 15.0)
+
             seek_view.disable_controls()
+            if seek_timed_out and seek_view.choice is None:
+                seek_view._panel_text.content = (
+                    "# انتهى وقت التفتيش\n"
+                    f"{seeker.mention} ما اختارش مكانًا في الوقت المحدد."
+                )
+            else:
+                seek_view._panel_text.content = (
+                    "# تم إغلاق التفتيش\n"
+                    f"{seeker.mention} سجل الاختيار. جاري حساب النتيجة."
+                )
             try:
                 await seek_msg.edit(view=seek_view)
             except discord.HTTPException:
