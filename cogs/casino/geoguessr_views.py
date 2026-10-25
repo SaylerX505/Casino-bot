@@ -199,7 +199,21 @@ class GuessGameMenu(LayoutView):
                 color=discord.Color.red()
             )
             return await self._send_private_embed(interaction, embed)
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         await interaction.response.defer()
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         self.time_left = 0
         await self.auto_start()
 
