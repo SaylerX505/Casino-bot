@@ -135,6 +135,39 @@ class EconomyCallbackThreadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(read_threads), 2)
         self.assertTrue(all(thread_id != main_thread for thread_id in read_threads))
 
+    async def test_uncached_recipient_lookup_happens_after_transfer_acknowledgement(self):
+        sequence = []
+        recipient = SimpleNamespace(id=12345678901234567, bot=False, mention="<@12345678901234567>")
+
+        async def acknowledge(**_kwargs):
+            sequence.append("defer")
+
+        async def fetch_member(_user_id):
+            sequence.append("fetch_member")
+            return recipient
+
+        interaction = fake_interaction(guild=SimpleNamespace(
+            get_member=Mock(return_value=None),
+            fetch_member=AsyncMock(side_effect=fetch_member),
+        ))
+        interaction.response.defer = AsyncMock(side_effect=acknowledge)
+        modal = SimpleNamespace(
+            target=SimpleNamespace(value="<@12345678901234567>"),
+            amount=SimpleNamespace(value="25"),
+            cog=SimpleNamespace(log_action=AsyncMock()),
+        )
+
+        def transfer(*_args):
+            sequence.append("transfer")
+            return True, 975
+
+        with patch("cogs.casino.currency_views.bank.transfer_balance", side_effect=transfer):
+            await TransferModal.on_submit(modal, interaction)
+
+        self.assertEqual(sequence, ["defer", "fetch_member", "transfer"])
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+        interaction.followup.send.assert_awaited_once()
+
     async def test_currency_transfer_runs_atomically_off_the_event_loop(self):
         main_thread = threading.get_ident()
         transaction_threads = []
