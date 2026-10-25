@@ -535,7 +535,21 @@ class MafiaLobbyView(LayoutView):
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         await interaction.response.defer()
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         self.time_left = 0
         await self.auto_start()
 
