@@ -423,7 +423,7 @@ async def run_game_loop(ctx, players):
         )
         hide_view.message = hide_msg
         set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), hide_view)
-        hiding_timed_out = await wait_for_view_fixed_timeout(hide_view, 50.0)
+        hiding_timed_out = await wait_for_view_fixed_timeout(hide_view, max(0.0, hide_view.deadline - time.monotonic()))
 
         hide_view.disable_controls()
         if hiding_timed_out:
@@ -491,7 +491,7 @@ async def run_game_loop(ctx, players):
             seek_msg = await ctx.send(view=seek_view)
             seek_view.message = seek_msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), seek_view)
-            seek_timed_out = await wait_for_view_fixed_timeout(seek_view, 15.0)
+            seek_timed_out = await wait_for_view_fixed_timeout(seek_view, max(0.0, seek_view.deadline - time.monotonic()))
 
             seek_view.disable_controls()
             if seek_timed_out and seek_view.choice is None:
