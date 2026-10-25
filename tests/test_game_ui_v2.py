@@ -208,6 +208,21 @@ class MafiaExpiredActionTests(unittest.IsolatedAsyncioTestCase):
         view.message.edit.assert_awaited_once_with(view=view)
 
 
+    async def test_secret_action_does_not_open_parallel_private_pickers(self):
+        active_user = _FakeMember(5261)
+        view = SecretButtonView(active_user, [active_user], [_FakeMember(5262)], "mafia")
+        view.action_open = True
+        interaction = SimpleNamespace(
+            user=active_user,
+            response=SimpleNamespace(is_done=lambda: False, send_message=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await view.btn_callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+        self.assertIsNone(view.selected_id)
 class MafiaRoleRevealV2Tests(unittest.TestCase):
     def test_role_reveal_is_a_private_state_injected_v2_view(self):
         player = _FakeMember(5301)
