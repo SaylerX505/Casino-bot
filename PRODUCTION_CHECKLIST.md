@@ -47,10 +47,11 @@ Run these against a staging server/channel before production:
 
 ## UI and operational gates
 
-- [x] Game and utility announcements use Components V2 panels; a CI AST guard rejects direct legacy \`embed=\`/non-empty \`embeds=\` send payloads and rejects obsolete disabled developer-promo buttons.
+- [x] Game and utility announcements use Components V2 panels; a CI AST guard rejects direct legacy `embed=`/non-empty `embeds=` send payloads and rejects obsolete disabled developer-promo buttons.
 - [x] Game lobbies, round panels, and results remain separate events rather than being collapsed into one giant panel. The shared theme handles status colors, safe edit fallbacks, and branded receipts.
 - [x] Fixed wall-clock deadlines are enforced for Mafia secret actions/voting, hide-and-seek choices, musical-chair rounds, and roulette targeting; callbacks reject late actions, and tests cover late selections and item-consumption safety.
 - [x] Ordinary game mentions are silent by default; the Rock-Paper-Scissors invitation explicitly opts in to notifying only the challenged opponent.
 - [ ] Review rendered results, channel noise, repeated messages, and failure recovery in the live staging server—not only unit-tested paths.
+- [ ] Confirm the latest release-candidate SHA has green CI after all UX/gameplay commits; the benchmark's last verified head is a baseline, not a substitute for this check.
 - [ ] Confirm the host's disk/volume persistence, restart policy, log retention, and independent backup process.
 - [ ] Keep the PR as draft until the staging checks and remaining UI/architecture work are reviewed. Do not merge or deploy based solely on CI success.
