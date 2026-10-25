@@ -26,7 +26,7 @@ from cogs.casino.mafia_views import (
 from cogs.casino.roulette import RouletteLobby
 from cogs.casino.roulette_views import KickView
 from cogs.casino.wheel import WheelLobby, WheelResultPanel
-from cogs.utility.theme import embed_to_v2
+from cogs.utility.theme import embed_to_v2, wait_for_view_fixed_timeout
 
 
 class _FakeMember:
@@ -249,7 +249,7 @@ class HideAndSeekRoundV2Tests(unittest.TestCase):
         self.assertEqual(len(galleries), 1)
         self.assertIn("attachment://map.png", str(galleries[0].items[0].media.url))
         self.assertIn("\n", view._panel_text.content)
-        self.assertNotIn("\\\\n", view._panel_text.content)
+        self.assertNotIn("\\n", view._panel_text.content)
         view.disable_controls()
         self.assertTrue(dropdowns[0].disabled)
 
@@ -670,6 +670,45 @@ class GeoGuessrRoundExtensionPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(timer_state["end_time"], __import__("time").time())
         self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
         view.stop()
+
+
+class FixedDeadlineWaitTests(unittest.IsolatedAsyncioTestCase):
+    async def test_deadline_stops_view_even_if_native_timeout_would_be_renewed(self):
+        class FakeView:
+            def __init__(self):
+                self.done = asyncio.Event()
+                self.stopped = False
+
+            async def wait(self):
+                await self.done.wait()
+                return False
+
+            def stop(self):
+                self.stopped = True
+                self.done.set()
+
+        view = FakeView()
+        expired = await wait_for_view_fixed_timeout(view, 0.01)
+
+        self.assertTrue(expired)
+        self.assertTrue(view.stopped)
+
+    async def test_natural_view_completion_is_not_reported_as_deadline_expiry(self):
+        class FakeView:
+            def __init__(self):
+                self.stopped = False
+
+            async def wait(self):
+                return False
+
+            def stop(self):
+                self.stopped = True
+
+        view = FakeView()
+        expired = await wait_for_view_fixed_timeout(view, 1.0)
+
+        self.assertFalse(expired)
+        self.assertFalse(view.stopped)
 
 
 if __name__ == "__main__":
