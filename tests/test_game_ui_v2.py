@@ -248,6 +248,8 @@ class HideAndSeekRoundV2Tests(unittest.TestCase):
         self.assertEqual(len(dropdowns), 1)
         self.assertEqual(len(galleries), 1)
         self.assertIn("attachment://map.png", str(galleries[0].items[0].media.url))
+        self.assertIn("\n", view._panel_text.content)
+        self.assertNotIn("\\\\n", view._panel_text.content)
         view.disable_controls()
         self.assertTrue(dropdowns[0].disabled)
 
@@ -260,6 +262,8 @@ class HideAndSeekRoundV2Tests(unittest.TestCase):
         ]
         self.assertEqual(len(dropdowns), 1)
         self.assertIn("<@202>", view._panel_text.content)
+        self.assertIn("\n", view._panel_text.content)
+        self.assertNotIn("\\\\n", view._panel_text.content)
         view.disable_controls()
         self.assertTrue(dropdowns[0].disabled)
 
