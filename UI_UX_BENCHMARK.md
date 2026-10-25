@@ -1,10 +1,10 @@
 # Casino Bot UI/UX & Gameplay Benchmark
 
 **Review date:** 2026-10-25  
-**Target branch:** \`codex/premium-betting-foundation\`  
+**Target branch:** `codex/premium-betting-foundation`  
 **Scope:** user-facing commands, Components V2 panels, lobby lifecycle, private actions, economy, game results, permission failures, and recovery states.
 
-This is a behavior-and-pattern benchmark, not a pixel-perfect clone. The goal is to borrow successful interaction patterns from established Discord products without copying their proprietary assets, names, or visual identity. Since this bot must use Components V2 for message panels, all message-level layouts are built with \`LayoutView\`, \`Container\`, \`TextDisplay\`, component rows, and media galleries.
+This is a behavior-and-pattern benchmark, not a pixel-perfect clone. The goal is to borrow successful interaction patterns from established Discord products without copying their proprietary assets, names, or visual identity. Since this bot must use Components V2 for message panels, all message-level layouts are built with `LayoutView`, `Container`, `TextDisplay`, component rows, and media galleries.
 
 ## Benchmark set
 
@@ -73,7 +73,7 @@ The table is a design reference, not a claim that every product has the same arc
 
 ### 5. CI guardrails
 
-- A source-level AST test rejects direct outgoing \`embed=\` and nonempty \`embeds=\` message payloads across \`main.py\` and \`cogs/\`; clearing old embeds during a replacement edit is allowed.
+- A source-level AST test rejects direct outgoing `embed=` and nonempty `embeds=` message payloads across `main.py` and `cogs/`; clearing old embeds during a replacement edit is allowed.
 - A second guard rejects legacy disabled developer-attribution buttons.
 - Another policy test protects the default no-ping behavior while allowing RPS to notify only the challenged opponent.
 - Test coverage includes V2 rendering, command/help metadata, fixed deadlines, game state/settlement, inventory/shop behavior, privacy and recovery behavior.
@@ -91,6 +91,6 @@ CI does not prove the Discord API accepted every live component arrangement or t
 
 ## Current readout
 
-- **Automated status at the time of review:** Python 3.11 and 3.14 tests, Ruff, Docker build/smoke, and dependency audit passed on the earlier green head \`023b11b4f1aa8f9bcf41ebbeed25f65297cf27bf\`. Subsequent help-renderer changes still require their own CI run.
-- **Not yet verified:** a live Discord staging session on the newest branch head.
+- **Latest verified automated status:** head `576c4a762caeb0ce4b266b546c6f760e8916720b` passed Python 3.11 and 3.14 (340 unit tests in the Python 3.11 run), Ruff, broad syntax/undefined-name checks, `compileall`, Docker build/startup smoke, and dependency audit. See [GitHub Actions #40183931873](https://github.com/SaylerX505/Casino-bot/actions/runs/40183931873). Changes made after that SHA must pass their own CI run before release.
+- **Not yet verified:** a live Discord staging session on the newest branch head. Components V2 has been unit-checked, but live attachment rendering, mobile layouts, actual Discord API interactions, and real server permissions still require staging.
 - **Release policy:** keep this branch separate; do not merge or deploy on CI success alone.
