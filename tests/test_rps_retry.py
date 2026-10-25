@@ -109,59 +109,6 @@ class RPSAbsoluteDeadlineTests(unittest.IsolatedAsyncioTestCase):
         view.stop()
 
 
-class RPSAbsoluteDeadlineTests(unittest.IsolatedAsyncioTestCase):
-    def make_view(self):
-        player = SimpleNamespace(id=101, mention="<@101>")
-        opponent = SimpleNamespace(id=202, mention="<@202>")
-        return RPSView(SimpleNamespace(), player, opponent, 100, "deadline-test")
-
-    async def test_absolute_deadline_expires_without_any_component_click(self):
-        view = self.make_view()
-        finish = AsyncMock()
-
-        with patch.object(view, "finish", new=finish):
-            view.schedule_deadline(0.01)
-            await asyncio.sleep(0.03)
-
-        finish.assert_awaited_once_with()
-        self.assertIsNone(view._deadline_task)
-        view.stop()
-
-    async def test_acceptance_after_absolute_deadline_never_reserves_stakes(self):
-        view = self.make_view()
-        view.deadline = time.monotonic() - 1
-        interaction = SimpleNamespace(user=SimpleNamespace(id=view.opponent.id))
-
-        with (
-            patch.object(view, "_defer_private", new=AsyncMock(return_value=True)),
-            patch.object(view, "_private_notice", new=AsyncMock()) as notice,
-            patch("cogs.casino.rps.bank.accept_rps_challenge") as accept,
-        ):
-            await view.accept_challenge(interaction)
-
-        accept.assert_not_called()
-        self.assertFalse(view.accepted)
-        notice.assert_awaited_once()
-        self.assertIn("انتهت مهلة القبول", notice.await_args.args[1])
-        view.stop()
-
-    async def test_private_notice_uses_components_v2_even_after_defer(self):
-        view = self.make_view()
-        interaction = SimpleNamespace(
-            response=SimpleNamespace(is_done=lambda: True),
-            edit_original_response=AsyncMock(),
-        )
-
-        await view._private_notice(interaction, "مش مسموح بالضغط ده.")
-
-        interaction.edit_original_response.assert_awaited_once()
-        kwargs = interaction.edit_original_response.await_args.kwargs
-        self.assertIsInstance(kwargs["view"], StatusPanel)
-        self.assertIsNone(kwargs["content"])
-        self.assertEqual(kwargs["embeds"], [])
-        view.stop()
-
-
 class RPSettlementRetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_settlement_runs_in_a_worker_thread(self):
         main_thread = threading.get_ident()
