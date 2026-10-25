@@ -18,6 +18,7 @@ from cogs.casino.game_registry import (
     set_game_view,
 )
 from cogs.utility.theme import (
+    private_status,
     embed_to_v2,
     THEME,
     StatusPanel,
@@ -320,7 +321,21 @@ class ChairsLobby(LayoutView):
                 view=StatusPanel("مش مسموح", "صاحب اللوبي فقط يقدر يبدأ الجولة أو يمدد الوقت.", "warning"),
                 ephemeral=True,
             )
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         await interaction.response.defer()
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         self.time_left = 0
         await self.auto_start()
 
