@@ -825,7 +825,14 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 if interaction is not None and interaction.response.is_done():
                     try:
                         await interaction.edit_original_response(
-                            content="اتسجل اختيارك، والنتيجة النهائية ظاهرة في رسالة التحدي.",
+                            content=None,
+                            embeds=[],
+                            attachments=[],
+                            view=StatusPanel(
+                                "تم تسجيل اختيارك",
+                                "اكتملت الجولة؛ النتيجة النهائية موجودة في لوحة التحدي بالقناة.",
+                                "success",
+                            ),
                             allowed_mentions=discord.AllowedMentions.none(),
                         )
                     except discord.HTTPException:
@@ -842,14 +849,29 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             self.stop()
 
     async def finish(self, interaction=None):
-        # Serialize terminal state with acceptance and choice changes.
+        # Serialize terminal state with acceptance and choice changes. A timeout
+        # may win this race after the final click has already deferred its reply;
+        # always close that deferred acknowledgement rather than leave it loading.
         async with self._choice_lock:
             if self.done:
-                return
-            self.done = True
-            accepted = self.accepted
-            player_choice = self.choices.get(self.player.id)
-            opponent_choice = self.choices.get(self.opponent.id)
+                already_done = True
+                accepted = self.accepted
+                player_choice = self.choices.get(self.player.id)
+                opponent_choice = self.choices.get(self.opponent.id)
+            else:
+                already_done = False
+                self.done = True
+                accepted = self.accepted
+                player_choice = self.choices.get(self.player.id)
+                opponent_choice = self.choices.get(self.opponent.id)
+
+        if already_done:
+            if interaction is not None:
+                return await self._private_notice(
+                    interaction,
+                    "الجولة اتقفلت بالفعل؛ النتيجة النهائية ظاهرة في لوحة التحدي.",
+                )
+            return
 
         if not accepted:
             try:
@@ -1030,6 +1052,18 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             self.choices[interaction.user.id] = move
             if len(self.choices) == 2:
                 should_finish = True
+                if not interaction.response.is_done():
+                    try:
+                        # Settlement may involve a busy SQLite lock and several
+                        # retries. Acknowledge the final move before starting it.
+                        await interaction.response.defer(ephemeral=True, thinking=True)
+                    except (discord.HTTPException, discord.InteractionResponded):
+                        logging.getLogger(__name__).warning(
+                            "Could not defer final RPS move before settlement game_id=%s user_id=%s",
+                            self.game_id,
+                            interaction.user.id,
+                            exc_info=True,
+                        )
             else:
                 should_finish = False
                 await self._private_notice(interaction, "✅ سجلنا اختيارك بسرية.")
