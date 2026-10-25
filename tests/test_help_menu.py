@@ -3,7 +3,6 @@
 import unittest
 
 import config
-
 from cogs.utility.help import HELP_PAGES, SLASH_COMMANDS, format_help_command
 
 
@@ -41,8 +40,7 @@ class HelpMenuTests(unittest.TestCase):
         for page in HELP_PAGES.values():
             for label, _description in page["fields"]:
                 with self.subTest(label=label):
-                    self.assertIn(config_prefix(), format_help_command(label))
-
+                    self.assertIn(config.PREFIX, format_help_command(label))
 
     def test_member_page_keeps_the_actual_member_commands(self):
         labels = {label for label, _description in HELP_PAGES["member"]["fields"]}
