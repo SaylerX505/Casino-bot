@@ -601,11 +601,39 @@ class RoleRevealView(LayoutView):
             )
         )
 
+    async def close(self):
+        if self.is_finished():
+            return
+        self.button.disabled = True
+        self._panel_text.content = (
+            "# انتهت مرحلة كشف الأدوار\n"
+            "الأدوار اتوزعت بالفعل. حافظ على سرّك؛ تفاصيل المرحلة الحالية هتظهر في رسالة اللعبة."
+        )
+        if self.message is not None:
+            await try_edit_view(
+                self.message,
+                self,
+                context="mafia_role_reveal_closed",
+            )
+        self.stop()
+
+    async def on_timeout(self):
+        await self.close()
+
     async def reveal_btn(self, interaction: discord.Interaction):
+        if self.is_finished() or self.button.disabled:
+            return await private_status(
+                interaction,
+                "مرحلة كشف الأدوار انتهت",
+                "لو عرفت دورك بالفعل، احتفظ بيه سرًا وتابع لوحة اللعبة.",
+                "warning",
+            )
         if interaction.user not in self.alive:
-            return await interaction.response.send_message(
-                view=StatusPanel("مش في الجيم", "أنت مش مشارك في اللعبة دي.", "warning"),
-                ephemeral=True,
+            return await private_status(
+                interaction,
+                "مش في الجيم",
+                "أنت مش مشارك في اللعبة دي.",
+                "warning",
             )
         role = self.game_roles[interaction.user]
         role_label = (
