@@ -290,9 +290,13 @@ async def run_mafia_game(ctx, players):
             vote_msg = await ctx.send(view=vote_view)
             vote_view.message = vote_msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), vote_view)
-            await vote_view.wait() 
-            
+            await wait_for_view_fixed_timeout(vote_view, 20.0)
+
             vote_view.disable_controls()
+            vote_view._panel_text.content = (
+                "# انتهى التصويت\n"
+                f"اتقفل التصويت بعد تسجيل **{len(vote_view.votes)}/{len(alive)}** أصوات. الاختيارات اتقفلت."
+            )
             try: await vote_msg.edit(view=vote_view)
             except discord.HTTPException: pass
             
