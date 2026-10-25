@@ -58,6 +58,14 @@ def get_flag_emoji(country_code):
     if not country_code or len(country_code) != 2: return "❓"
     return chr(ord(country_code[0].upper()) + 127397) + chr(ord(country_code[1].upper()) + 127397)
 
+def order_guesses_by_submission(guesses, received_at):
+    """Order completed guesses by when the message reached the round loop.
+
+    Geocoding is asynchronous; completion order is not a fair proxy for who
+    submitted first. Missing timestamps sort last as a defensive fallback.
+    """
+    return sorted(guesses, key=lambda player: received_at.get(player, float("inf")))
+
 def get_guess_data(guess_text):
     try:
         location = geolocator.geocode(
@@ -170,6 +178,7 @@ async def run_game_loop(ctx, players):
             guesses = {}
             guess_data_cache = {}
             guess_order = []
+            guess_received_at = {}
             processing_users = set()
             reaction_tasks = set()
 
@@ -184,6 +193,7 @@ async def run_game_loop(ctx, players):
                     if code is None:
                         return
                     if guess_msg.author not in guesses:
+                        guess_received_at[guess_msg.author] = received_at
                         guess_order.append(guess_msg.author)
                     guesses[guess_msg.author] = text
                     guess_data_cache[guess_msg.author] = {"coords": coords, "code": code, "text": text}
@@ -243,6 +253,8 @@ async def run_game_loop(ctx, players):
                 logger.warning("GeoGuessr controls could not be disabled", exc_info=True)
 
             await asyncio.sleep(0.5)
+
+            guess_order = order_guesses_by_submission(guess_order, guess_received_at)
 
             closest_distance = float('inf')
             best_guess_code = None
