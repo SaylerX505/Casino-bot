@@ -239,6 +239,18 @@ class VoteDropdown(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if (
+            self.view_parent.closed
+            or self.view_parent.is_finished()
+            or time.monotonic() >= self.view_parent.deadline
+        ):
+            self.view_parent.disable_controls()
+            return await private_status(
+                interaction,
+                "انتهى التصويت",
+                "التصويت اتقفل بالفعل؛ مش ممكن تغيير الاختيار بعد انتهاء المهلة.",
+                "warning",
+            )
         if interaction.user not in self.view_parent.alive_players:
             return await interaction.response.send_message(
                 view=StatusPanel("التصويت غير متاح", "الميتين مابيتكلموش؛ التصويت للأحياء فقط.", "warning"),
@@ -253,6 +265,8 @@ class DayVoteView(LayoutView):
     def __init__(self, alive_players):
         super().__init__(timeout=20.0)
         self.alive_players = alive_players
+        self.deadline = time.monotonic() + 20.0
+        self.closed = False
         self.votes = {}
         self.message = None
         self._panel_text = TextDisplay(self._vote_summary())
@@ -292,6 +306,14 @@ class DayVoteView(LayoutView):
         return "\n".join(lines)[:4000]
 
     async def skip_btn(self, interaction: discord.Interaction):
+        if self.closed or self.is_finished() or time.monotonic() >= self.deadline:
+            self.disable_controls()
+            return await private_status(
+                interaction,
+                "انتهى التصويت",
+                "التصويت اتقفل بالفعل؛ مش ممكن تفويت التصويت بعد انتهاء المهلة.",
+                "warning",
+            )
         if interaction.user not in self.alive_players:
             return await interaction.response.send_message(
                 view=StatusPanel("التصويت غير متاح", "الميتين مابيتكلموش؛ التصويت للأحياء فقط.", "warning"),
@@ -301,16 +323,33 @@ class DayVoteView(LayoutView):
         await self.update_embed(interaction)
 
     async def update_embed(self, interaction):
-        self._panel_text.content = self._vote_summary()
+        if self.closed or self.is_finished() or time.monotonic() >= self.deadline:
+            self.disable_controls()
+            return await private_status(
+                interaction,
+                "انتهى التصويت",
+                "التصويت اتقفل بالفعل؛ مش ممكن تغيير الاختيار بعد انتهاء المهلة.",
+                "warning",
+            )
+
+        if len(self.votes) >= len(self.alive_players):
+            self.closed = True
+            self.disable_controls()
+            self._panel_text.content = (
+                "# اكتمل التصويت\n"
+                f"كل الأحياء سجلوا أصواتهم (**{len(self.votes)}/{len(self.alive_players)}**). بنحسب النتيجة."
+            )
+            self.stop()
+        else:
+            self._panel_text.content = self._vote_summary()
+
         try:
             await interaction.response.edit_message(view=self)
         except discord.HTTPException:
             logger.debug("Could not update Mafia V2 vote panel", exc_info=True)
 
-        if len(self.votes) >= len(self.alive_players):
-            self.stop()
-
     def disable_controls(self):
+        self.closed = True
         self.dropdown.disabled = True
         self.skip_button.disabled = True
 
