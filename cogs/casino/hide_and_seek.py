@@ -119,7 +119,7 @@ class HidingView(LayoutView):
         self.hiding_spots = {}
         self.dropdown = HideDropdown()
         self._panel_text = TextDisplay(
-            "# وقت الاختباء\\nالكل عنده 50 ثانية يختار مكانًا للاختباء. اختيارك خاص ومش هيظهر لباقي اللاعبين."
+            "# وقت الاختباء\nالكل عنده 50 ثانية يختار مكانًا للاختباء. اختيارك خاص ومش هيظهر لباقي اللاعبين."
         )
         self.add_item(
             Container(
@@ -180,7 +180,7 @@ class SeekerView(LayoutView):
         self.choice = None
         self.dropdown = SeekDropdown(seeker, searched_locations)
         self._panel_text = TextDisplay(
-            f"# وقت التفتيش\\n{seeker.mention} عليه الدور. عندك 15 ثانية تختار مكانًا للتفتيش من القائمة."
+            f"# وقت التفتيش\n{seeker.mention} عليه الدور. عندك 15 ثانية تختار مكانًا للتفتيش من القائمة."
         )
         self.add_item(
             Container(
