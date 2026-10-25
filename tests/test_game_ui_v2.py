@@ -665,10 +665,10 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
         view.players = players
 
         currency = SimpleNamespace(
-            get_balance=lambda user_id: 100,
             settle_wheel=lambda user_id, payout, target_loss: {
                 "played": True,
-                "reason": "settled",
+                "reason": None,
+                "before": 100,
                 "after": 150,
                 "net": 50,
                 "refund": 0,
