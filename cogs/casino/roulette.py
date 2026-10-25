@@ -18,6 +18,7 @@ from discord.ui import (
 )
 
 import config
+from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.game_registry import (
     is_active_game,
     owns_game_task,
@@ -39,8 +40,6 @@ from cogs.utility.theme import (
     try_edit_view,
     wait_for_view_fixed_timeout,
 )
-
-SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
 
 logger = logging.getLogger(__name__)
 
