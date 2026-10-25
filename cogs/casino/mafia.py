@@ -91,8 +91,9 @@ async def run_mafia_game(ctx, players):
         reveal_view = RoleRevealView(alive, game_roles)
         reveal_view.message = await ctx.send(view=reveal_view)
         set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), reveal_view)
-        await asyncio.sleep(5) 
-        
+        await asyncio.sleep(5)
+        await reveal_view.close()
+
         day_number = 1
         
         while True:
