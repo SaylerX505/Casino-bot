@@ -29,6 +29,7 @@ class LobbyUXTests(unittest.TestCase):
         self.assertIn("الحد الأدنى للبدء:** 5 لاعب", text)
         self.assertIn("اللاعبون (1/12)", text)
         self.assertIn("الوقت المتبقي:** 17 ثانية", text)
+        self.assertIn("لو العدد وصل للحد الأدنى", text)
         self.assertIsInstance(embed_to_v2(panel), LayoutView)
 
     def test_solo_capable_lobby_does_not_claim_it_needs_two_players(self):
