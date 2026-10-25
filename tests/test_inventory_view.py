@@ -39,7 +39,12 @@ class InventoryViewTests(unittest.IsolatedAsyncioTestCase):
             display_avatar=SimpleNamespace(url="https://example.com/avatar.png"),
         )
         self.cog = FakeCurrency()
-        self.view = InventoryView(self.cog, self.owner)
+        self.view = InventoryView(
+            self.cog,
+            self.owner,
+            inventory=self.cog.get_inventory(self.owner.id),
+            balance=self.cog.get_balance(self.owner.id),
+        )
 
     def button(self, custom_id):
         return next(
