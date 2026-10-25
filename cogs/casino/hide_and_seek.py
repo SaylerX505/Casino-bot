@@ -8,6 +8,7 @@ import logging
 from PIL import Image, ImageDraw
 import io
 import random
+import time
 import config
 
 from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, private_status, report_game_failure, result_embed, send_status, try_edit_view, wait_for_view_fixed_timeout
@@ -87,6 +88,18 @@ class HideDropdown(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if (
+            self.view.closed
+            or self.view.is_finished()
+            or time.monotonic() >= self.view.deadline
+        ):
+            self.view.disable_controls()
+            return await private_status(
+                interaction,
+                "انتهى وقت الاختباء",
+                "اتقفلت مرحلة الاختباء؛ مش ممكن تسجيل مكان متأخر.",
+                "warning",
+            )
         if interaction.user not in self.view.players:
             return await interaction.response.send_message(
                 view=StatusPanel("اختيار غير متاح", "أنت مش مشارك في الجولة دي.", "warning"),
@@ -116,6 +129,8 @@ class HidingView(LayoutView):
     def __init__(self, players):
         super().__init__(timeout=50.0)
         self.players = players
+        self.deadline = time.monotonic() + 50.0
+        self.closed = False
         self.hiding_spots = {}
         self.dropdown = HideDropdown()
         self._panel_text = TextDisplay(
@@ -137,6 +152,7 @@ class HidingView(LayoutView):
         )
 
     def disable_controls(self):
+        self.closed = True
         self.dropdown.disabled = True
 
 
@@ -160,6 +176,18 @@ class SeekDropdown(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if (
+            self.view.closed
+            or self.view.is_finished()
+            or time.monotonic() >= self.view.deadline
+        ):
+            self.view.disable_controls()
+            return await private_status(
+                interaction,
+                "انتهى وقت التفتيش",
+                "اتقفلت مرحلة التفتيش؛ مش ممكن تسجيل اختيار متأخر.",
+                "warning",
+            )
         if interaction.user != self.seeker:
             return await interaction.response.send_message(
                 view=StatusPanel("مش دورك", "الاختيار متاح للشخص اللي اتحدد للبحث فقط.", "warning"),
@@ -177,6 +205,8 @@ class SeekerView(LayoutView):
     def __init__(self, seeker, searched_locations):
         super().__init__(timeout=15.0)
         self.seeker = seeker
+        self.deadline = time.monotonic() + 15.0
+        self.closed = False
         self.choice = None
         self.dropdown = SeekDropdown(seeker, searched_locations)
         self._panel_text = TextDisplay(
@@ -192,6 +222,7 @@ class SeekerView(LayoutView):
         )
 
     def disable_controls(self):
+        self.closed = True
         self.dropdown.disabled = True
 
 
