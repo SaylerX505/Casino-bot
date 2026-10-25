@@ -291,8 +291,8 @@ class EconomyInteractionThreadingTests(unittest.IsolatedAsyncioTestCase):
             item.content for item in kwargs["view"].walk_children()
             if isinstance(item, discord.ui.TextDisplay)
         )
-        self.assertIn("#1 <@88>", text)
-        self.assertIn("#2 <@99>", text)
+        self.assertIn("**#1** <@88>", text)
+        self.assertIn("**#2** <@99>", text)
         self.assertFalse(kwargs.get("allowed_mentions", discord.AllowedMentions.none()).users)
 
 
