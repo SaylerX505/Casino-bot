@@ -17,6 +17,7 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
+from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
