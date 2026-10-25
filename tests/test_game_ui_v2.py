@@ -183,6 +183,31 @@ class MafiaSecretActionV2Tests(unittest.TestCase):
             view.stop()
 
 
+class MafiaExpiredActionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_private_target_picker_disables_and_reports_timeout(self):
+        targets = [_FakeMember(5151), _FakeMember(5152)]
+        view = EphemeralActionView(targets, timeout=0.1)
+        view.message = SimpleNamespace(edit=AsyncMock())
+
+        await view.on_timeout()
+
+        self.assertTrue(view.dropdown.disabled)
+        self.assertIn("انتهى وقت الاختيار", view._panel_text.content)
+        view.message.edit.assert_awaited_once_with(view=view)
+
+    async def test_secret_action_panel_closes_when_no_choice_was_recorded(self):
+        active_user = _FakeMember(5251)
+        view = SecretButtonView(active_user, [active_user], [_FakeMember(5252)], "mafia")
+        view.message = SimpleNamespace(edit=AsyncMock())
+
+        await view.on_timeout()
+
+        self.assertTrue(view.button.disabled)
+        self.assertIsNone(view.selected_id)
+        self.assertIn("انتهى وقت الحركة السرية", view._panel_text.content)
+        view.message.edit.assert_awaited_once_with(view=view)
+
+
 class MafiaRoleRevealV2Tests(unittest.TestCase):
     def test_role_reveal_is_a_private_state_injected_v2_view(self):
         player = _FakeMember(5301)
