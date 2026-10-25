@@ -106,6 +106,7 @@ class SecretButtonView(LayoutView):
         self.selected_id = None
         self.message = None
         self.deadline = time.monotonic() + 20.0
+        self.action_open = False
 
         if role_name == "mafia":
             button_label = "افتح قائمة الاغتيال"
@@ -184,11 +185,32 @@ class SecretButtonView(LayoutView):
                 ephemeral=True,
             )
 
+        if self.selected_id is not None or self.action_open:
+            return await private_status(
+                interaction,
+                "الاختيار السري مفتوح بالفعل",
+                "عندك قائمة اختيار واحدة للجولة دي. كمّلها أو استنى انتهاء المهلة؛ مش هنعمل اختيارًا موازيًا.",
+                "warning",
+            )
+
+        self.action_open = True
         ephemeral_view = EphemeralActionView(self.targets, timeout=remaining)
-        await interaction.response.send_message(
-            view=ephemeral_view,
-            ephemeral=True,
-        )
+        try:
+            await interaction.response.send_message(
+                view=ephemeral_view,
+                ephemeral=True,
+            )
+        except asyncio.CancelledError:
+            self.action_open = False
+            raise
+        except discord.HTTPException:
+            self.action_open = False
+            logger.exception(
+                "Could not open Mafia private target picker role=%s user_id=%s",
+                self.role_name,
+                interaction.user.id,
+            )
+            return
         ephemeral_view.message = await interaction.original_response()
         await ephemeral_view.wait()
 
