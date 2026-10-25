@@ -20,7 +20,7 @@ from cogs.casino.mafia_views import (
     RoleRevealView,
     SecretButtonView,
 )
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, send_status
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, send_status, wait_for_view_fixed_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -130,10 +130,16 @@ async def run_mafia_game(ctx, players):
                     reminder_tasks.add(reminder)
                     reminder.add_done_callback(reminder_tasks.discard)
 
-                    await m_view.wait()
+                    mafia_timed_out = await wait_for_view_fixed_timeout(m_view, 20.0)
                     mafia_target_id = m_view.selected_id
-                    
+
                     if mafia_target_id is None:
+                        m_view._panel_text.content = (
+                            "# انتهت مهلة حركة المافيا\n"
+                            "مفيش اختيار اتسجل؛ حركة المافيا هتعدي من غير اغتيال."
+                            if mafia_timed_out
+                            else "# حركة المافيا اتقفلت\nمفيش اختيار اتسجل."
+                        )
                         afk_tracker[hitman] += 1
                         if afk_tracker[hitman] >= 3:
                             alive.remove(hitman)
@@ -187,10 +193,16 @@ async def run_mafia_game(ctx, players):
                     reminder_tasks.add(reminder)
                     reminder.add_done_callback(reminder_tasks.discard)
 
-                    await d_view.wait()
+                    doctor_timed_out = await wait_for_view_fixed_timeout(d_view, 20.0)
                     doctor_target_id = d_view.selected_id
 
                     if doctor_target_id is None:
+                        d_view._panel_text.content = (
+                            "# انتهت مهلة حركة الدكتور\n"
+                            "مفيش علاج اتسجل؛ الجولة هتكمل من غير إنقاذ."
+                            if doctor_timed_out
+                            else "# حركة الدكتور اتقفلت\nمفيش علاج اتسجل."
+                        )
                         afk_tracker[doctor] += 1
                         if afk_tracker[doctor] >= 3:
                             alive.remove(doctor)
