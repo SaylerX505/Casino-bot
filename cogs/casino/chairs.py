@@ -9,6 +9,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 import config
+from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.game_registry import (
     is_active_game,
     owns_game_task,
@@ -174,7 +175,7 @@ class ChairsLobby(LayoutView):
         self.extensions_left = self.MAX_TIME_EXTENSIONS
         self.message = None
         
-        self.logo_url = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
+        self.logo_url = SERVER_LOGO_URL
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
