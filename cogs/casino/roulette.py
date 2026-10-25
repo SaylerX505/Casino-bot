@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+import time
 from functools import partial
 
 import discord
@@ -268,7 +269,7 @@ class RouletteLobby(LayoutView):
                 msg = await self.ctx.send(view=view, file=file)
                 view.message = msg
                 set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), view)
-                await wait_for_view_fixed_timeout(view, 20.0)
+                await wait_for_view_fixed_timeout(view, max(0.0, view.deadline - time.monotonic()))
 
                 view.disable_controls()
                 try:
