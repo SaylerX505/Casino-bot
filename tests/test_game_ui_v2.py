@@ -139,6 +139,43 @@ class GeoGuessrRoundV2Tests(unittest.TestCase):
         )
         self.assertIn("attachment://result_map.png", str(gallery.items[0].media.url))
 
+    def test_geoguessr_round_result_keeps_summary_map_and_scoreboard_together(self):
+        panel = GeoGuessrResultPanel(
+            "نتيجة الجولة 3 من 6",
+            "الدولة الصحيحة كانت اليابان.\n**تخمينات اللاعبين:**\n<@1>: اليابان (+10 نقطة)",
+            outcome="neutral",
+            image_names=("result_map.png", "dashboard.png"),
+        )
+        self.assertIsInstance(panel, LayoutView)
+        text = "\n".join(
+            item.content
+            for item in panel.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("تخمينات اللاعبين", text)
+        galleries = [
+            item for item in panel.walk_children()
+            if isinstance(item, discord.ui.MediaGallery)
+        ]
+        self.assertEqual(len(galleries), 1)
+        self.assertEqual(len(galleries[0].items), 2)
+        media_urls = [str(item.media.url) for item in galleries[0].items]
+        self.assertIn("attachment://result_map.png", media_urls)
+        self.assertIn("attachment://dashboard.png", media_urls)
+
+    def test_geoguessr_final_winner_panel_can_show_external_avatar(self):
+        panel = GeoGuessrResultPanel(
+            "انتهت اللعبة",
+            "الفائز <@1>",
+            outcome="success",
+            image_url="https://example.com/avatar.png",
+        )
+        gallery = next(
+            item for item in panel.walk_children()
+            if isinstance(item, discord.ui.MediaGallery)
+        )
+        self.assertIn("https://example.com/avatar.png", [str(item.media.url) for item in gallery.items])
+
 
 class MafiaSecretActionV2Tests(unittest.TestCase):
     def test_ephemeral_target_picker_is_v2_and_private_ready(self):
