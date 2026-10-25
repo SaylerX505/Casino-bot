@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock, mock_open, patch
 import discord
 from discord.ui import LayoutView
 
+from cogs.casino import bank
 from cogs.casino.currency_views import (
     CurrencyHubLayout,
     InventoryView,
