@@ -19,15 +19,17 @@ def t(text: str) -> str:
 
 
 SLASH_COMMANDS = {
+    # Keys are the first command token shown in HELP_PAGES. Labels may also
+    # contain example arguments, which should never hide their slash command.
     "رصيد": "bal",
     "شنطتي": "inv",
-    "بروفايل [@عضو]": "بروفايل",
-    "استخدم صندوق أو تذكرة": "استخدم",
-    "حومص 100 @عضو": "حومص",
-    "عملة 100": "coinflip",
-    "نرد 100": "dice",
-    "سلوت 100": "slots",
-    "بلاكجاك 100": "blackjack",
+    "بروفايل": "بروفايل",
+    "استخدم": "استخدم",
+    "حومص": "حومص",
+    "عملة": "coinflip",
+    "نرد": "dice",
+    "سلوت": "slots",
+    "بلاكجاك": "blackjack",
     "فزورة": "فزورة",
     "اكشف": "اكشف",
     "مافيا": "مافيا",
@@ -177,10 +179,12 @@ class HelpPageView(LayoutView):
             entries = fields[index:index + 3]
             lines = []
             for name, description in entries:
-                primary = name.split(" / ")[0].strip()
+                command_label = name.split(" / ", 1)[0].strip()
+                command_token = command_label.split(maxsplit=1)[0]
+                slash_name = SLASH_COMMANDS.get(command_token)
                 lines.append(
-                    f"**`{config.PREFIX}{primary}`**"
-                    + (f" · **`/{SLASH_COMMANDS[primary]}`**" if primary in SLASH_COMMANDS else "")
+                    f"**\`{config.PREFIX}{command_label}\`**"
+                    + (f" · **\`/{slash_name}\`**" if slash_name else "")
                     + f"\n{description}"
                 )
             container.add_item(TextDisplay("\n\n".join(lines)))
