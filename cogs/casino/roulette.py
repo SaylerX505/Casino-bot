@@ -36,6 +36,7 @@ from cogs.utility.theme import (
     result_embed,
     send_status,
     try_edit_view,
+    wait_for_view_fixed_timeout,
 )
 
 SERVER_LOGO_URL = "https://media.discordapp.net/attachments/1509650275164749994/1509998350500364328/c51bafdd9c1feb13e22458c35067c718.webp"
@@ -267,7 +268,7 @@ class RouletteLobby(LayoutView):
                 msg = await self.ctx.send(view=view, file=file)
                 view.message = msg
                 set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), view)
-                await view.wait()
+                await wait_for_view_fixed_timeout(view, 20.0)
 
                 view.disable_controls()
                 try:
