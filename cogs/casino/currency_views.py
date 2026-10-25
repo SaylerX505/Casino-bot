@@ -191,7 +191,7 @@ class ShopView(LayoutView):
         super().__init__(timeout=180)
         self.message = None
         if owner is not None and balance is None:
-            balance = cog.get_balance(owner.id)
+            raise ValueError("ShopView requires an asynchronously loaded balance snapshot")
         balance_line = (
             f"**رصيدك الحالي:** {fmt(balance)} {COIN_EMOJI}\n"
             if owner is not None
@@ -242,11 +242,7 @@ class InventoryView(LayoutView):
         self.notice = notice
         self.message = None
         if inventory is None or balance is None:
-            loaded_inventory, loaded_balance = _load_inventory_snapshot(cog, self.owner_id)
-            if inventory is None:
-                inventory = loaded_inventory
-            if balance is None:
-                balance = loaded_balance
+            raise ValueError("InventoryView requires an asynchronously loaded inventory/balance snapshot")
         self.inventory = dict(inventory)
         self.balance = int(balance)
 
@@ -598,12 +594,6 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
                 interaction.user.id,
                 recipient.id,
             )
-def profile_panel(cog, user):
-    """Compatibility renderer for direct callers; interaction paths use build_profile_panel."""
-    balance, streak, inventory = _load_profile_snapshot(cog, user.id)
-    return render_profile_panel(user, balance, streak, inventory)
-
-
 class CurrencyHubLayout(LayoutView):
     def __init__(self, cog, requester=None, *, balance=None):
         super().__init__(timeout=None)
@@ -612,7 +602,7 @@ class CurrencyHubLayout(LayoutView):
         balance_line = "افتح خزنتك وتابع رصيدك وأدِر أغراضك من مكان واحد."
         if requester is not None:
             if balance is None:
-                balance = cog.get_balance(requester.id)
+                raise ValueError("CurrencyHubLayout requires an asynchronously loaded balance snapshot")
             balance_line = f"**الرصيد الحالي:** {fmt(balance)} {COIN_EMOJI}"
 
         container = Container(
