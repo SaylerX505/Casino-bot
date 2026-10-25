@@ -1,5 +1,6 @@
 # --- EMBED THEME ---
 """موحد شكل البوت - الوان الحفرة + helpers"""
+import asyncio
 import discord
 import logging
 from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
@@ -125,6 +126,33 @@ async def private_status(interaction, title: str, description: str, outcome: str
     if interaction.response.is_done():
         return await interaction.followup.send(view=panel, ephemeral=True)
     return await interaction.response.send_message(view=panel, ephemeral=True)
+
+
+async def wait_for_view_fixed_timeout(view, timeout: float) -> bool:
+    """Wait for a fixed wall-clock deadline even when component clicks reset View.timeout.
+
+    Returns True when the deadline expires and False when the view completes naturally.
+    Callers should disable controls and render an appropriate closed-state panel afterward.
+    """
+    waiter = asyncio.create_task(view.wait())
+    try:
+        done, _pending = await asyncio.wait({waiter}, timeout=max(0.0, float(timeout)))
+        if waiter in done:
+            return bool(await waiter)
+
+        # A component click can renew discord.py's native View timeout; stop the view
+        # explicitly at the gameplay deadline rather than letting activity extend a round.
+        view.stop()
+        await waiter
+        return True
+    except BaseException:
+        if not waiter.done():
+            waiter.cancel()
+            try:
+                await waiter
+            except asyncio.CancelledError:
+                pass
+        raise
 
 
 async def try_edit_view(message, view, *, context: str) -> bool:
