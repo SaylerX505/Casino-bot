@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 
 import discord
 from discord.ui import (
@@ -40,6 +41,19 @@ class KickSelect(discord.ui.Select):
         super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
+        if self.view.is_finished() or time.monotonic() >= self.view.deadline:
+            self.view.disable_controls()
+            self.view._panel_text.content = (
+                f"# انتهى وقت الجولة {self.view.round_num}\n"
+                "مهلة اختيار الأهداف انتهت. مفيش اختيار متأخر هيتسجل."
+            )
+            return await private_status(
+                interaction,
+                "انتهى وقت الاختيار",
+                "قفلنا اختيار الجولة؛ مش ممكن تسجيل هدف بعد انتهاء المهلة.",
+                "warning",
+            )
+
         if interaction.user != self.chosen_player:
             return await interaction.response.send_message(
                 view=StatusPanel("مش دورك", "اختيار الضحية متاح للقناص المختار فقط.", "warning"),
@@ -73,6 +87,7 @@ class KickSelect(discord.ui.Select):
 class KickView(DiagnosticViewMixin, LayoutView):
     def __init__(self, chosen_player, active_players, has_weapon, currency_cog, round_num=1):
         super().__init__(timeout=20.0)
+        self.deadline = time.monotonic() + 20.0
         self.kicked_ids = []
         self.chosen_player = chosen_player
         self.double_shot_active = False
@@ -131,6 +146,19 @@ class KickView(DiagnosticViewMixin, LayoutView):
             select.disabled = True
 
     async def weapon_callback(self, interaction: discord.Interaction):
+        if self.is_finished() or time.monotonic() >= self.deadline:
+            self.disable_controls()
+            self._panel_text.content = (
+                f"# انتهى وقت الجولة {self.round_num}\n"
+                "مهلة استخدام السلاح انتهت. مفيش أداة إضافية اتخصمت."
+            )
+            return await private_status(
+                interaction,
+                "انتهى وقت الجولة",
+                "اتقفلت الجولة؛ مش ممكن استخدام السلاح بعد انتهاء المهلة.",
+                "warning",
+            )
+
         if interaction.user != self.chosen_player:
             return await private_status(
                 interaction,
@@ -140,6 +168,14 @@ class KickView(DiagnosticViewMixin, LayoutView):
             )
 
         async with self._weapon_lock:
+            if self.is_finished() or time.monotonic() >= self.deadline:
+                self.disable_controls()
+                return await private_status(
+                    interaction,
+                    "انتهى وقت الجولة",
+                    "اتقفلت الجولة قبل تأكيد استخدام السلاح؛ راجع شنطتك لو عندك شك في حالة الأداة.",
+                    "warning",
+                )
             if self.double_shot_active or self.weapon_btn is None or self.weapon_btn.disabled:
                 return await private_status(
                     interaction,
