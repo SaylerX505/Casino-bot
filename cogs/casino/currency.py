@@ -7,7 +7,6 @@ from discord.ext import commands
 
 import config
 from cogs.casino import bank
-from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.currency_catalog import COIN_EMOJI, fmt
 from cogs.casino.currency_views import (
     CurrencyHubLayout,
@@ -15,6 +14,7 @@ from cogs.casino.currency_views import (
     build_inventory_view,
     build_profile_panel,
 )
+from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.permissions import configured_log_channel_id
 from cogs.utility.theme import StatusPanel, embed_to_v2
 
