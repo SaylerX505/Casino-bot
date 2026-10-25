@@ -75,6 +75,24 @@ SEGMENT_COLORS = [
 ]
 
 
+def format_wheel_summary(results):
+    """Render the final scoreboard from transaction-confirmed net deltas.
+
+    Each row is (player, result_label, net_change). A missing label means the
+    player could not enter; "balance_limit" means the settlement was safely
+    refused. Do not reconstruct net from a pre-transaction wallet read.
+    """
+    lines = []
+    for player, label, net_change in results:
+        if label is None:
+            lines.append(f"⛔ {player.mention} — رصيد غير كافٍ لرسوم الدخول.")
+        elif label == "balance_limit":
+            lines.append(f"⚠️ {player.mention} — ماقدرناش نصرف الجائزة بسبب حد الرصيد.")
+        else:
+            marker = "🟢" if net_change > 0 else "🔴" if net_change < 0 else "⚪"
+            lines.append(f"{marker} {player.mention} — {net_change:+,} {COIN}")
+    return "\n".join(lines) or "مفيش نتائج للجولة."
+
 def format_wheel_breakdown(payout, target_loss=None, refund=0):
     """Render mutually exclusive accounting paths with no double-counting."""
     if target_loss is not None:
@@ -347,7 +365,6 @@ class WheelLobby(LayoutView):
 
             players = list(self.players)
             for index, player in enumerate(players, start=1):
-                balance_before = await asyncio.to_thread(currency.get_balance, player.id)
                 segment_index = secrets.randbelow(len(SEGMENTS))
                 label, payout, target_loss, outcome_note = resolve_wheel_segment(segment_index)
 
@@ -360,7 +377,7 @@ class WheelLobby(LayoutView):
                 if not settlement["played"]:
                     reason = settlement["reason"]
                     if reason == "insufficient":
-                        results.append((player, None, balance_before, balance_before))
+                        results.append((player, None, 0))
                         title = "رصيد غير كافٍ"
                         description = (
                             f"**اللاعب:** {player.mention}\n"
@@ -368,7 +385,7 @@ class WheelLobby(LayoutView):
                             "لم يتم خصم أي عملات."
                         )
                     else:
-                        results.append((player, "balance_limit", balance_before, balance_before))
+                        results.append((player, "balance_limit", 0))
                         title = "تعذر صرف النتيجة"
                         description = (
                             f"**اللاعب:** {player.mention}\n"
@@ -383,10 +400,11 @@ class WheelLobby(LayoutView):
                     await asyncio.sleep(0.8)
                     continue
 
+                balance_before = settlement["before"]
                 balance_after = settlement["after"]
                 net_change = settlement["net"]
                 refund = settlement["refund"]
-                results.append((player, label, balance_before, balance_after))
+                results.append((player, label, net_change))
                 description = (
                     f"**اللاعب:** {player.mention}\n"
                     f"**النتيجة:** {label}{outcome_note}\n"
@@ -405,21 +423,10 @@ class WheelLobby(LayoutView):
                 await publish_panel(panel, image_file)
                 await asyncio.sleep(1.5)
 
-            lines = []
-            for player, label, before, after in results:
-                if label is None:
-                    lines.append(f"⛔ {player.mention} — رصيد غير كافٍ لرسوم الدخول.")
-                elif label == "balance_limit":
-                    lines.append(f"⚠️ {player.mention} — ماقدرناش نصرف الجائزة بسبب حد الرصيد.")
-                else:
-                    net = after - before
-                    marker = "🟢" if net > 0 else "🔴" if net < 0 else "⚪"
-                    lines.append(f"{marker} {player.mention} — {net:+,} {COIN}")
-
             await publish_panel(
                 WheelResultPanel(
                     "🏁 خلصت جولات العجلة",
-                    "\n".join(lines) or "مفيش نتائج للجولة.",
+                    format_wheel_summary(results),
                     outcome="success",
                 )
             )
