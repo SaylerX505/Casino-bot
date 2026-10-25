@@ -1,4 +1,5 @@
 """Tests for retrying RPS escrow settlement after transient SQLite failures."""
+
 import asyncio
 import threading
 import time
@@ -9,8 +10,6 @@ from unittest.mock import AsyncMock, call, patch
 import discord
 from discord.ui import LayoutView
 
-
-
 from cogs.casino.rps import (
     _RECOVERY_TASKS,
     RPS,
@@ -19,6 +18,7 @@ from cogs.casino.rps import (
     _settle_wager,
 )
 from cogs.utility.theme import StatusPanel
+
 
 class RPSComponentsV2Tests(unittest.TestCase):
     def test_match_panel_uses_three_secondary_v2_buttons(self):
