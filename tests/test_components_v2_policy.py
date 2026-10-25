@@ -12,50 +12,54 @@ MESSAGE_METHODS = {"send", "send_message", "reply", "edit", "edit_original_respo
 
 
 def _direct_embed_sends():
-    """Find Discord send/edit calls that pass the legacy embed keyword directly."""
+    """Find outgoing message calls that pass legacy embed payloads directly."""
     findings = []
+    sources = [os.path.join(ROOT, "main.py")]
     for directory, _subdirectories, filenames in os.walk(COGS):
-        for filename in sorted(filenames):
-            if not filename.endswith(".py"):
-                continue
-            path = os.path.join(directory, filename)
-            try:
-                with open(path, "r", encoding="utf-8") as source_file:
-                    tree = ast.parse(source_file.read(), filename=path)
-            except (OSError, SyntaxError) as error:
-                relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
-                findings.append((relative_path, 1, f"could not inspect source: {type(error).__name__}"))
-                continue
+        sources.extend(
+            os.path.join(directory, filename)
+            for filename in filenames
+            if filename.endswith(".py")
+        )
 
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                    continue
-                if node.func.attr not in MESSAGE_METHODS:
-                    continue
-                for keyword in node.keywords:
-                    if keyword.arg == "embed":
-                        legacy_payload = True
-                    elif keyword.arg == "embeds":
-                        # Clearing legacy embeds while replacing a message with a V2
-                        # view is valid; sending any legacy embeds is not.
-                        is_empty_list = isinstance(keyword.value, ast.List) and not keyword.value.elts
-                        legacy_payload = not (
-                            is_empty_list
-                            and node.func.attr in {"edit", "edit_original_response"}
-                        )
-                    else:
-                        continue
+    for path in sorted(sources):
+        try:
+            with open(path, "r", encoding="utf-8") as source_file:
+                tree = ast.parse(source_file.read(), filename=path)
+        except (OSError, SyntaxError) as error:
+            relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
+            findings.append((relative_path, 1, f"could not inspect source: {type(error).__name__}"))
+            continue
 
-                    if legacy_payload:
-                        relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
-                        findings.append(
-                            (
-                                relative_path,
-                                node.lineno,
-                                f"{node.func.attr}({keyword.arg}=...) bypasses the Components V2 renderer",
-                            )
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in MESSAGE_METHODS:
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "embed":
+                    legacy_payload = True
+                elif keyword.arg == "embeds":
+                    # Clearing prior embeds when replacing a message with a V2
+                    # view is valid; sending any legacy embeds is not.
+                    is_empty_list = isinstance(keyword.value, ast.List) and not keyword.value.elts
+                    legacy_payload = not (
+                        is_empty_list
+                        and node.func.attr in {"edit", "edit_original_response"}
+                    )
+                else:
+                    continue
+
+                if legacy_payload:
+                    relative_path = os.path.relpath(path, ROOT).replace(os.sep, "/")
+                    findings.append(
+                        (
+                            relative_path,
+                            node.lineno,
+                            f"{node.func.attr}({keyword.arg}=...) bypasses the Components V2 renderer",
                         )
-                        break
+                    )
+                    break
     return sorted(findings)
 
 
