@@ -219,7 +219,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
     """A consent-first duel: reserve both stakes only after the invited player accepts."""
 
     def __init__(self, ctx, player, opponent, bet, game_id):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)
         self.ctx = ctx
         self.player = player
         self.opponent = opponent
