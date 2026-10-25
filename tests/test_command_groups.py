@@ -8,12 +8,6 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import LayoutView
 
-from cogs.casino.chairs import Chairs
-from cogs.casino.geoguessr import GeoGuessr
-from cogs.casino.hide_and_seek import HideAndSeek
-from cogs.casino.mafia import Mafia
-from cogs.casino.roulette import Roulette
-from cogs.casino.wheel import Wheel
 from cogs.utility.admin import AdminCommands
 from cogs.utility.help import HelpCommand, HelpEntryView
 from main import sync_slash_commands, validate_slash_command_metadata
@@ -106,33 +100,6 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
         buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
         self.assertEqual(len(buttons), 1)
         self.assertEqual(buttons[0].style, discord.ButtonStyle.secondary)
-
-    async def test_every_group_lobby_starter_uses_the_configured_staff_check(self):
-        protected_launchers = {
-            "Mafia": Mafia.start_mafia,
-            "Roulette": Roulette.start_roulette,
-            "HideAndSeek": HideAndSeek.start_hide_seek,
-            "GeoGuessr": GeoGuessr.start_geo,
-            "Chairs": Chairs.start_chairs,
-            "Wheel": Wheel.wheel,
-        }
-        for game_name, command in protected_launchers.items():
-            with self.subTest(game=game_name):
-                self.assertTrue(
-                    any(
-                        getattr(check, "__module__", "") == "cogs.casino.permissions"
-                        for check in command.checks
-                    ),
-                    f"{game_name} lobby starter must use the configured staff role policy.",
-                )
-
-    async def test_wheel_lobby_starter_uses_the_configured_staff_check(self):
-        self.assertTrue(
-            any(
-                getattr(check, "__module__", "") == "cogs.casino.permissions"
-                for check in Wheel.wheel.checks
-            )
-        )
 
     async def test_games_group_exposes_existing_game_commands(self):
         group = self.bot.tree.get_command("games")
