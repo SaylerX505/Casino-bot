@@ -24,6 +24,7 @@ from cogs.utility.theme import (
     result_embed,
     send_status,
     try_edit_view,
+    wait_for_view_fixed_timeout,
 )
 
 logger = logging.getLogger(__name__)
@@ -368,7 +369,7 @@ class ChairsLobby(LayoutView):
                 await msg.edit(view=action_view)
                 action_view.message = msg
                 set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)
-                await action_view.wait()
+                await wait_for_view_fixed_timeout(action_view, action_view.timeout)
 
                 if round_type == "normal":
                     losers = [
