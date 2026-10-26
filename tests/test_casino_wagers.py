@@ -143,6 +143,92 @@ class CasinoWagerTests(unittest.TestCase):
         self.assertEqual(bank.get_balance(101), bank.SQLITE_MAX_INT)
 
 
+    def test_blackjack_double_down_is_atomic_idempotent_and_settles_the_doubled_stake(self):
+        game_id = "blackjack-double-down"
+        self.create_wager(
+            game_id=game_id,
+            game_type="blackjack",
+            choice="blackjack",
+            result="in_progress",
+            won=False,
+            win_payout=0,
+        )
+        self.assertEqual(bank.get_balance(101), 900)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(
+                executor.map(
+                    lambda _: bank.double_down_casino_wager(game_id, 101, 100),
+                    range(8),
+                )
+            )
+
+        successful = [result for result in results if result.get("doubled")]
+        self.assertEqual(len(successful), 1)
+        self.assertEqual(successful[0]["stake"], 200)
+        self.assertEqual(successful[0]["additional_stake"], 100)
+        self.assertEqual(bank.get_balance(101), 800)
+        self.assertEqual(
+            bank.casino_wager_status(game_id),
+            {
+                "status": "active",
+                "outcome": None,
+                "stake": 200,
+                "game_type": "blackjack",
+            },
+        )
+
+        stake_entries = bank.get_economy_ledger(
+            event_type="casino_wager_stake",
+            reference=game_id,
+        )
+        self.assertEqual(len(stake_entries), 2)
+        self.assertEqual([entry["delta"] for entry in stake_entries], [-100, -100])
+        self.assertTrue(
+            any(entry["metadata"].get("reason") == "double_down" for entry in stake_entries)
+        )
+
+        result = bank.settle_casino_wager(
+            game_id,
+            final_result="player=19,dealer=18;double_down=true",
+            final_won=True,
+            final_payout=400,
+            final_outcome="win",
+        )
+        self.assertEqual(result["stake"], 200)
+        self.assertEqual(result["payout"], 400)
+        self.assertEqual(result["balance_after"], 1_200)
+        payout_entries = bank.get_economy_ledger(
+            event_type="casino_wager_payout",
+            reference=game_id,
+        )
+        self.assertEqual(len(payout_entries), 1)
+        self.assertEqual(payout_entries[0]["metadata"]["net_profit"], 200)
+
+    def test_blackjack_double_down_refuses_when_remaining_balance_is_insufficient(self):
+        game_id = "blackjack-double-down-short-balance"
+        self.create_wager(
+            game_id=game_id,
+            game_type="blackjack",
+            choice="blackjack",
+            result="in_progress",
+            won=False,
+            win_payout=0,
+        )
+        bank.set_balance(101, 50)
+
+        result = bank.double_down_casino_wager(game_id, 101, 100)
+
+        self.assertFalse(result["doubled"])
+        self.assertEqual(result["reason"], "insufficient_funds")
+        self.assertEqual(result["balance"], 50)
+        self.assertEqual(bank.get_balance(101), 50)
+        self.assertEqual(bank.casino_wager_status(game_id)["stake"], 100)
+        self.assertEqual(
+            len(bank.get_economy_ledger(event_type="casino_wager_stake", reference=game_id)),
+            1,
+        )
+
     def test_multistep_wager_can_commit_final_result_and_push_returns_stake(self):
         self.create_wager(
             game_id="blackjack-push",
