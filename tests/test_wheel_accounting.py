@@ -63,7 +63,8 @@ class WheelSummaryTests(unittest.TestCase):
         player = type("Player", (), {"mention": "<@123>"})()
         summary = format_wheel_summary([(player, "+20", 20)])
         self.assertIn("<@123>", summary)
-        self.assertIn("+20", summary)
+        self.assertIn("مكسب", summary)
+        self.assertNotIn("+20", summary)
         self.assertNotIn("+25", summary)
 
     def test_final_summary_keeps_refused_rounds_out_of_net_profit(self):
@@ -75,7 +76,8 @@ class WheelSummaryTests(unittest.TestCase):
         ])
         self.assertIn("رصيد غير كافٍ", summary)
         self.assertIn("حد الرصيد", summary)
-        self.assertIn("+50", summary)
+        self.assertIn("مكسب", summary)
+        self.assertNotIn("+50", summary)
 
 class WheelAccountingTests(unittest.TestCase):
     def test_full_loss_is_reported_once_as_the_final_loss(self):
