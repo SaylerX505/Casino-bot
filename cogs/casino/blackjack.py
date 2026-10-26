@@ -779,13 +779,15 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         status = self.receipt.get("status")
         outcome = self.receipt.get("outcome")
         if status == "refunded" or outcome == "balance_limit":
-            accent = "warning"
+            title, accent = "تم رد رهان Blackjack", "warning"
+        elif outcome == "win" and self.result_kind == "natural":
+            title, accent = "Blackjack طبيعي! · كسبت الجولة", "win"
         elif outcome == "win":
-            accent = "win"
+            title, accent = "كسبت جولة Blackjack", "win"
         elif outcome == "push":
-            accent = "neutral"
+            title, accent = "تعادل في Blackjack", "neutral"
         else:
-            accent = "loss"
+            title, accent = "انتهت جولة Blackjack", "loss"
 
         details = self._finished_content().split("\n", 1)
         description = details[1] if len(details) > 1 else details[0]
@@ -794,7 +796,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             kwargs["ephemeral"] = True
         try:
             await self.context.send(
-                view=StatusPanel("Blackjack · النتيجة النهائية", description, accent),
+                view=StatusPanel(title, description, accent),
                 **kwargs,
             )
         except Exception:
