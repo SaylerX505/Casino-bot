@@ -101,17 +101,19 @@ async def _send_interaction_error(interaction, message, *, title="تعذر تن�
 
 
 async def _send_command_error(ctx, message):
-    """Send a safe V2 error panel without double-acknowledging hybrid commands."""
-    panel = StatusPanel("تعذر تنفيذ الأمر", message, "warning")
+    """Use a short-lived plain-text notice for prefix commands and private V2 for slash."""
     interaction = getattr(ctx, "interaction", None)
     if interaction is None:
-        await ctx.send(view=panel)
+        await ctx.send(
+            message,
+            delete_after=2,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
         return
 
     response = getattr(interaction, "response", None)
     if response is None:
-        # Defensive fallback for custom/fake hybrid contexts; never expose internals.
-        await ctx.send(view=panel, ephemeral=True)
+        await ctx.send(view=StatusPanel("تعذّر تنفيذ الأمر", message, "warning"), ephemeral=True)
         return
     await _send_interaction_error(interaction, message)
 
@@ -402,7 +404,7 @@ async def on_command_error(ctx, error):
         logger.debug("Invalid command input command=%s user_id=%s guild_id=%s error_type=%s",
                      command_name, user_id, guild_id, type(error).__name__)
         try:
-            await _send_command_error(ctx, "صيغة الأمر ناقصة أو فيها قيمة غير صحيحة. راجع الأمر من /commands وتأكد من القيم المطلوبة.")
+            await _send_command_error(ctx, "تعذّر تنفيذ الأمر.")
         except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
             logger.debug("Could not acknowledge invalid command input", exc_info=True)
         return
