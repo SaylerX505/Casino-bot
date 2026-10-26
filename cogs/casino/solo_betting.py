@@ -1,7 +1,9 @@
 """Shared solo betting games with durable economy settlement and Components V2 UI."""
 
 import asyncio
+import io
 import logging
+import math
 import secrets
 import uuid
 from collections.abc import Callable
@@ -9,7 +11,8 @@ from functools import partial
 
 import discord
 from discord.ext import commands
-from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
+from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
+from PIL import Image, ImageDraw, ImageFont
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
@@ -39,6 +42,204 @@ _SOLO_GAME_ACCENTS = {
 _RECOVERY_DELAYS_SECONDS = (2, 5, 15, 30, 60)
 _RECOVERY_TASKS: dict[str, asyncio.Task] = {}
 _ACTIVE_SESSIONS: dict[int, discord.ui.View] = {}
+
+
+def _art_font(size: int, *, bold: bool = False):
+    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    try:
+        return ImageFont.truetype(name, size)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def _draw_die(draw, center_x: int, center_y: int, size: int, value: int) -> None:
+    left = center_x - size // 2
+    top = center_y - size // 2
+    right = left + size
+    bottom = top + size
+    draw.rounded_rectangle(
+        (left + 8, top + 12, right + 8, bottom + 12),
+        radius=max(14, size // 7),
+        fill=(5, 9, 16),
+    )
+    draw.rounded_rectangle(
+        (left, top, right, bottom),
+        radius=max(14, size // 7),
+        fill=(246, 245, 239),
+        outline=(255, 255, 250),
+        width=4,
+    )
+    draw.rounded_rectangle(
+        (left + 9, top + 9, right - 9, bottom - 9),
+        radius=max(10, size // 9),
+        outline=(213, 218, 220),
+        width=2,
+    )
+    positions = {
+        1: ((1, 1),),
+        2: ((0, 0), (2, 2)),
+        3: ((0, 0), (1, 1), (2, 2)),
+        4: ((0, 0), (2, 0), (0, 2), (2, 2)),
+        5: ((0, 0), (2, 0), (1, 1), (0, 2), (2, 2)),
+        6: ((0, 0), (2, 0), (0, 1), (2, 1), (0, 2), (2, 2)),
+    }.get(max(1, min(6, int(value))), ())
+    pip_radius = max(5, size // 15)
+    for col, row in positions:
+        x = left + size * (col + 1) // 4
+        y = top + size * (row + 1) // 4
+        draw.ellipse(
+            (x - pip_radius, y - pip_radius, x + pip_radius, y + pip_radius),
+            fill=(29, 38, 51),
+        )
+
+
+def _draw_slot_symbol(draw, symbol: str, center_x: int, center_y: int, size: int) -> None:
+    scale = size / 100
+    def p(value):
+        return int(value * scale)
+    x, y = center_x, center_y
+    if symbol == "🍒":
+        draw.line((x - p(8), y - p(6), x - p(17), y - p(35)), fill=(48, 136, 91), width=p(5))
+        draw.line((x + p(8), y - p(6), x + p(18), y - p(38)), fill=(48, 136, 91), width=p(5))
+        draw.ellipse((x - p(39), y - p(9), x - p(1), y + p(30)), fill=(192, 34, 59))
+        draw.ellipse((x + p(1), y - p(12), x + p(39), y + p(26)), fill=(223, 44, 65))
+        draw.ellipse((x - p(29), y - p(1), x - p(19), y + p(9)), fill=(255, 155, 153))
+        draw.ellipse((x + p(11), y - p(4), x + p(21), y + p(6)), fill=(255, 160, 160))
+        draw.ellipse((x - p(6), y - p(40), x + p(25), y - p(25)), fill=(57, 162, 89))
+    elif symbol == "🍋":
+        draw.ellipse((x - p(42), y - p(25), x + p(42), y + p(25)), fill=(245, 199, 44))
+        draw.ellipse((x - p(31), y - p(17), x + p(24), y + p(12)), fill=(255, 225, 92))
+        draw.polygon(
+            [(x - p(41), y), (x - p(51), y - p(5)), (x - p(40), y - p(13))],
+            fill=(255, 222, 92),
+        )
+        draw.polygon(
+            [(x + p(41), y), (x + p(51), y - p(5)), (x + p(40), y - p(13))],
+            fill=(255, 222, 92),
+        )
+        draw.ellipse((x + p(4), y - p(34), x + p(32), y - p(22)), fill=(66, 165, 96))
+    elif symbol == "🍊":
+        draw.ellipse((x - p(34), y - p(34), x + p(34), y + p(34)), fill=(244, 126, 36))
+        draw.ellipse((x - p(22), y - p(24), x + p(5), y + p(2)), fill=(255, 169, 74))
+        draw.ellipse((x - p(8), y - p(43), x + p(9), y - p(30)), fill=(72, 161, 80))
+    elif symbol == "🍇":
+        grapes = [
+            (-20, -12), (0, -18), (20, -12), (-29, 7), (-9, 6), (11, 7),
+            (-18, 25), (2, 25), (-7, 42),
+        ]
+        for dx, dy in grapes:
+            radius = p(13)
+            draw.ellipse(
+                (x + p(dx) - radius, y + p(dy) - radius,
+                 x + p(dx) + radius, y + p(dy) + radius),
+                fill=(116, 75, 190),
+                outline=(175, 145, 231),
+                width=max(1, p(2)),
+            )
+        draw.polygon(
+            [(x - p(4), y - p(28)), (x + p(7), y - p(47)),
+             (x + p(28), y - p(39)), (x + p(11), y - p(24))],
+            fill=(57, 159, 87),
+        )
+    elif symbol == "⭐":
+        points = []
+        for i in range(10):
+            angle = -math.pi / 2 + i * math.pi / 5
+            radius = p(43 if i % 2 == 0 else 19)
+            points.append((x + int(math.cos(angle) * radius), y + int(math.sin(angle) * radius)))
+        draw.polygon(points, fill=(246, 196, 61), outline=(255, 232, 145))
+    else:
+        points = [
+            (x, y - p(46)), (x + p(34), y - p(6)), (x, y + p(45)),
+            (x - p(34), y - p(6)),
+        ]
+        draw.polygon(points, fill=(65, 198, 218), outline=(180, 249, 255))
+        draw.line((x, y - p(46), x, y + p(45)), fill=(184, 252, 255), width=max(1, p(2)))
+        draw.line((x - p(34), y - p(6), x + p(34), y - p(6)), fill=(184, 252, 255), width=max(1, p(2)))
+
+
+def _render_solo_game_art(
+    game_type: str,
+    *,
+    choice: str | None = None,
+    result: str | None = None,
+    won: bool | None = None,
+) -> bytes:
+    """Draw a polished, game-specific visual for the dice and slots Components V2 panels."""
+    width, height = 1200, 420
+    is_slots = game_type == "slots"
+    top = (44, 16, 33) if is_slots else (10, 30, 43)
+    bottom = (12, 14, 24) if is_slots else (7, 14, 24)
+    accent = (231, 173, 54) if is_slots else (56, 197, 198)
+    image = Image.new("RGB", (width, height), bottom)
+    draw = ImageDraw.Draw(image)
+
+    for y in range(height):
+        ratio = y / max(1, height - 1)
+        color = tuple(int(top[i] * (1 - ratio) + bottom[i] * ratio) for i in range(3))
+        draw.line((0, y, width, y), fill=color)
+    for offset in range(-height, width, 92):
+        draw.line((offset, 0, offset + height, height), fill=(*accent,), width=1)
+    draw.rounded_rectangle((18, 18, width - 18, height - 18), radius=30, outline=accent, width=3)
+    draw.ellipse((830, -220, 1300, 245), fill=top)
+    draw.ellipse((-160, 220, 300, 650), fill=top)
+
+    title = "SLOT MACHINE" if is_slots else "DICE TABLE"
+    draw.text((68, 48), "ÇUKUR  /  CASINO", font=_art_font(22, bold=True), fill=accent)
+    draw.text((68, 82), title, font=_art_font(43, bold=True), fill=(245, 245, 239))
+    draw.line((68, 145, 355, 145), fill=accent, width=4)
+
+    if is_slots:
+        symbols = result.split(" · ") if result else ["🍒", "🍋", "⭐"]
+        symbols = (symbols + ["🍒", "🍋", "⭐"])[:3]
+        draw.rounded_rectangle((410, 42, 875, 375), radius=28, fill=(34, 20, 31), outline=accent, width=5)
+        draw.rounded_rectangle((432, 62, 853, 350), radius=18, fill=(9, 11, 18), outline=(110, 76, 50), width=2)
+        for index, symbol in enumerate(symbols):
+            x1 = 448 + index * 135
+            draw.rounded_rectangle(
+                (x1, 82, x1 + 119, 319), radius=17,
+                fill=(236, 236, 222), outline=(255, 255, 244), width=3,
+            )
+            draw.rounded_rectangle(
+                (x1 + 7, 89, x1 + 112, 311), radius=12,
+                outline=(199, 201, 190), width=2,
+            )
+            _draw_slot_symbol(draw, symbol, x1 + 59, 202, 80)
+        draw.rounded_rectangle((895, 93, 1127, 326), radius=24, fill=(20, 23, 30), outline=accent, width=3)
+        draw.ellipse((965, 121, 1057, 213), fill=(72, 21, 34), outline=(246, 204, 111), width=5)
+        draw.ellipse((991, 147, 1031, 187), fill=(233, 179, 54), outline=(255, 227, 146), width=3)
+        if won is not None:
+            badge_color = (48, 166, 112) if won else (170, 48, 58)
+            label = "WIN" if won else "NO WIN"
+            draw.rounded_rectangle((915, 244, 1107, 292), radius=16, fill=badge_color)
+            draw.text((1011, 268), label, font=_art_font(20, bold=True), fill=(255, 255, 248), anchor="mm")
+        else:
+            draw.text((1011, 268), "SPIN", font=_art_font(22, bold=True), fill=(245, 245, 239), anchor="mm")
+    else:
+        if choice is not None and result is not None:
+            left_value = max(1, min(6, int(choice)))
+            right_value = max(1, min(6, int(result)))
+            _draw_die(draw, 590, 225, 176, left_value)
+            _draw_die(draw, 820, 225, 176, right_value)
+            draw.text((590, 105), "YOUR PICK", font=_art_font(18, bold=True), fill=accent, anchor="mm")
+            draw.text((820, 105), "ROLLED", font=_art_font(18, bold=True), fill=accent, anchor="mm")
+            draw.text((704, 222), "›", font=_art_font(64, bold=True), fill=(244, 244, 237), anchor="mm")
+            if won is not None:
+                badge_color = (48, 166, 112) if won else (170, 48, 58)
+                label = "WIN" if won else "NO WIN"
+                draw.rounded_rectangle((918, 178, 1124, 250), radius=21, fill=badge_color)
+                draw.text((1021, 214), label, font=_art_font(24, bold=True), fill=(255, 255, 248), anchor="mm")
+        else:
+            _draw_die(draw, 560, 244, 166, 2)
+            _draw_die(draw, 765, 202, 190, 5)
+            _draw_die(draw, 966, 250, 146, 3)
+            draw.ellipse((493, 157, 627, 291), outline=accent, width=2)
+            draw.ellipse((694, 107, 836, 249), outline=accent, width=2)
+            draw.ellipse((910, 192, 1022, 304), outline=accent, width=2)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
 
 
 def has_active_solo_session(user_id: int) -> bool:
@@ -230,6 +431,10 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         self.game_id = None
         self.done = False
         self.resolving = False
+        self._art_filename = f"{game_type}.png" if game_type in {"dice", "slots"} else None
+        self._art_bytes = (
+            _render_solo_game_art(game_type) if self._art_filename is not None else None
+        )
         self._panel_text = TextDisplay(self._waiting_content())
         self._buttons = {}
 
@@ -254,7 +459,17 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         cancel.callback = self.cancel
         self._buttons["cancel"] = cancel
 
-        elements = [self._panel_text, Separator()]
+        elements = [self._panel_text]
+        if self._art_filename is not None:
+            elements.append(
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{self._art_filename}",
+                        description=f"{self.game_title} artwork",
+                    )
+                )
+            )
+        elements.append(Separator())
         if len(choice_buttons) <= 2:
             elements.append(ActionRow(*choice_buttons, cancel))
         else:
@@ -274,6 +489,46 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             f"**الرهان:** {self.amount:,} {COIN}"
         )
 
+    def _art_file(self):
+        if self._art_filename is None or self._art_bytes is None:
+            return None
+        return discord.File(io.BytesIO(self._art_bytes), filename=self._art_filename)
+
+    def _result_view(self, title: str, description: str, outcome: str):
+        if self._art_filename is None:
+            return StatusPanel(title, description, outcome)
+        view = LayoutView(timeout=120)
+        accent = {
+            "win": THEME["green"],
+            "loss": THEME["red_dark"],
+            "warning": THEME["orange"],
+            "neutral": THEME["teal"],
+        }.get(outcome, THEME["teal"])
+        view.add_item(
+            Container(
+                TextDisplay(f"# {title}\n{description}"),
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{self._art_filename}",
+                        description=f"{self.game_title} result artwork",
+                    )
+                ),
+                accent_color=accent,
+            )
+        )
+        return view
+
+    def _update_result_art(self, choice: str, result: str, outcome: str) -> None:
+        if self._art_filename is None:
+            return
+        won = outcome == "win"
+        self._art_bytes = _render_solo_game_art(
+            self.game_type,
+            choice=choice if self.game_type == "dice" else None,
+            result=result,
+            won=won,
+        )
+
     def _disable_buttons(self) -> None:
         for button in self._buttons.values():
             button.disabled = True
@@ -282,7 +537,10 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if self.message is None:
             return
         try:
-            await self.message.edit(view=self)
+            if self._art_filename is not None:
+                await self.message.edit(view=self, attachments=[self._art_file()])
+            else:
+                await self.message.edit(view=self)
         except discord.NotFound:
             logger.info("Coinflip result message was deleted game_id=%s", self.game_id)
         except discord.HTTPException:
@@ -489,39 +747,33 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         result_side = str(result.get("result", ""))
         choice_label = self.choices.get(choice, {}).get("label", choice)
         result_label = self.choices.get(result_side, {}).get("label", result_side)
-        stake = int(result.get("stake", self.amount))
-        payout = int(result.get("payout", 0))
         balance_after = result.get("balance_after")
+        balance_line = (
+            f"\n**رصيدك:** {int(balance_after):,} {COIN}"
+            if balance_after is not None
+            else ""
+        )
+        outcome = result.get("outcome", "loss")
+        self._update_result_art(choice, result_side, outcome)
 
         if result.get("status") == "refunded":
             if result.get("outcome") == "balance_limit":
-                self._panel_text.content = (
-                    "# تم إرجاع الرهان\n"
-                    "تعذر إضافة المكسب من غير تجاوز الحد الآمن للرصيد، فتم إرجاع قيمة الرهان بالكامل."
-                )
+                heading = "تم إرجاع الرصيد"
+                detail = "تعذر تسجيل المكسب بأمان؛ تم إرجاع قيمة الجولة."
             else:
-                self._panel_text.content = (
-                    "# تم إرجاع الرهان\n"
-                    "الجولة اتوقفت قبل اكتمالها، فرجعنا مبلغ الرهان بدل ما نعتبره خسارة."
-                )
+                heading = "تم إرجاع الرصيد"
+                detail = "الجولة اتوقفت قبل اكتمالها؛ لم تُحتسب خسارة."
+            self._panel_text.content = f"# {heading} · {self.game_title}\n{detail}{balance_line}"
         elif result.get("outcome") == "win":
-            balance_line = f"\n**رصيدك بعد التسوية:** {int(balance_after):,} {COIN}" if balance_after is not None else ""
             self._panel_text.content = (
-                f"# كسبت الرهان · {self.game_title}\n"
-                f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**\n\n"
-                f"**الرهان:** −{stake:,} {COIN}\n"
-                f"**إجمالي الصرف:** +{payout:,} {COIN}\n"
-                f"**صافي الربح:** +{payout - stake:,} {COIN}"
+                f"# كسبت · {self.game_title}\n"
+                f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**"
                 f"{balance_line}"
             )
         else:
-            balance_line = f"\n**رصيدك بعد التسوية:** {int(balance_after):,} {COIN}" if balance_after is not None else ""
             self._panel_text.content = (
-                f"# خسرت الرهان · {self.game_title}\n"
-                f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**\n\n"
-                f"**الرهان:** −{stake:,} {COIN}\n"
-                "**إجمالي الصرف:** 0\n"
-                f"**صافي النتيجة:** −{stake:,} {COIN}"
+                f"# خسرت · {self.game_title}\n"
+                f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**"
                 f"{balance_line}"
             )
 
@@ -562,15 +814,18 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             # The original solo-game panel is public, so keep its separate receipt public too.
             kwargs["ephemeral"] = False
         if outcome == "win":
-            title = f"كسبت الرهان · {self.game_title}"
+            title = f"كسبت · {self.game_title}"
         elif outcome == "warning":
-            title = f"تم إرجاع الرهان · {self.game_title}"
+            title = f"تم إرجاع الرصيد · {self.game_title}"
         else:
-            title = f"خسرت الرهان · {self.game_title}"
+            title = f"خسرت · {self.game_title}"
 
         try:
+            result_view = self._result_view(title, description, outcome)
+            if self._art_filename is not None:
+                kwargs["file"] = self._art_file()
             await self.context.send(
-                view=StatusPanel(title, description, outcome),
+                view=result_view,
                 **kwargs,
             )
             self.result_published = True
@@ -777,7 +1032,10 @@ class SoloBetting(commands.Cog):
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
         try:
-            view.message = await ctx.send(view=view)
+            if view._art_filename is not None:
+                view.message = await ctx.send(view=view, file=view._art_file())
+            else:
+                view.message = await ctx.send(view=view)
         except asyncio.CancelledError:
             view._release_session()
             raise
