@@ -294,14 +294,7 @@ class WheelLobby(LayoutView):
         self.lobby_task = ctx.bot.loop.create_task(self.run_timer())
 
     def make_embed(self):
-        rules = (
-            f"**رسوم الدخول:** {FEE:,} {COIN}\n"
-            "**الأرقام الموجبة هي صافي الربح، والسالبة هي صافي الخسارة. قطاع 0 يرجّع رسوم الدخول، "
-            "وx2 يصرف ضعف رسوم الدخول إجمالًا.\n"
-            f"**الصندوق:** صافي نتيجة عشوائية من {min(BOX_NET_OUTCOMES):+,} إلى {max(BOX_NET_OUTCOMES):+,}.\n"
-            "كل قطاع له احتمال متساوٍ؛ نتيجة كل لفة تعرض الصرف الإجمالي وصافي التغيير والرصيد بعد التسوية."
-        )
-        return lobby_embed(
+        rules = f"رسوم الدخول {FEE:,} عملة · كل القطاعات بفرص متساوية · النتيجة تعرض الصافي والرصيد.\n        return lobby_embed(
             "🎡 عجلة الحفرة",
             rules,
             self.players,
