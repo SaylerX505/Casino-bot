@@ -76,6 +76,72 @@ SEGMENT_COLORS = [
 ]
 
 
+async def publish_wheel_panel(
+    ctx,
+    panel,
+    *,
+    fallback_message=None,
+    file=None,
+    pending_receipts=None,
+):
+    """Publish the normal separate result message with a visible delivery fallback."""
+    pending = pending_receipts if pending_receipts is not None else []
+    kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
+    if file is not None:
+        kwargs["file"] = file
+
+    try:
+        message = await ctx.send(view=panel, **kwargs)
+    except Exception:
+        logger.exception(
+            "Could not publish separate wheel result channel_id=%s",
+            getattr(getattr(ctx, "channel", None), "id", None),
+        )
+        details = "\n\n".join(
+            item.content
+            for item in panel.walk_children()
+            if isinstance(item, TextDisplay)
+        ).strip()
+        pending.append(details or "# نتيجة العجلة\nتعذر نشر تفاصيل النتيجة المنفصلة.")
+        if fallback_message is not None:
+            fallback_text = "\n\n".join(pending)
+            await try_edit_view(
+                fallback_message,
+                StatusPanel("نتائج العجلة غير المنشورة", fallback_text[:3600], "warning"),
+                context="wheel_receipt_fallback",
+            )
+        return None
+
+    if pending:
+        receipt_text = "\n\n".join(pending)
+        try:
+            await ctx.send(
+                view=StatusPanel("إيصالات سابقة تعذر نشرها", receipt_text[:3600], "warning"),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except Exception:
+            logger.exception("Could not flush previously failed wheel receipts")
+            if fallback_message is not None:
+                await try_edit_view(
+                    fallback_message,
+                    StatusPanel("نتائج العجلة غير المنشورة", receipt_text[:3600], "warning"),
+                    context="wheel_receipt_flush_fallback",
+                )
+        else:
+            pending.clear()
+            if fallback_message is not None:
+                await try_edit_view(
+                    fallback_message,
+                    StatusPanel(
+                        "العجلة مستمرة",
+                        "تم نشر النتائج السابقة في رسالة منفصلة. تابع رسالة نتيجة كل لاعب وسجل الجولة.",
+                        "neutral",
+                    ),
+                    context="wheel_receipt_recovered",
+                )
+    return message
+
+
 def format_wheel_summary(results):
     """Render the final scoreboard from transaction-confirmed net deltas.
 
@@ -361,11 +427,18 @@ class WheelLobby(LayoutView):
     async def play_rounds(self):
         currency = get_currency(self.ctx.bot)
         results = []
+        pending_receipts = []
 
         async def publish_panel(panel, file=None):
-            # Each spin remains a separate channel event rather than overwriting prior results.
-            kwargs = {"file": file} if file is not None else {}
-            return await self.ctx.send(view=panel, **kwargs)
+            # Normal play posts a distinct message per spin; failures are preserved
+            # on the closed lobby, then re-emitted separately when sending recovers.
+            return await publish_wheel_panel(
+                self.ctx,
+                panel,
+                fallback_message=self.message,
+                file=file,
+                pending_receipts=pending_receipts,
+            )
 
         try:
             if currency is None:
