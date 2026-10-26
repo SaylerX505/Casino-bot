@@ -241,5 +241,33 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.view.result_published)
 
 
+    async def test_final_receipt_can_retry_after_transient_send_failure(self):
+        self.view.context = SimpleNamespace(
+            interaction=object(),
+            send=AsyncMock(side_effect=[RuntimeError("transient send failure"), None]),
+        )
+        self.view.player_cards = [("10", "♠"), ("7", "♥"), ("2", "♦")]
+        self.view.dealer_cards = [("10", "♣"), ("7", "♠")]
+        self.view.receipt = {
+            "status": "settled",
+            "outcome": "win",
+            "stake": 100,
+            "payout": 200,
+            "balance_after": 1_100,
+        }
+        self.view.result_kind = "win"
+
+        await self.view._publish_final_result()
+        self.assertFalse(self.view.result_published)
+
+        await self.view._publish_final_result()
+
+        self.assertTrue(self.view.result_published)
+        self.assertEqual(self.view.context.send.await_count, 2)
+        kwargs = self.view.context.send.await_args.kwargs
+        self.assertIs(kwargs["ephemeral"], False)
+        self.assertIsInstance(kwargs["view"], StatusPanel)
+
+
 if __name__ == "__main__":
     unittest.main()
