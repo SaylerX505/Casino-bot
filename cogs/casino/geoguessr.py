@@ -78,6 +78,37 @@ def get_guess_data(guess_text):
         logger.debug("Optional GeoGuessr enhancement failed", exc_info=True)
     return None, None
 
+def build_final_result(scores):
+    """Summarize final scores without announcing a zero-point game as a tie."""
+    final_scores = sorted(scores.items(), key=lambda entry: entry[1], reverse=True)
+    if not final_scores:
+        return "لم يتم تسجيل نقاط؛ مفيش فائز في اللعبة دي.", SERVER_LOGO_URL, "neutral"
+
+    top_score = final_scores[0][1]
+    if top_score <= 0:
+        return (
+            "مفيش فائز بالنقاط المرة دي؛ محدش جمع نقاط خلال الجولات. جرّبوا مرة تانية.",
+            SERVER_LOGO_URL,
+            "neutral",
+        )
+
+    winners = [player for player, score in final_scores if score == top_score]
+    if len(winners) > 1:
+        winner_mentions = " و ".join(player.mention for player in winners)
+        return (
+            f"🏆 تعادل! الفائزون هم {winner_mentions} برصيد {top_score} نقطة!",
+            SERVER_LOGO_URL,
+            "neutral",
+        )
+
+    winner = winners[0]
+    return (
+        f"🏆 {winner.mention} هو الفائز برصيد {top_score} نقطة!",
+        winner.display_avatar.url,
+        "success",
+    )
+
+
 # --- CORE GAME LOOP ---
 async def run_game_loop(ctx, players):
     try:
@@ -330,21 +361,7 @@ async def run_game_loop(ctx, players):
             await asyncio.sleep(4)
 
         # --- FINAL WINNER ANNOUNCEMENT ---
-        final_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        top_score = final_scores[0][1]
-
-        winners = [player for player, score in final_scores if score == top_score]
-
-        if len(winners) > 1:
-            winner_mentions = " و ".join(player.mention for player in winners)
-            description = f"🏆 **تعادل!** الفائزون هم {winner_mentions} برصيد `{top_score} نقطة`!"
-            winner_image = SERVER_LOGO_URL
-            outcome = "neutral"
-        else:
-            winner = winners[0]
-            description = f"🏆 **{winner.mention}** هو الفائز برصيد `{top_score} نقطة`!"
-            winner_image = winner.display_avatar.url
-            outcome = "success"
+        description, winner_image, outcome = build_final_result(scores)
 
         await ctx.send(
             view=GeoGuessrResultPanel(
