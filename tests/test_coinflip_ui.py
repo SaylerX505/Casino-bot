@@ -317,7 +317,10 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.view.resolving)
         self.assertTrue(all(button.disabled for button in self.view._buttons.values()))
         self.assertIn("تعذر بدء الجولة", self.view._panel_text.content)
-        self.view.message.edit.assert_awaited_once_with(view=self.view)
+        self.view.message.edit.assert_awaited_once()
+        edit_kwargs = self.view.message.edit.await_args.kwargs
+        self.assertIs(edit_kwargs["view"], self.view)
+        self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip.png")
 
     async def test_cancel_before_choice_never_calls_the_wager_service(self):
         interaction = SimpleNamespace(
