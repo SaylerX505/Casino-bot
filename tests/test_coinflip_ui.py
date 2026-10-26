@@ -178,6 +178,28 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.view.result_published)
 
 
+    async def test_result_receipt_can_retry_after_a_transient_send_failure(self):
+        context = SimpleNamespace(
+            interaction=object(),
+            send=AsyncMock(side_effect=[RuntimeError("transient send failure"), None]),
+        )
+        self.view.context = context
+        receipt_text = "# كسبت الرهان\nصافي الربح: +90"
+        
+        await self.view._publish_result(receipt_text, "win")
+        self.assertFalse(self.view.result_published)
+
+        await self.view._publish_result(receipt_text, "win")
+        
+        self.assertTrue(self.view.result_published)
+        self.assertEqual(context.send.await_count, 2)
+        kwargs = context.send.await_args.kwargs
+        self.assertIs(kwargs["ephemeral"], False)
+        self.assertIsInstance(kwargs["view"], StatusPanel)
+
+
+
+
     async def test_discord_panel_update_failure_releases_session_without_betting(self):
         self.view.message = SimpleNamespace(id=702, edit=AsyncMock())
         interaction = SimpleNamespace(
