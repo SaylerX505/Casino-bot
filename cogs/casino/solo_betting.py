@@ -567,7 +567,6 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         """Publish the receipt separately so the active controls stay easy to scan."""
         if self.context is None or self.result_published:
             return
-        self.result_published = True
         lines = content.split("\n", 1)
         description = lines[1] if len(lines) > 1 else lines[0]
         kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
@@ -586,6 +585,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 view=StatusPanel(title, description, outcome),
                 **kwargs,
             )
+            self.result_published = True
         except Exception:
             logger.exception("Could not publish solo wager result game_type=%s", self.game_type)
 
