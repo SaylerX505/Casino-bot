@@ -28,9 +28,39 @@ class LobbyUXTests(unittest.TestCase):
         self.assertIn("LobbyHost", text)
         self.assertIn("الحد الأدنى للبدء:** 5 لاعب", text)
         self.assertIn("اللاعبون (1/12)", text)
-        self.assertIn("الوقت المتبقي:** 17 ثانية", text)
-        self.assertIn("لو العدد وصل للحد الأدنى", text)
+        self.assertIn("يبدأ تلقائيًا خلال **17 ثانية**", text)
+        self.assertNotIn("لو العدد وصل للحد الأدنى", text)
+        self.assertLess(len(text), 280)
         self.assertIsInstance(embed_to_v2(panel), LayoutView)
+
+    def test_long_rosters_are_capped_without_losing_the_total_count(self):
+        players = [SimpleNamespace(mention=f"<@{user_id}>") for user_id in range(200, 208)]
+        panel = lobby_embed(
+            "لعبة تجريبية",
+            "قواعد مختصرة.",
+            players,
+            5,
+            host=self.host,
+            min_players=1,
+        )
+
+        self.assertIn("اللاعبون (8/25)", panel.description)
+        for user_id in range(200, 205):
+            self.assertIn(f"<@{user_id}>", panel.description)
+        self.assertNotIn("<@205>", panel.description)
+        self.assertIn("+3 لاعب آخر", panel.description)
+
+    def test_multiline_rules_become_a_single_compact_summary(self):
+        panel = lobby_embed(
+            "لعبة تجريبية",
+            "السطر الأول.\nالسطر الثاني.",
+            [],
+            12,
+            min_players=1,
+        )
+
+        self.assertTrue(panel.description.startswith("السطر الأول. السطر الثاني."))
+
 
     def test_solo_capable_lobby_does_not_claim_it_needs_two_players(self):
         panel = lobby_embed(
