@@ -303,11 +303,10 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             return base_embed(
                 title="✊ تحدي حومص",
                 description=(
-                    f"{self.player.mention} **تحدى** {self.opponent.mention}\n"
-                    f"**الرهان:** {self.bet:,} لكل لاعب · **جائزة الفائز:** {prize:,} · **صافي الربح:** +{net_profit:,}\n"
-                    f"**ضريبة البنك:** {self.bet * 2 - prize:,} من إجمالي الرهانات.\n"
-                    "**القبول:** في انتظار الخصم · **المهلة:** 60 ثانية\n"
-                    "مفيش رصيد اتحجز قبل القبول؛ لو المهلة انتهت، التحدي بيتقفل من غير خصم."
+                    f"{self.player.mention} تحدّى {self.opponent.mention}\n"
+                    f"**الرهان:** {self.bet:,} لكل لاعب · **الجائزة:** {prize:,} · **الصافي:** +{net_profit:,} · **رسوم البنك:** {self.bet * 2 - prize:,}\n"
+                    "**الحالة:** بانتظار القبول · **المهلة:** 60 ثانية\n"
+                    "لا يُحجز الرصيد قبل القبول؛ ينتهي التحدي بلا خصم عند انتهاء المهلة."
                 ),
                 color=THEME["teal"],
             )
@@ -320,9 +319,9 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             title="✊ حومص · الجولة بدأت",
             description=(
                 f"{self.player.mention} **VS** {self.opponent.mention}\n"
-                f"**الرهان:** {self.bet:,} لكل لاعب · **جائزة الفائز:** {prize:,} · **الصافي:** +{net_profit:,}\n"
+                f"**الرهان:** {self.bet:,} لكل لاعب · **الجائزة:** {prize:,} · **الصافي:** +{net_profit:,}\n"
                 f"**الاختيارات:** {player_name} — {player_status} · {opponent_name} — {opponent_status}\n"
-                "اختار حركة بسرية. التعادل أو انتهاء المهلة يرجّع الرهان للطرفين."
+                "اختر حركتك بسرية؛ التعادل أو انتهاء المهلة يعيد الرهان للطرفين."
             ),
             color=THEME["teal"],
         )
