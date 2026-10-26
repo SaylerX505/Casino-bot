@@ -49,7 +49,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(container.accent_color, solo_betting_module.THEME["gold"])
 
-    def test_dice_view_discloses_odds_and_uses_two_valid_button_rows(self):
+    def test_dice_view_keeps_only_title_and_wager_with_valid_button_rows(self):
         view = SoloWagerView(
             self.cog,
             self.requester,
@@ -62,9 +62,11 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             instructions="اختار رقم من 1 إلى 6.",
         )
         try:
-            self.assertIn("5.7x", view._panel_text.content)
-            self.assertIn("1 من 6", view._panel_text.content)
-            self.assertIn("570", view._panel_text.content)
+            self.assertIn("# رمي النرد", view._panel_text.content)
+            self.assertIn("**الرهان:** 100", view._panel_text.content)
+            self.assertNotIn("5.7x", view._panel_text.content)
+            self.assertNotIn("1 من 6", view._panel_text.content)
+            self.assertNotIn("570", view._panel_text.content)
             buttons = [
                 item for item in view.walk_children()
                 if isinstance(item, discord.ui.Button)
@@ -85,7 +87,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         finally:
             view.stop()
 
-    def test_slots_view_discloses_variable_paytable_with_one_spin_action(self):
+    def test_slots_view_keeps_only_title_and_wager_with_one_spin_action(self):
         view = SoloWagerView(
             self.cog,
             self.requester,
@@ -101,9 +103,11 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         )
         try:
             content = view._panel_text.content
-            self.assertIn("جدول الجوائز", content)
-            self.assertIn("1.7x", content)
-            self.assertIn("15x", content)
+            self.assertIn("# ماكينة الحظ", content)
+            self.assertIn("**الرهان:** 100", content)
+            self.assertNotIn("جدول الجوائز", content)
+            self.assertNotIn("1.7x", content)
+            self.assertNotIn("15x", content)
             buttons = [
                 item for item in view.walk_children()
                 if isinstance(item, discord.ui.Button)
