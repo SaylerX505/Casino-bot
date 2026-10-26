@@ -250,6 +250,34 @@ class RouletteLobby(LayoutView):
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
 
+    async def _publish_result_receipt(
+        self,
+        message,
+        view,
+        *,
+        title: str,
+        description: str,
+        outcome: str,
+        context: str,
+    ) -> bool:
+        """Send a separate receipt, falling back to the closed round board on failure."""
+        try:
+            await self.ctx.send(view=StatusPanel(title, description, outcome))
+            return True
+        except Exception:
+            logger.exception(
+                "Could not publish separate roulette receipt context=%s channel_id=%s",
+                context,
+                self.ctx.channel.id,
+            )
+            view._panel_text.content = f"# {title}\n{description}"
+            await try_edit_view(
+                message,
+                view,
+                context=f"roulette_{context}_receipt_fallback",
+            )
+            return False
+
     # --- ROULETTE GAME LOOP ---
     async def run_game_loop(self):
         try:
@@ -357,30 +385,14 @@ class RouletteLobby(LayoutView):
                     else "success"
                 )
                 result_description = "\n\n".join(round_notes) if round_notes else "مفيش أحداث إضافية في الجولة دي."
-                try:
-                    await self.ctx.send(
-                        view=StatusPanel(
-                            f"نتيجة الجولة {round_num}",
-                            result_description,
-                            outcome,
-                        )
-                    )
-                except discord.HTTPException:
-                    logger.exception(
-                        "Could not publish separate roulette round receipt round=%s channel_id=%s",
-                        round_num,
-                        self.ctx.channel.id,
-                    )
-                    # Keep normal receipts separate, but never lose the outcome if
-                    # Discord refuses the result message for this particular round.
-                    view._panel_text.content = f"# نتيجة الجولة {round_num}\n{result_description}"
-                    try:
-                        await msg.edit(view=view)
-                    except discord.HTTPException:
-                        logger.exception(
-                            "Could not preserve roulette round result on its original board round=%s",
-                            round_num,
-                        )
+                await self._publish_result_receipt(
+                    msg,
+                    view,
+                    title=f"نتيجة الجولة {round_num}",
+                    description=result_description,
+                    outcome=outcome,
+                    context=f"round_{round_num}",
+                )
 
                 round_num += 1
                 await asyncio.sleep(2)
@@ -395,32 +407,30 @@ class RouletteLobby(LayoutView):
                         final_description += "\n\n💰 تم إضافة 20 عملة كمكافأة فوز."
                     else:
                         final_description += "\n\n⚠️ الفوز مؤكد، لكن المكافأة لم تُصرف لأن الرصيد وصل للحد الأقصى."
-                try:
-                    await self.ctx.send(
-                        view=StatusPanel("🏆 بطل الروليت!", final_description, "success")
+                if last_round_message is not None and last_round_view is not None:
+                    await self._publish_result_receipt(
+                        last_round_message,
+                        last_round_view,
+                        title="🏆 بطل الروليت!",
+                        description=final_description,
+                        outcome="success",
+                        context="final_winner",
                     )
-                except discord.HTTPException:
-                    logger.exception("Could not publish the final roulette winner receipt")
-                    if last_round_message is not None and last_round_view is not None:
-                        last_round_view._panel_text.content = f"# بطل الروليت!\n{final_description}"
-                        try:
-                            await last_round_message.edit(view=last_round_view)
-                        except discord.HTTPException:
-                            logger.exception("Could not preserve final roulette winner on the last round board")
+                else:
+                    await self.ctx.send(view=StatusPanel("🏆 بطل الروليت!", final_description, "success"))
             else:
                 final_description = "الكل خرج من اللعبة؛ مفيش فائز في الجولة دي."
-                try:
-                    await self.ctx.send(
-                        view=StatusPanel("انتهت الروليت", final_description, "warning")
+                if last_round_message is not None and last_round_view is not None:
+                    await self._publish_result_receipt(
+                        last_round_message,
+                        last_round_view,
+                        title="انتهت الروليت",
+                        description=final_description,
+                        outcome="warning",
+                        context="final_no_winner",
                     )
-                except discord.HTTPException:
-                    logger.exception("Could not publish the final roulette summary")
-                    if last_round_message is not None and last_round_view is not None:
-                        last_round_view._panel_text.content = f"# انتهت الروليت\n{final_description}"
-                        try:
-                            await last_round_message.edit(view=last_round_view)
-                        except discord.HTTPException:
-                            logger.exception("Could not preserve final roulette summary on the last round board")
+                else:
+                    await self.ctx.send(view=StatusPanel("انتهت الروليت", final_description, "warning"))
 
         except asyncio.CancelledError:
             raise
