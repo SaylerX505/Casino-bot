@@ -373,7 +373,10 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             await self.view.cancel(interaction)
 
         play_wager.assert_not_called()
-        self.view.message.edit.assert_awaited_once_with(view=self.view)
+        self.view.message.edit.assert_awaited_once()
+        edit_kwargs = self.view.message.edit.await_args.kwargs
+        self.assertIs(edit_kwargs["view"], self.view)
+        self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip.png")
         self.assertFalse(has_active_solo_session(self.requester.id))
         self.assertTrue(self.view.done)
 
@@ -383,7 +386,10 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             await self.view.on_timeout()
 
         play_wager.assert_not_called()
-        self.view.message.edit.assert_awaited_once_with(view=self.view)
+        self.view.message.edit.assert_awaited_once()
+        edit_kwargs = self.view.message.edit.await_args.kwargs
+        self.assertIs(edit_kwargs["view"], self.view)
+        self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip.png")
         self.assertTrue(self.view.done)
         self.assertIn("انتهت صلاحية", self.view._panel_text.content)
 
