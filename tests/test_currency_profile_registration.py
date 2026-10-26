@@ -153,23 +153,10 @@ class CurrencyProfileRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(view.done)
         self.assertIn("تم إلغاء التحويل", view._panel_text.content)
 
-    async def test_plus_mention_opens_target_profile(self):
-        target = SimpleNamespace(id=202, display_name="Target", bot=False)
-        guild = SimpleNamespace(id=999, get_member=lambda _member_id: target)
-        message = SimpleNamespace(
-            author=SimpleNamespace(id=101, bot=False),
-            guild=guild,
-            content="+<@202>",
-            channel=SimpleNamespace(send=AsyncMock()),
-        )
-        with patch(
-            "cogs.casino.currency.build_profile_panel",
-            new=AsyncMock(return_value=discord.ui.LayoutView(timeout=30)),
-        ):
-            await self.cog.on_message(message)
+    async def test_plus_mention_is_not_registered_as_a_profile_command(self):
+        listener_names = {name for name, _listener in self.cog.get_listeners()}
+        self.assertNotIn("on_message", listener_names)
 
-        message.channel.send.assert_awaited_once()
-        self.assertIn("view", message.channel.send.await_args.kwargs)
 
     async def test_profile_alias_invokes_the_registered_cog_callback(self):
         command = self.bot.get_command("profile")
