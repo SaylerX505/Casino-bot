@@ -98,10 +98,37 @@ class AppCommandErrorTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ephemeral", kwargs)
 
 
-    async def test_bad_prefix_usage_is_generic_plain_text_and_auto_deletes(self):
+    async def test_transfer_missing_amount_shows_usage_and_example_as_plain_text(self):
         ctx = SimpleNamespace(
             interaction=None,
-            command=SimpleNamespace(qualified_name="transfer"),
+            command=SimpleNamespace(name="تحويل", qualified_name="تحويل", signature="<target> <amount>"),
+            invoked_with="ckrc",
+            prefix="+",
+            author=SimpleNamespace(id=303),
+            guild=None,
+            channel=SimpleNamespace(id=404),
+            send=AsyncMock(),
+        )
+        error = commands.MissingRequiredArgument(
+            SimpleNamespace(name="amount", displayed_name="amount")
+        )
+
+        await on_command_error(ctx, error)
+
+        ctx.send.assert_awaited_once()
+        message = ctx.send.await_args.args[0]
+        self.assertIn("اكتب مبلغ التحويل بالأرقام", message)
+        self.assertIn("+ckrc @user <المبلغ>", message)
+        self.assertIn("+ckrc @user 100", message)
+        self.assertEqual(ctx.send.await_args.kwargs["delete_after"], 2)
+        self.assertNotIn("view", ctx.send.await_args.kwargs)
+
+    async def test_transfer_invalid_member_or_amount_explains_valid_syntax(self):
+        ctx = SimpleNamespace(
+            interaction=None,
+            command=SimpleNamespace(name="تحويل", qualified_name="تحويل", signature="<target> <amount>"),
+            invoked_with="تحويل",
+            prefix="+",
             author=SimpleNamespace(id=303),
             guild=None,
             channel=SimpleNamespace(id=404),
@@ -111,7 +138,10 @@ class AppCommandErrorTests(unittest.IsolatedAsyncioTestCase):
         await on_command_error(ctx, commands.BadArgument("bad user value"))
 
         ctx.send.assert_awaited_once()
-        self.assertEqual(ctx.send.await_args.args[0], "تعذّر تنفيذ الأمر.")
+        message = ctx.send.await_args.args[0]
+        self.assertIn("منشن العضو بشكل صحيح", message)
+        self.assertIn("+تحويل @user <المبلغ>", message)
+        self.assertIn("+تحويل @user 100", message)
         self.assertEqual(ctx.send.await_args.kwargs["delete_after"], 2)
         self.assertNotIn("view", ctx.send.await_args.kwargs)
 
