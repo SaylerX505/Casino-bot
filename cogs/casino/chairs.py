@@ -204,7 +204,8 @@ class ChairsLobby(LayoutView):
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
-        rules = "اضغط على كرسي متاح في الجولة العادية، وتجنّب الأزرار الحمراء في جولة الفخ. آخر لاعب يفوز.\n        embed = lobby_embed(
+        rules = "اضغط على كرسي متاح في الجولة العادية، وتجنّب الأزرار الحمراء في جولة الفخ. آخر لاعب يفوز."
+        embed = lobby_embed(
             "🪑 لعبة الكراسي الموسيقية",
             rules.strip(),
             self.players,
