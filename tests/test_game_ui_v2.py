@@ -25,7 +25,7 @@ from cogs.casino.mafia_views import (
 )
 from cogs.casino.roulette import RouletteLobby
 from cogs.casino.roulette_views import KickView
-from cogs.casino.wheel import WheelLobby, WheelResultPanel
+from cogs.casino.wheel import WheelLobby, WheelResultPanel, publish_wheel_panel
 from cogs.utility.theme import StatusPanel, embed_to_v2, wait_for_view_fixed_timeout
 
 
@@ -815,6 +815,59 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
+
+class WheelReceiptDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_normal_wheel_result_stays_a_separate_message(self):
+        sent = SimpleNamespace(id=123)
+        ctx = SimpleNamespace(
+            channel=SimpleNamespace(id=9),
+            send=AsyncMock(return_value=sent),
+        )
+        fallback_message = SimpleNamespace(edit=AsyncMock())
+        panel = WheelResultPanel("نتيجة اللفة 1/2", "صافي الرصيد: +50", "win")
+        pending = []
+
+        message = await publish_wheel_panel(
+            ctx,
+            panel,
+            fallback_message=fallback_message,
+            pending_receipts=pending,
+        )
+
+        self.assertIs(message, sent)
+        ctx.send.assert_awaited_once()
+        self.assertIsInstance(ctx.send.await_args.kwargs["view"], WheelResultPanel)
+        fallback_message.edit.assert_not_awaited()
+        self.assertEqual(pending, [])
+
+    async def test_failed_wheel_result_is_saved_on_the_closed_lobby(self):
+        ctx = SimpleNamespace(
+            channel=SimpleNamespace(id=9),
+            send=AsyncMock(side_effect=RuntimeError("synthetic result delivery failure")),
+        )
+        fallback_message = SimpleNamespace(edit=AsyncMock())
+        panel = WheelResultPanel("نتيجة اللفة 2/3", "النتيجة: +100\nصافي الرصيد: +50", "win")
+        pending = []
+
+        message = await publish_wheel_panel(
+            ctx,
+            panel,
+            fallback_message=fallback_message,
+            pending_receipts=pending,
+        )
+
+        self.assertIsNone(message)
+        ctx.send.assert_awaited_once()
+        self.assertEqual(len(pending), 1)
+        fallback_message.edit.assert_awaited_once()
+        fallback = fallback_message.edit.await_args.kwargs["view"]
+        self.assertIsInstance(fallback, StatusPanel)
+        text = "\n".join(
+            item.content for item in fallback.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("نتيجة اللفة 2/3", text)
+        self.assertIn("صافي الرصيد: +50", text)
 
 class WheelLobbyStartRaceTests(unittest.IsolatedAsyncioTestCase):
     async def test_duplicate_start_after_defer_gets_private_v2_feedback(self):
