@@ -294,7 +294,8 @@ class WheelLobby(LayoutView):
         self.lobby_task = ctx.bot.loop.create_task(self.run_timer())
 
     def make_embed(self):
-        rules = f"رسوم الدخول {FEE:,} عملة · كل القطاعات بفرص متساوية · النتيجة تعرض الصافي والرصيد.\n        return lobby_embed(
+        rules = f"رسوم الدخول {FEE:,} عملة · كل القطاعات بفرص متساوية · النتيجة تعرض الصافي والرصيد."
+        return lobby_embed(
             "🎡 عجلة الحفرة",
             rules,
             self.players,
