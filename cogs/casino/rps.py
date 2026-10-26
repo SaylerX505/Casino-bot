@@ -1203,7 +1203,7 @@ class RPS(commands.Cog):
             return await send_status(
                 ctx,
                 "قيمة الرهان مش مناسبة",
-                f"مثال: \`{usage} 100 @صاحبك\`. أقل رهان **{MIN_BET:,}** {COIN}.",
+                f"مثال: `{usage} 100 @صاحبك`. أقل رهان **{MIN_BET:,}** {COIN}.",
                 "warning",
             )
         if amount > MAX_BET:
