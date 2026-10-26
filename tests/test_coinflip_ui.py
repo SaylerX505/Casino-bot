@@ -177,9 +177,11 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             for item in receipt_kwargs["view"].walk_children()
             if isinstance(item, discord.ui.TextDisplay)
         )
-        self.assertIn("كسبت الرهان", receipt_text)
-        self.assertIn("صافي الربح:** +90", receipt_text)
-        self.assertIn("رصيدك بعد التسوية:** 1,090", receipt_text)
+        self.assertIn("كسبت · رمي العملة", receipt_text)
+        self.assertIn("رصيدك:** 1,090", receipt_text)
+        self.assertNotIn("الرهان:", receipt_text)
+        self.assertNotIn("إجمالي الصرف", receipt_text)
+        self.assertNotIn("صافي الربح", receipt_text)
         self.assertTrue(self.view.result_published)
 
 
@@ -203,9 +205,11 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(self.view.result_published)
         self.assertGreaterEqual(self.view.message.edit.await_count, 2)
-        self.assertIn("كسبت الرهان", self.view._panel_text.content)
-        self.assertIn("صافي الربح:** +90", self.view._panel_text.content)
-        self.assertIn("رصيدك بعد التسوية:** 1,090", self.view._panel_text.content)
+        self.assertIn("كسبت · رمي العملة", self.view._panel_text.content)
+        self.assertIn("رصيدك:** 1,090", self.view._panel_text.content)
+        self.assertNotIn("الرهان:", self.view._panel_text.content)
+        self.assertNotIn("إجمالي الصرف", self.view._panel_text.content)
+        self.assertNotIn("صافي الربح", self.view._panel_text.content)
         self.assertNotIn("النتيجة التفصيلية في الرسالة التالية", self.view._panel_text.content)
 
 
