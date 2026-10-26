@@ -763,9 +763,10 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             if winner_id is None:
                 description = "تم التأكد أن الرهان اتسوى بالفعل. لم نكرر أي خصم أو صرف."
             else:
+                balance = await asyncio.to_thread(bank.get_balance, int(winner_id))
                 description = (
-                    f"اكتملت تسوية الرهان بنجاح. الفائز: <@{winner_id}>.\n"
-                    f"الجائزة المسجلة: **{int(result.get('payout', 0)):,}** عملة."
+                    f"اكتملت التسوية بنجاح. الفائز: <@{winner_id}>.\n"
+                    f"**رصيدك:** {balance:,} {COIN}"
                 )
         elif result.get("status") == "refunded":
             description = "اكتملت التسوية بإرجاع الرهان للطرفين بالكامل."
@@ -982,9 +983,14 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 self._queue_recovery_if_needed(result)
                 description = "الرهان لسه محجوز بأمان. البوت هيعيد محاولة التسوية تلقائيًا، ولو حصل Restart هيتراجع الرهان عند بدء التشغيل."
             else:
+                player_balance, opponent_balance = await asyncio.gather(
+                    asyncio.to_thread(bank.get_balance, self.player.id),
+                    asyncio.to_thread(bank.get_balance, self.opponent.id),
+                )
                 description = (
                     f"اختارتوا الاتنين **{MOVE_NAMES[player_choice]}**.\n"
-                    "رجعنا الرهان كامل للطرفين."
+                    f"**رصيدك:** {player_balance:,} {COIN}\n"
+                    f"**رصيد الخصم:** {opponent_balance:,} {COIN}"
                 )
             embed = base_embed(
                 title="🤝 تعادل!",
@@ -1023,15 +1029,13 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             )
             return await self.publish_result(embed, interaction)
 
-        prize = int(result["payout"])
-        tax = int(result["tax"])
+        winner_balance = await asyncio.to_thread(bank.get_balance, winner.id)
         embed = base_embed(
             title="🏆 فايز!",
             description=(
                 f"**{MOVE_NAMES[winning_move]}** كسبت **{MOVE_NAMES[losing_move]}**.\n\n"
                 f"🎉 الفائز: {winner.mention}\n"
-                f"💰 الجائزة: **{prize:,}** {COIN}\n"
-                f"🧾 ضريبة البنك: **{tax:,}** {COIN}"
+                f"**رصيدك:** {winner_balance:,} {COIN}"
             ),
             color=THEME["gold"],
         )
