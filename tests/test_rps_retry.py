@@ -44,7 +44,7 @@ class RPSComponentsV2Tests(unittest.TestCase):
         view._refresh_panel()
         move_buttons = [item for item in view.walk_children() if isinstance(item, discord.ui.Button)]
         self.assertEqual({button.label for button in move_buttons}, {"حجر", "ورقة", "مقص"})
-        self.assertIn("الرهان المحجوز", view._panel_text.content)
+        self.assertIn("**الرهان:** 100", view._panel_text.content)
 
         view.choices[player.id] = "🪨"
         view._refresh_panel()
