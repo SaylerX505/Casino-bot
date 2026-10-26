@@ -396,28 +396,17 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         else:
             heading, detail = "انتهت الجولة", "الموزّع كسب الجولة أو مجموعك تجاوز 21."
 
-        stake = int(receipt.get("stake", self.amount))
-        payout = int(receipt.get("payout", 0))
-        if status == "refunded" or outcome == "push":
-            net = "**صافي النتيجة:** 0"
-        elif outcome == "win":
-            net = f"**صافي الربح:** +{payout - stake:,} {COIN}"
-        else:
-            net = f"**صافي النتيجة:** −{stake:,} {COIN}"
         balance = receipt.get("balance_after")
-        balance_line = f"\n**الرصيد بعد التسوية:** {int(balance):,} {COIN}" if balance is not None else ""
-        original_stake_line = (
-            f"**الرهان الأصلي:** {self.original_amount:,} {COIN}\n"
-            if self.doubled_down
+        balance_line = (
+            f"\n**رصيدك:** {int(balance):,} {COIN}"
+            if balance is not None
             else ""
         )
         return (
             f"# Blackjack · {heading}\n{detail}\n\n"
             f"**يدك:** {_cards_text(self.player_cards)} ({_hand_value(self.player_cards)})\n"
-            f"**يد الموزّع:** {_cards_text(self.dealer_cards)} ({_hand_value(self.dealer_cards)})\n\n"
-            f"{original_stake_line}"
-            f"**الرهان النهائي:** {stake:,} {COIN}\n"
-            f"**إجمالي الصرف:** {payout:,} {COIN}\n{net}{balance_line}"
+            f"**يد الموزّع:** {_cards_text(self.dealer_cards)} ({_hand_value(self.dealer_cards)})"
+            f"{balance_line}"
         )
 
     async def _art_file(self):
