@@ -133,7 +133,7 @@ class HidingView(LayoutView):
         self.hiding_spots = {}
         self.dropdown = HideDropdown()
         self._panel_text = TextDisplay(
-            "# وقت الاختباء\nالكل عنده 50 ثانية يختار مكانًا للاختباء. اختيارك خاص ومش هيظهر لباقي اللاعبين."
+            "# وقت الاختباء\nاختر مكانًا خلال 50 ثانية؛ اختيارك سري."
         )
         self.add_item(
             Container(
@@ -209,7 +209,7 @@ class SeekerView(LayoutView):
         self.choice = None
         self.dropdown = SeekDropdown(seeker, searched_locations)
         self._panel_text = TextDisplay(
-            f"# وقت التفتيش\n{seeker.mention} عليه الدور. عندك 15 ثانية تختار مكانًا للتفتيش من القائمة."
+            f"# وقت التفتيش\n{seeker.mention}، اختر مكانًا خلال 15 ثانية."
         )
         self.add_item(
             Container(
@@ -260,7 +260,7 @@ class LobbyView(LayoutView):
     def get_embed(self):
         embed = lobby_embed(
             "🙈 غميضة الحفرة",
-            "اختبئ على الخريطة قبل ما الباحث يبدأ يدور عليك.",
+            "اختبئ على الخريطة قبل أن يبدأ الباحث.",
             self.players,
             self.time_left,
             max_players=25,
