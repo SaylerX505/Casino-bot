@@ -35,16 +35,18 @@ def view_text(view):
 
 
 class AppCommandErrorTests(unittest.IsolatedAsyncioTestCase):
-    async def test_prefix_check_failure_uses_v2_panel_without_ephemeral_kwarg(self):
+    async def test_prefix_check_failure_is_short_plain_text(self):
         ctx = SimpleNamespace(interaction=None, send=AsyncMock())
 
         await on_command_error(ctx, commands.CheckFailure("denied"))
 
         ctx.send.assert_awaited_once()
+        args = ctx.send.await_args.args
         kwargs = ctx.send.await_args.kwargs
-        self.assertIsInstance(kwargs["view"], StatusPanel)
+        self.assertEqual(args[0], "الأمر ده مش متاح لصلاحيات حسابك أو في المكان الحالي.")
+        self.assertEqual(kwargs["delete_after"], 2)
+        self.assertNotIn("view", kwargs)
         self.assertNotIn("ephemeral", kwargs)
-        self.assertIn("صلاحيات", view_text(kwargs["view"]))
 
     async def test_hybrid_check_failure_uses_private_interaction_response(self):
         interaction = fake_interaction()
@@ -86,13 +88,32 @@ class AppCommandErrorTests(unittest.IsolatedAsyncioTestCase):
             await on_command_error(ctx, RuntimeError("sensitive exception detail"))
 
         ctx.send.assert_awaited_once()
-        visible_view = ctx.send.await_args.kwargs["view"]
-        visible_message = view_text(visible_view)
-        self.assertIsInstance(visible_view, StatusPanel)
+        visible_message = ctx.send.await_args.args[0]
+        kwargs = ctx.send.await_args.kwargs
         self.assertNotIn("private input", visible_message)
         self.assertNotIn("sensitive exception detail", visible_message)
         self.assertIn("رقم المتابعة", visible_message)
-        self.assertNotIn("ephemeral", ctx.send.await_args.kwargs)
+        self.assertEqual(kwargs["delete_after"], 2)
+        self.assertNotIn("view", kwargs)
+        self.assertNotIn("ephemeral", kwargs)
+
+
+    async def test_bad_prefix_usage_is_generic_plain_text_and_auto_deletes(self):
+        ctx = SimpleNamespace(
+            interaction=None,
+            command=SimpleNamespace(qualified_name="transfer"),
+            author=SimpleNamespace(id=303),
+            guild=None,
+            channel=SimpleNamespace(id=404),
+            send=AsyncMock(),
+        )
+
+        await on_command_error(ctx, commands.BadArgument("bad user value"))
+
+        ctx.send.assert_awaited_once()
+        self.assertEqual(ctx.send.await_args.args[0], "تعذّر تنفيذ الأمر.")
+        self.assertEqual(ctx.send.await_args.kwargs["delete_after"], 2)
+        self.assertNotIn("view", ctx.send.await_args.kwargs)
 
     async def test_cross_guild_error_is_not_forwarded_to_another_guild(self):
         log_channel = SimpleNamespace(guild=SimpleNamespace(id=999), send=AsyncMock())
