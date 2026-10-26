@@ -143,11 +143,11 @@ async def publish_wheel_panel(
 
 
 def format_wheel_summary(results):
-    """Render the final scoreboard from transaction-confirmed net deltas.
+    """Render a concise final scoreboard without exposing wager accounting.
 
     Each row is (player, result_label, net_change). A missing label means the
     player could not enter; "balance_limit" means the settlement was safely
-    refused. Do not reconstruct net from a pre-transaction wallet read.
+    refused. The net delta determines the result category but is not displayed.
     """
     lines = []
     for player, label, net_change in results:
@@ -157,7 +157,8 @@ def format_wheel_summary(results):
             lines.append(f"⚠️ {player.mention} — ماقدرناش نصرف الجائزة بسبب حد الرصيد.")
         else:
             marker = "🟢" if net_change > 0 else "🔴" if net_change < 0 else "⚪"
-            lines.append(f"{marker} {player.mention} — {net_change:+,} {COIN}")
+            label_text = "مكسب" if net_change > 0 else "خسارة" if net_change < 0 else "تعادل"
+            lines.append(f"{marker} {player.mention} — {label_text}")
     return "\n".join(lines) or "مفيش نتائج للجولة."
 
 def format_wheel_breakdown(payout, target_loss=None, refund=0):
@@ -482,17 +483,14 @@ class WheelLobby(LayoutView):
                     await asyncio.sleep(0.8)
                     continue
 
-                balance_before = settlement["before"]
                 balance_after = settlement["after"]
                 net_change = settlement["net"]
-                refund = settlement["refund"]
                 results.append((player, label, net_change))
+                result_label = "مكسب" if net_change > 0 else "خسارة" if net_change < 0 else "تعادل"
                 description = (
                     f"**اللاعب:** {player.mention}\n"
-                    f"**النتيجة:** {label}{outcome_note}\n"
-                    f"{format_wheel_breakdown(payout, target_loss, refund)}\n"
-                    f"**صافي الرصيد:** {net_change:+,} {COIN}\n"
-                    f"**الرصيد الحالي:** {balance_after:,} {COIN}"
+                    f"**النتيجة:** {result_label}\n"
+                    f"**رصيدك:** {balance_after:,} {COIN}"
                 )
                 outcome_color = "win" if net_change > 0 else "loss" if net_change < 0 else "neutral"
                 panel = WheelResultPanel(
