@@ -410,8 +410,8 @@ class MafiaLobbyView(LayoutView):
 
     def get_embed(self):
         embed = lobby_embed(
-            "أهلاً بيكو في الحفرة...",
-            "المافيا بتتحرك في الضلمة... والدكتور بيحاول ينقذ ما يمكن إنقاذه.",
+            "🕵️ مافيا الحفرة",
+            "أدوار سرية وقرارات ليلية؛ اكشفوا المافيا بالتصويت نهارًا.",
             self.players,
             self.time_left,
             max_players=25,
