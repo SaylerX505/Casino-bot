@@ -1,7 +1,7 @@
 """Regression tests for shared result presentation."""
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from cogs.utility.theme import THEME, StatusPanel, lobby_embed, private_status, report_game_failure, result_embed, try_edit_view
 
