@@ -169,19 +169,27 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
                 "payout": 0,
                 "balance_after": 53,
             })
-            text = view._panel_text.content
-            self.assertIn("خسرت · رمي النرد", text)
-            self.assertIn("اختيارك: **2** · النتيجة: **4**", text)
-            self.assertIn("رصيدك:** 53", text)
-            self.assertNotIn("الرهان:", text)
-            self.assertNotIn("إجمالي الصرف", text)
-            self.assertNotIn("صافي النتيجة", text)
-            self.assertNotIn("رصيدك بعد التسوية", text)
+            board_text = view._panel_text.content
+            self.assertIn("انتهت رمي النرد", board_text)
+            self.assertNotIn("الرهان:", board_text)
+            self.assertNotIn("إجمالي الصرف", board_text)
             self.assertNotEqual(view._art_bytes, original_art)
             view.context.send.assert_awaited_once()
             kwargs = view.context.send.await_args.kwargs
             self.assertEqual(kwargs["file"].filename, "dice.png")
             self.assertIsInstance(kwargs["view"], LayoutView)
+            receipt_text = "\\n".join(
+                item.content
+                for item in kwargs["view"].walk_children()
+                if isinstance(item, discord.ui.TextDisplay)
+            )
+            self.assertIn("خسرت · رمي النرد", receipt_text)
+            self.assertIn("اختيارك: **2** · النتيجة: **4**", receipt_text)
+            self.assertIn("رصيدك:** 53", receipt_text)
+            self.assertNotIn("الرهان:", receipt_text)
+            self.assertNotIn("إجمالي الصرف", receipt_text)
+            self.assertNotIn("صافي النتيجة", receipt_text)
+            self.assertNotIn("رصيدك بعد التسوية", receipt_text)
             self.assertTrue(
                 any(isinstance(item, discord.ui.MediaGallery)
                     for item in kwargs["view"].walk_children())
