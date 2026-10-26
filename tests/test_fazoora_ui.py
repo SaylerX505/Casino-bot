@@ -57,6 +57,55 @@ class RiddleInputTests(unittest.TestCase):
 
 
 class RiddleResultMessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_successful_receipt_closes_original_question_panel(self):
+        original = SimpleNamespace(edit=AsyncMock())
+        ctx = SimpleNamespace(channel=SimpleNamespace(id=123), send=AsyncMock())
+        result = StatusPanel("الفائز", "تم صرف المكافأة.", "win")
+
+        published = await publish_riddle_result(
+            ctx,
+            result,
+            context="winner",
+            original_message=original,
+        )
+
+        self.assertTrue(published)
+        ctx.send.assert_awaited_once()
+        original.edit.assert_awaited_once()
+        closed_panel = original.edit.await_args.kwargs["view"]
+        self.assertIsInstance(closed_panel, StatusPanel)
+        self.assertIn(
+            "انتهت الفزورة",
+            "\n".join(
+                item.content for item in closed_panel.walk_children()
+                if isinstance(item, discord.ui.TextDisplay)
+            ),
+        )
+
+    async def test_failed_receipt_renders_full_result_on_original_question(self):
+        import discord
+
+        response = SimpleNamespace(status=503, reason="synthetic test response")
+        ctx = SimpleNamespace(
+            channel=SimpleNamespace(id=123),
+            send=AsyncMock(side_effect=discord.HTTPException(response, "send failed")),
+        )
+        original = SimpleNamespace(edit=AsyncMock())
+        result = StatusPanel("انتهى الوقت", "الإجابة الصحيحة هي الحفرة.", "loss")
+
+        published = await publish_riddle_result(
+            ctx,
+            result,
+            context="timeout",
+            original_message=original,
+        )
+
+        self.assertFalse(published)
+        ctx.send.assert_awaited_once()
+        original.edit.assert_awaited_once_with(view=result)
+        self.assertIsInstance(original.edit.await_args.kwargs["view"], StatusPanel)
+
+
     async def test_result_is_a_new_v2_message_instead_of_replacing_the_question(self):
         ctx = SimpleNamespace(
             channel=SimpleNamespace(id=123),
