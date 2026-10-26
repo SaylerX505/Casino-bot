@@ -801,23 +801,14 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             )
 
     async def publish_result(self, embed, interaction=None):
-        """Close the challenge board, then publish the full result as a separate V2 message."""
+        """Close the challenge board, then publish a separate V2 receipt when possible."""
         self.done = True
         deferred_private_ack = interaction is not None and interaction.response.is_done()
-        result_title = embed.title or "التحدي انتهى"
-        self._panel_text.content = (
-            "# انتهى تحدي حومص\n"
-            f"**الحالة النهائية:** {result_title}\n"
-            "اتقفلت أزرار التحدي. تفاصيل النتيجة والرهان في الإيصال العام التالي."
-        )
-        color = getattr(embed, "color", None)
-        if color is not None:
-            self._panel_accent = color.value
-        self._render_view()
+        # Keep the full settlement on the original board until the separate receipt
+        # is confirmed. A temporary send failure must never leave only a teaser.
+        self._refresh_panel(embed)
 
         try:
-            # Preserve the interactive board as history; never use its edit as a
-            # substitute for the separate public result receipt.
             try:
                 if interaction is not None and not deferred_private_ack:
                     try:
@@ -842,7 +833,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                     )
             except discord.HTTPException:
                 logging.getLogger(__name__).exception(
-                    "Could not close the original RPS board; still attempting to publish the result game_id=%s",
+                    "Could not update the closed RPS board; still attempting to publish the result game_id=%s",
                     self.game_id,
                 )
 
@@ -859,7 +850,33 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                         self.game_id,
                     )
 
+            if self.result_published:
+                # Normal UX: a compact closed board plus a distinct receipt message.
+                # If this edit fails, the original board still contains the full result.
+                self._panel_text.content = (
+                    "# انتهى تحدي حومص\n"
+                    f"**الحالة النهائية:** {embed.title or 'التحدي انتهى'}\n"
+                    "اتقفلت أزرار التحدي. تفاصيل النتيجة والرهان موجودة في إيصال منفصل بالقناة."
+                )
+                color = getattr(embed, "color", None)
+                if color is not None:
+                    self._panel_accent = color.value
+                self._render_view()
+                if self.message is not None:
+                    try:
+                        await self.message.edit(view=self)
+                    except discord.HTTPException:
+                        logging.getLogger(__name__).warning(
+                            "RPS receipt was published, but the original board could not be compacted game_id=%s",
+                            self.game_id,
+                            exc_info=True,
+                        )
+
             if deferred_private_ack:
+                if self.result_published:
+                    message = "انتهت الجولة؛ إيصال النتيجة النهائية موجود في رسالة عامة منفصلة بالقناة."
+                else:
+                    message = "انتهت الجولة؛ تفاصيل النتيجة والرهان موجودة على لوحة التحدي، لكن تعذر إرسال الإيصال المنفصل."
                 try:
                     await interaction.edit_original_response(
                         content=None,
@@ -867,8 +884,8 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                         attachments=[],
                         view=StatusPanel(
                             "تم تسجيل اختيارك",
-                            "انتهت الجولة؛ إيصال النتيجة النهائية موجود في رسالة عامة منفصلة بالقناة.",
-                            "success",
+                            message,
+                            "success" if self.result_published else "warning",
                         ),
                         allowed_mentions=discord.AllowedMentions.none(),
                     )
