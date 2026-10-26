@@ -84,7 +84,7 @@ class RPSPanelReliabilityTests(unittest.IsolatedAsyncioTestCase):
 
         ctx.send.assert_awaited_once()
         self.assertTrue(view.result_published)
-        self.assertEqual(message.edit.await_count, 2)
+        self.assertEqual(message.edit.await_count, 1)
         self.assertIn("إيصال منفصل", view._panel_text.content)
         self.assertNotIn("صافي الربح", view._panel_text.content)
         result_view = ctx.send.await_args.kwargs["view"]
