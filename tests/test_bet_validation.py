@@ -26,9 +26,8 @@ class BetAmountValidationTests(unittest.TestCase):
 
     def test_invalid_maximum_is_rejected(self):
         for maximum in (True, -1, "5000"):
-            with self.subTest(maximum=maximum):
-                with self.assertRaises(ValueError):
-                    parse_bet_amount("100", max_bet=maximum)
+            with self.subTest(maximum=maximum), self.assertRaises(ValueError):
+                parse_bet_amount("100", max_bet=maximum)
 
 
 if __name__ == "__main__":
