@@ -581,7 +581,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
             view = view_type(ctx)
         try:
             self.assertEqual(view.extensions_left, 3)
-            self.assertIn("تمديدات الوقت المتبقية:** 3", view._panel_text.content)
+            self.assertIn("تمديدات متاحة:** 3", view._panel_text.content)
 
             async def click_extension():
                 interaction = SimpleNamespace(
@@ -601,7 +601,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(view.extensions_left, remaining)
                 self.assertEqual(view.time_left, initial_time + (3 - remaining) * 10)
                 self.assertIn(
-                    f"تمديدات الوقت المتبقية:** {remaining}",
+                    f"تمديدات متاحة:** {remaining}",
                     view._panel_text.content,
                 )
                 interaction.response.edit_message.assert_awaited_once_with(view=view)
@@ -969,7 +969,7 @@ class GeoGuessrRoundExtensionPolicyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(view.extensions_left, remaining)
                 self.assertEqual(timer_state["end_time"], initial_end + (2 - remaining) * 10)
                 self.assertIn(
-                    f"تمديدات الوقت المتبقية:** {remaining}",
+                    f"تمديدات متاحة:** {remaining}",
                     view._panel_text.content,
                 )
                 interaction.response.send_message.assert_awaited_once()
