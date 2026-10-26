@@ -115,8 +115,9 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         finally:
             view.stop()
 
-    async def test_winning_coinflip_edits_the_original_message_with_atomic_receipt(self):
+    async def test_winning_coinflip_posts_a_separate_v2_result_receipt(self):
         self.cog._schedule_recovery = Mock()
+        self.view.context = SimpleNamespace(interaction=None, send=AsyncMock())
         message = SimpleNamespace(id=555, edit=AsyncMock())
         interaction = SimpleNamespace(
             user=self.requester,
@@ -161,9 +162,20 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         interaction.response.edit_message.assert_awaited_once_with(view=self.view)
         message.edit.assert_awaited_once_with(view=self.view)
         self.assertTrue(self.view.done)
-        self.assertIn("كسبت الرهان", self.view._panel_text.content)
-        self.assertIn("صافي الربح:** +90", self.view._panel_text.content)
-        self.assertIn("رصيدك بعد التسوية:** 1,090", self.view._panel_text.content)
+        self.assertIn("اتقفلت أزرار اللعبة", self.view._panel_text.content)
+        self.view.context.send.assert_awaited_once()
+        receipt_kwargs = self.view.context.send.await_args.kwargs
+        self.assertNotIn("ephemeral", receipt_kwargs)
+        self.assertIsInstance(receipt_kwargs["view"], StatusPanel)
+        receipt_text = "\n".join(
+            item.content
+            for item in receipt_kwargs["view"].walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("كسبت الرهان", receipt_text)
+        self.assertIn("صافي الربح:** +90", receipt_text)
+        self.assertIn("رصيدك بعد التسوية:** 1,090", receipt_text)
+        self.assertTrue(self.view.result_published)
 
 
     async def test_discord_panel_update_failure_releases_session_without_betting(self):
