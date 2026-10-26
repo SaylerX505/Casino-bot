@@ -356,13 +356,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
 
     def _content(self):
         if self.phase == "waiting":
-            return (
-                "# Blackjack\n"
-                f"**الرهان:** {self.amount:,} {COIN}\n"
-                "**إجمالي الصرف:** 2x للفوز · 2.5x للـ Blackjack الطبيعي؛ التعادل يعيد الرهان.\n"
-                "اقترب من 21 دون تجاوزها؛ يقف الموزّع عند 17. الـ Blackjack الطبيعي هو 21 بأول بطاقتين.\n"
-                "المضاعفة بعد أول بطاقتين تمنحك بطاقة واحدة. لا يُخصم الرهان قبل بدء الجولة."
-            )
+            return "# Blackjack"
         if self.phase == "starting":
             return f"# Blackjack\n**الرهان:** {self.amount:,} {COIN}\nجاري تثبيت الرهان وتوزيع البطاقات بأمان..."
         if self.phase == "playing":
