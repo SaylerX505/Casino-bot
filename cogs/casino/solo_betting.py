@@ -169,9 +169,10 @@ def _render_solo_game_art(
     """Draw a polished, game-specific visual for the dice and slots Components V2 panels."""
     width, height = 1200, 420
     is_slots = game_type == "slots"
-    top = (44, 16, 33) if is_slots else (10, 30, 43)
-    bottom = (12, 14, 24) if is_slots else (7, 14, 24)
-    accent = (231, 173, 54) if is_slots else (56, 197, 198)
+    is_coinflip = game_type == "coinflip"
+    top = (44, 16, 33) if is_slots else (45, 30, 12) if is_coinflip else (10, 30, 43)
+    bottom = (12, 14, 24) if is_slots else (15, 13, 10) if is_coinflip else (7, 14, 24)
+    accent = (231, 173, 54) if is_slots or is_coinflip else (56, 197, 198)
     image = Image.new("RGB", (width, height), bottom)
     draw = ImageDraw.Draw(image)
 
@@ -185,7 +186,7 @@ def _render_solo_game_art(
     draw.ellipse((830, -220, 1300, 245), fill=top)
     draw.ellipse((-160, 220, 300, 650), fill=top)
 
-    title = "SLOT MACHINE" if is_slots else "DICE TABLE"
+    title = "SLOT MACHINE" if is_slots else "COIN FLIP" if is_coinflip else "DICE TABLE"
     draw.text((68, 48), "ÇUKUR  /  CASINO", font=_art_font(22, bold=True), fill=accent)
     draw.text((68, 82), title, font=_art_font(43, bold=True), fill=(245, 245, 239))
     draw.line((68, 145, 355, 145), fill=accent, width=4)
@@ -216,6 +217,30 @@ def _render_solo_game_art(
             draw.text((1011, 268), label, font=_art_font(20, bold=True), fill=(255, 255, 248), anchor="mm")
         else:
             draw.text((1011, 268), "SPIN", font=_art_font(22, bold=True), fill=(245, 245, 239), anchor="mm")
+    elif is_coinflip:
+        draw.rounded_rectangle((430, 40, 840, 380), radius=28, fill=(25, 22, 18), outline=accent, width=4)
+        draw.ellipse((478, 55, 792, 369), fill=(118, 76, 24), outline=(255, 225, 147), width=8)
+        draw.ellipse((493, 70, 777, 354), fill=(227, 176, 64), outline=(255, 239, 181), width=4)
+        draw.ellipse((510, 87, 760, 337), fill=(31, 29, 27), outline=(172, 126, 47), width=4)
+        face = "HEADS" if result == "heads" else "TAILS" if result == "tails" else "CKR"
+        draw.text((635, 185), "ÇUKUR", font=_art_font(19, bold=True), fill=(224, 179, 77), anchor="mm")
+        draw.line((555, 208, 715, 208), fill=(172, 126, 47), width=3)
+        draw.text((635, 253), face, font=_art_font(31, bold=True), fill=(255, 229, 157), anchor="mm")
+        draw.rounded_rectangle((864, 54, 1132, 366), radius=24, fill=(20, 21, 24), outline=accent, width=3)
+        draw.text((998, 91), "YOUR PICK", font=_art_font(16, bold=True), fill=(195, 177, 137), anchor="mm")
+        picked = "HEADS" if choice == "heads" else "TAILS" if choice == "tails" else "—"
+        draw.text((998, 129), picked, font=_art_font(25, bold=True), fill=(248, 242, 224), anchor="mm")
+        draw.line((890, 158, 1106, 158), fill=(90, 77, 53), width=2)
+        draw.text((998, 190), "RESULT", font=_art_font(16, bold=True), fill=(195, 177, 137), anchor="mm")
+        result_label = "HEADS" if result == "heads" else "TAILS" if result == "tails" else "READY"
+        draw.text((998, 228), result_label, font=_art_font(25, bold=True), fill=(248, 242, 224), anchor="mm")
+        if won is not None:
+            badge_color = (48, 166, 112) if won else (170, 48, 58)
+            badge_label = "WIN" if won else "NO WIN"
+        else:
+            badge_color, badge_label = (74, 68, 51), "FLIP"
+        draw.rounded_rectangle((900, 270, 1096, 318), radius=15, fill=badge_color)
+        draw.text((998, 294), badge_label, font=_art_font(20, bold=True), fill=(255, 255, 248), anchor="mm")
     else:
         if choice is not None and result is not None:
             left_value = max(1, min(6, int(choice)))
@@ -432,7 +457,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         self.game_id = None
         self.done = False
         self.resolving = False
-        self._art_filename = f"{game_type}.png" if game_type in {"dice", "slots"} else None
+        self._art_filename = f"{game_type}.png" if game_type in {"coinflip", "dice", "slots"} else None
         self._art_bytes = (
             _render_solo_game_art(game_type) if self._art_filename is not None else None
         )
@@ -525,7 +550,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         won = outcome == "win"
         self._art_bytes = _render_solo_game_art(
             self.game_type,
-            choice=choice if self.game_type == "dice" else None,
+            choice=choice if self.game_type in {"coinflip", "dice"} else None,
             result=result,
             won=won,
         )
@@ -534,18 +559,20 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         for button in self._buttons.values():
             button.disabled = True
 
-    async def _edit_message(self) -> None:
+    async def _edit_message(self) -> bool:
         if self.message is None:
-            return
+            return False
         try:
             if self._art_filename is not None:
                 await self.message.edit(view=self, attachments=[self._art_file()])
             else:
                 await self.message.edit(view=self)
+            return True
         except discord.NotFound:
-            logger.info("Coinflip result message was deleted game_id=%s", self.game_id)
+            logger.info("Solo wager panel was deleted game_id=%s", self.game_id)
         except discord.HTTPException:
-            logger.warning("Could not update coinflip message game_id=%s", self.game_id, exc_info=True)
+            logger.warning("Could not update solo wager panel game_id=%s", self.game_id, exc_info=True)
+        return False
 
     def _release_session(self) -> None:
         release_solo_session(self.requester.id, self)
@@ -765,7 +792,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 heading = "تم إرجاع الرصيد"
                 detail = "الجولة اتوقفت قبل اكتمالها؛ لم تُحتسب خسارة."
             self._panel_text.content = f"# {heading} · {self.game_title}\n{detail}{balance_line}"
-        elif result.get("outcome") == "win":
+        elif outcome == "win":
             self._panel_text.content = (
                 f"# كسبت · {self.game_title}\n"
                 f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**"
@@ -778,34 +805,28 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 f"{balance_line}"
             )
 
+        # Replace the game panel in place. Only fall back to another message if Discord
+        # refuses the update after the wager has already been safely settled.
         result_content = self._panel_text.content
-        if self.context is not None:
-            self._panel_text.content = (
-                f"# انتهت {self.game_title}\n"
-                "اتقفلت أزرار اللعبة بعد تأكيد التسوية. النتيجة التفصيلية في الرسالة التالية."
-            )
-
         try:
-            await self._edit_message()
-            await self._publish_result(
-                result_content,
-                "warning"
-                if result.get("status") == "refunded" or result.get("outcome") == "balance_limit"
-                else "win"
-                if result.get("outcome") == "win"
-                else "loss",
-            )
-            if self.context is not None and not self.result_published:
-                # A distinct receipt is preferred, but never leave only a teaser
-                # on the original board if Discord rejects the receipt message.
-                self._panel_text.content = result_content
-                await self._edit_message()
+            updated = await self._edit_message()
+            if updated:
+                self.result_published = True
+            else:
+                await self._publish_result(
+                    result_content,
+                    "warning"
+                    if result.get("status") == "refunded" or result.get("outcome") == "balance_limit"
+                    else "win"
+                    if outcome == "win"
+                    else "loss",
+                )
         finally:
             self._release_session()
             self.stop()
 
     async def _publish_result(self, content: str, outcome: str) -> None:
-        """Publish the receipt separately so the active controls stay easy to scan."""
+        """Use a separate receipt only when the original game panel cannot be updated."""
         if self.context is None or self.result_published:
             return
         lines = content.split("\n", 1)
