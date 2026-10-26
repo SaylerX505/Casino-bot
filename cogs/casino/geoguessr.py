@@ -158,7 +158,7 @@ async def run_game_loop(ctx, players):
                 )
                 return
 
-            timer_state = {"end_time": time.time() + 30.0}
+            timer_state = {"end_time": time.monotonic() + 30.0}
             active_view = ActiveGameView(ctx.author, timer_state, round_num, total_rounds)
             msg = round_msg
             try:
@@ -188,7 +188,7 @@ async def run_game_loop(ctx, players):
             async def process_reaction(guess_msg, text, received_at):
                 try:
                     coords, code = await asyncio.to_thread(get_guess_data, text)
-                    if received_at > timer_state["end_time"] or time.time() > timer_state["end_time"] + 5:
+                    if received_at > timer_state["end_time"] or time.monotonic() > timer_state["end_time"] + 5:
                         return
                     if code is None:
                         return
@@ -210,7 +210,7 @@ async def run_game_loop(ctx, players):
                     processing_users.discard(guess_msg.author)
             last_update = 30
             while True:
-                remaining = int(timer_state["end_time"] - time.time())
+                remaining = int(timer_state["end_time"] - time.monotonic())
                 if remaining <= 0 or len(guesses) >= len(players):
                     break
                     
@@ -224,7 +224,7 @@ async def run_game_loop(ctx, players):
 
                 try:
                     guess_msg = await ctx.bot.wait_for('message', check=check, timeout=1.0)
-                    received_at = time.time()
+                    received_at = time.monotonic()
                     if received_at > timer_state["end_time"]:
                         break
                     guess_text = guess_msg.content.strip().lower()
