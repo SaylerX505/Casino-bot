@@ -775,7 +775,6 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         """Publish a separate V2 result receipt while preserving the final table image."""
         if self.result_published or self.context is None or self.receipt is None:
             return
-        self.result_published = True
         status = self.receipt.get("status")
         outcome = self.receipt.get("outcome")
         if status == "refunded" or outcome == "balance_limit":
@@ -800,6 +799,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
                 view=StatusPanel(title, description, accent),
                 **kwargs,
             )
+            self.result_published = True
         except Exception:
             logger.exception(
                 "Could not publish separate Blackjack result game_id=%s",
