@@ -1,6 +1,6 @@
 # Casino Bot UI/UX & Gameplay Benchmark
 
-**Review date:** 2026-10-25  
+**Review date:** 2026-10-26  
 **Target branch:** `codex/premium-betting-foundation`  
 **Scope:** user-facing commands, Components V2 panels, lobby lifecycle, private actions, economy, game results, permission failures, and recovery states.
 
@@ -39,12 +39,13 @@ The table is a design reference, not a claim that every product has the same arc
 
 ### 1. One visual system, multiple message purposes
 
-- **Lobby:** game name, participation rules, player count, remaining time, host action and join/leave controls.
+- **Lobby:** game name, one-sentence rules, host/minimum when relevant, a short participant preview, countdown, and join/leave controls. Long rosters display five names plus the remaining count rather than filling the panel with mentions.
 - **Active round:** only the state and controls relevant to that phase.
 - **Result/receipt:** winner/outcome, stake, gross payout, net change, fees/refunds when applicable.
 - **Private status:** ownership/permission errors and personal economy results.
 - Live boards/lobbies are edited in place only to reflect the same ongoing state (join list, current hand, current timed phase). Start announcements, phase transitions, winners, payouts/refunds, and separate result receipts are sent as new V2 messages when they represent distinct events; the channel is not artificially compressed into one giant panel.
-- Blackjack uses a generated table image on every state transition and brands the art/card backs with **CKR**; the final receipt is a separate public V2 panel, with stake, doubled stake when applicable, gross payout, net change and post-settlement balance.
+- Waiting copy is intentionally compact; this does **not** limit normal game messages. Round transitions, reveals, winners, and payout/refund receipts remain separate Components V2 messages when they are distinct events.
+- Blackjack uses a generated table image on every state transition and brands the art/card backs with **CKR**; the final receipt is a separate public V2 panel, with stake, doubled stake when applicable, gross payout, net change and post-settlement balance. The latest UX pass intentionally leaves `cogs/casino/blackjack.py` unchanged; `tests/test_blackjack.py` already guards the **CKR** brand.
 - UI buttons use secondary styling consistently unless a truly exceptional action needs a stronger visual signal.
 - Legacy developer-promo buttons have been removed. Branding is handled by the shared theme/assets rather than a disabled button pasted onto a panel.
 
@@ -69,7 +70,7 @@ The table is a design reference, not a claim that every product has the same arc
 
 - A fixed phase timer is enforced for Mafia voting and secret actions, hide-and-seek choices, musical-chair rounds and roulette targeting.
 - Late selections are rejected, action controls close, and expired panels say what happened instead of leaving a stale menu that looks usable.
-- Tests cover timeout helpers, expired secret selections, and the rule that an expired roulette weapon action must not consume inventory.
+- Tests cover timeout helpers, expired secret selections, and the rule that an expired roulette weapon action must not consume inventory. The RPS invite/turn text keeps stake, prize, net result, fee, deadline, and refund conditions while removing duplicated explanatory sentences.
 - Riddle answers are normalized for common Arabic diacritics, spacing and punctuation; invalid/empty question banks fall back safely. Its reward credit uses a worker thread rather than blocking the message loop.
 
 ### 5. CI guardrails
@@ -92,6 +93,6 @@ CI does not prove the Discord API accepted every live component arrangement or t
 
 ## Current readout
 
-- **Latest verified automated status:** head \`9a1dc5a5110af4e832e7e2fa40d54067f3cf0aac\` passed Python 3.11 and 3.14 (359 unit tests in the Python 3.11 run), Ruff, broad syntax/undefined-name checks, \`compileall\`, Docker build/startup smoke, and dependency audit. See [GitHub Actions #40270677560](https://github.com/SaylerX505/Casino-bot/actions/runs/40270677560). Changes made after that SHA must pass their own CI run before release.
+- **Latest verified automated status before this benchmark edit:** head \`eaba03e128e205d53a5c4672d99da3cd68fb16c5\` passed Python 3.11 and 3.14 (**378 unit tests** in the Python 3.11 run), Ruff, broad syntax/undefined-name checks, \`compileall\`, Docker build/startup smoke, and dependency audit. See [GitHub Actions #40274828792](https://github.com/SaylerX505/Casino-bot/actions/runs/40274828792). The benchmark edit itself must pass its triggered CI run before release.
 - **Not yet verified:** a live Discord staging session on the newest branch head. Components V2 has been unit-checked, but live attachment rendering, mobile layouts, actual Discord API interactions, and real server permissions still require staging.
 - **Release policy:** keep this branch separate; do not merge or deploy on CI success alone.
