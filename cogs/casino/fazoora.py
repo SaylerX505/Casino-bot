@@ -21,7 +21,6 @@ from cogs.utility.theme import (
     embed_to_v2,
     get_currency,
     send_status,
-    try_edit_view,
 )
 
 COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
@@ -44,6 +43,23 @@ def normalize(s: str) -> str:
 async def credit_riddle_reward(currency, user_id: int) -> int:
     """Write the reward without blocking the Discord event loop on SQLite."""
     return await asyncio.to_thread(currency.update_balance, user_id, REWARD)
+
+
+async def publish_riddle_result(ctx, panel, *, context: str) -> bool:
+    """Post game outcomes as distinct V2 messages, preserving the original question."""
+    try:
+        await ctx.send(
+            view=panel,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return True
+    except discord.HTTPException:
+        logger.exception(
+            "Could not publish riddle result context=%s channel_id=%s",
+            context,
+            getattr(getattr(ctx, "channel", None), "id", None),
+        )
+        return False
 
 
 def load_bank():
@@ -142,8 +158,7 @@ class Fazoora(commands.Cog):
                     f"محدش وصل للإجابة المرة دي. الإجابة كانت **{item['a'][0]}**. جربوا فزورة تانية.",
                     "loss",
                 )
-                if not await try_edit_view(question_message, timeout_panel, context="fazoora_timeout"):
-                    await ctx.send(view=timeout_panel, allowed_mentions=discord.AllowedMentions.none())
+                await publish_riddle_result(ctx, timeout_panel, context="timeout")
                 return
 
             try:
@@ -154,8 +169,7 @@ class Fazoora(commands.Cog):
                     f"{winner_message.author.mention} جاوب صح، لكن رصيد الحساب وصل للحد الأقصى. الإجابة صحيحة، والمكافأة ما اتسجلتش.",
                     "warning",
                 )
-                if not await try_edit_view(question_message, panel, context="fazoora_reward_cap"):
-                    await ctx.send(view=panel, allowed_mentions=discord.AllowedMentions.none())
+                await publish_riddle_result(ctx, panel, context="reward_cap")
                 return
             except Exception:
                 logger.exception("Failed to credit riddle reward user_id=%s", winner_message.author.id)
@@ -164,8 +178,7 @@ class Fazoora(commands.Cog):
                     f"{winner_message.author.mention} جاوب صح، لكن حصل عطل أثناء تسجيل المكافأة. تم تسجيل الخطأ للمراجعة.",
                     "warning",
                 )
-                if not await try_edit_view(question_message, panel, context="fazoora_reward_error"):
-                    await ctx.send(view=panel, allowed_mentions=discord.AllowedMentions.none())
+                await publish_riddle_result(ctx, panel, context="reward_error")
                 return
 
             winner_embed = base_embed(
@@ -175,8 +188,7 @@ class Fazoora(commands.Cog):
             )
             winner_embed.set_thumbnail(url=winner_message.author.display_avatar.url)
             winner_panel = embed_to_v2(winner_embed)
-            if not await try_edit_view(question_message, winner_panel, context="fazoora_winner"):
-                await ctx.send(view=winner_panel, allowed_mentions=discord.AllowedMentions.none())
+            await publish_riddle_result(ctx, winner_panel, context="winner")
         finally:
             release_game_task(self.bot, ctx.channel.id, task)
 
