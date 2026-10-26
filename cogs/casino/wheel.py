@@ -483,21 +483,21 @@ class Wheel(commands.Cog):
     async def wheel(self, ctx):
         if is_active_game(self.bot, ctx.channel.id):
             return await send_status(
-            ctx,
-            "الروم مشغول",
-            "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ العجلة.",
-            "warning",
-        )
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ العجلة.",
+                "warning",
+            )
 
         view = WheelLobby(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.lobby_task, ctx.author.id, "Wheel lobby", view=view):
             view.lobby_task.cancel()
             return await send_status(
-            ctx,
-            "الروم مشغول",
-            "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ العجلة.",
-            "warning",
-        )
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ العجلة.",
+                "warning",
+            )
 
         try:
             view.message = await ctx.send(view=view)
