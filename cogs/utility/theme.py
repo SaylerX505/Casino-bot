@@ -264,38 +264,44 @@ def lobby_embed(
     host=None,
     min_players: int = 2,
 ) -> discord.Embed:
-    """Build a consistent lobby panel with host, capacity, minimum and countdown."""
-    player_list = (
-        "\n".join(f"**{index + 1}.** {player.mention}" for index, player in enumerate(players))
-        if players
-        else "مفيش لاعبين لسه. انضم للّوبي وابدأ اللعب مع المجموعة."
-    )
-    host_mention = getattr(host, "mention", None)
-    host_name = host_mention or getattr(host, "display_name", getattr(host, "name", "مضيف اللوبي"))
-    host_line = f"**المضيف:** {host_name}\n" if host is not None else ""
-    minimum_line = (
-        f"**الحد الأدنى للبدء:** {min_players} لاعب\n"
-        if min_players > 1
-        else ""
-    )
-    early_start_line = (
-        "صاحب اللوبي يقدر يبدأ الجولة بدري لو العدد وصل للحد الأدنى؛ الأزرار بتتقفل أول ما اللعب يبدأ."
-        if host is not None
-        else ""
-    )
-    details = "\n".join(
-        line for line in (host_line.rstrip("\n"), minimum_line.rstrip("\n"), early_start_line) if line
-    )
-    roster = f"**اللاعبون ({len(players)}/{max_players}):**\n{player_list}"
-    countdown = f"**الوقت المتبقي:** {max(0, int(time_left))} ثانية"
-    sections = [rules.strip(), details, roster, countdown]
+    """Build a compact, consistent lobby card with only the information needed to join."""
+    members = list(players or ())
+    visible_members = members[:5]
+    player_lines = [
+        f"**{index + 1}.** {player.mention}"
+        for index, player in enumerate(visible_members)
+    ]
+    remaining_members = len(members) - len(visible_members)
+    if remaining_members:
+        player_lines.append(f"-# +{remaining_members} لاعب آخر")
+
+    if player_lines:
+        player_list = "\n".join(player_lines)
+    else:
+        player_list = "مفيش لاعبين لسه."
+
+    metadata = []
+    if host is not None:
+        host_name = (
+            getattr(host, "mention", None)
+            or getattr(host, "display_name", None)
+            or getattr(host, "name", "مضيف اللوبي")
+        )
+        metadata.append(f"**المضيف:** {host_name}")
+    if min_players > 1:
+        metadata.append(f"**الحد الأدنى للبدء:** {min_players} لاعب")
+
+    # Rules should read like a short subtitle, not a multi-paragraph tutorial.
+    rules_text = " ".join(line.strip() for line in (rules or "").splitlines() if line.strip())
+    roster = f"**اللاعبون ({len(members)}/{max_players}):**\n{player_list}"
+    countdown = f"⏳ يبدأ تلقائيًا خلال **{max(0, int(time_left))} ثانية**"
+    sections = [rules_text, " · ".join(metadata), roster, countdown]
     description = "\n\n".join(section for section in sections if section)
     e = discord.Embed(title=title, description=description, color=THEME["teal"])
     if LOGO_URL:
         e.set_thumbnail(url=LOGO_URL)
         e.set_footer(text=f"كازينو الحفرة • {BRAND}", icon_url=LOGO_URL)
     return e
-
 
 def is_staff_or_admin():
     from cogs.casino.permissions import is_staff_or_admin as check
