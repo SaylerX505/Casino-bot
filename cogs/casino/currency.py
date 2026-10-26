@@ -30,7 +30,7 @@ class Currency(commands.Cog):
         """Register exactly one persistent economy hub, including on extension reload."""
         old_view = getattr(self.bot, "_currency_hub_layout", None)
         if old_view is not None:
-            self.bot.remove_view(old_view)
+            old_view.stop()
 
         self._persistent_hub_view = CurrencyHubLayout(self)
         self.bot.add_view(self._persistent_hub_view)
@@ -41,7 +41,7 @@ class Currency(commands.Cog):
         view = self._persistent_hub_view
         if view is None:
             return
-        self.bot.remove_view(view)
+        view.stop()
         if getattr(self.bot, "_currency_hub_layout", None) is view:
             delattr(self.bot, "_currency_hub_layout")
         self._persistent_hub_view = None
