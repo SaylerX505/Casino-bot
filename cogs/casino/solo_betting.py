@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import re
 import secrets
 import uuid
 from collections.abc import Callable
@@ -13,6 +12,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
+from cogs.casino.bet_validation import parse_bet_amount
 from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.utility.theme import THEME, StatusPanel
 
@@ -698,8 +698,7 @@ class SoloBetting(commands.Cog):
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
 
-        raw_bet = bet.strip().replace(",", "") if isinstance(bet, str) else ""
-        amount = int(raw_bet) if re.fullmatch(r"[0-9]+", raw_bet) else 0
+        amount = parse_bet_amount(bet, max_bet=MAX_BET)
         if not MIN_BET <= amount <= MAX_BET:
             usage = f"/{command_name} bet:100" if ctx.interaction is not None else f"{ctx.prefix}{command_name} 100"
             return await ctx.send(
