@@ -304,9 +304,8 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 title="✊ تحدي حومص",
                 description=(
                     f"{self.player.mention} تحدّى {self.opponent.mention}\n"
-                    f"**الرهان:** {self.bet:,} لكل لاعب · **الجائزة:** {prize:,} · **الصافي:** +{net_profit:,} · **رسوم البنك:** {self.bet * 2 - prize:,}\n"
-                    "**الحالة:** بانتظار القبول · **المهلة:** 60 ثانية\n"
-                    "لا يُحجز الرصيد قبل القبول؛ ينتهي التحدي بلا خصم عند انتهاء المهلة."
+                    f"**الرهان:** {self.bet:,} لكل لاعب · **الجائزة:** {prize:,}\n"
+                    "**بانتظار القبول · المهلة:** 60 ثانية"
                 ),
                 color=THEME["teal"],
             )
@@ -319,9 +318,8 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             title="✊ حومص · الجولة بدأت",
             description=(
                 f"{self.player.mention} **VS** {self.opponent.mention}\n"
-                f"**الرهان:** {self.bet:,} لكل لاعب · **الجائزة:** {prize:,} · **الصافي:** +{net_profit:,}\n"
-                f"**الاختيارات:** {player_name} — {player_status} · {opponent_name} — {opponent_status}\n"
-                "اختر حركتك بسرية؛ التعادل أو انتهاء المهلة يعيد الرهان للطرفين."
+                f"**الرهان:** {self.bet:,} لكل لاعب · **الجائزة:** {prize:,}\n"
+                f"**الاختيارات:** {player_name} — {player_status} · {opponent_name} — {opponent_status}"
             ),
             color=THEME["teal"],
         )
