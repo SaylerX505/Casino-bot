@@ -120,6 +120,75 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         finally:
             view.stop()
 
+    def test_dice_and_slots_panels_include_generated_artwork(self):
+        for game_type, title, choices in (
+            ("dice", "رمي النرد", DICE_CHOICES),
+            ("slots", "ماكينة الحظ", SLOT_CHOICES),
+        ):
+            with self.subTest(game_type=game_type):
+                view = SoloWagerView(
+                    self.cog,
+                    self.requester,
+                    100,
+                    game_type=game_type,
+                    game_title=title,
+                    choices=choices,
+                    outcome_resolver=_spin_slots if game_type == "slots" else None,
+                )
+                try:
+                    self.assertTrue(view._art_bytes.startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+                    self.assertEqual(view._art_filename, f"{game_type}.png")
+                    galleries = [
+                        item for item in view.walk_children()
+                        if isinstance(item, discord.ui.MediaGallery)
+                    ]
+                    self.assertEqual(len(galleries), 1)
+                finally:
+                    view.stop()
+
+    async def test_dice_result_uses_only_current_balance_and_includes_art(self):
+        view = SoloWagerView(
+            self.cog,
+            self.requester,
+            10,
+            game_type="dice",
+            game_title="رمي النرد",
+            choices=DICE_CHOICES,
+            payout_numerator=570,
+            context=SimpleNamespace(interaction=object(), send=AsyncMock()),
+        )
+        view.message = SimpleNamespace(id=777, edit=AsyncMock())
+        original_art = view._art_bytes
+        try:
+            await view._finalize({
+                "status": "settled",
+                "outcome": "loss",
+                "choice": "2",
+                "result": "4",
+                "stake": 10,
+                "payout": 0,
+                "balance_after": 53,
+            })
+            text = view._panel_text.content
+            self.assertIn("خسرت · رمي النرد", text)
+            self.assertIn("اختيارك: **2** · النتيجة: **4**", text)
+            self.assertIn("رصيدك:** 53", text)
+            self.assertNotIn("الرهان:", text)
+            self.assertNotIn("إجمالي الصرف", text)
+            self.assertNotIn("صافي النتيجة", text)
+            self.assertNotIn("رصيدك بعد التسوية", text)
+            self.assertNotEqual(view._art_bytes, original_art)
+            view.context.send.assert_awaited_once()
+            kwargs = view.context.send.await_args.kwargs
+            self.assertEqual(kwargs["file"].filename, "dice.png")
+            self.assertIsInstance(kwargs["view"], LayoutView)
+            self.assertTrue(
+                any(isinstance(item, discord.ui.MediaGallery)
+                    for item in kwargs["view"].walk_children())
+            )
+        finally:
+            view.stop()
+
     async def test_winning_coinflip_posts_a_separate_v2_result_receipt(self):
         self.cog._schedule_recovery = Mock()
         self.view.context = SimpleNamespace(interaction=object(), send=AsyncMock())
