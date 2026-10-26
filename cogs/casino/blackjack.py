@@ -383,30 +383,9 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         receipt = self.receipt
         if receipt is None:
             return f"# Blackjack\n{self.notice or 'انتهت الجلسة.'}\n\nمفيش رهان اتخصم."
-        status = receipt.get("status")
-        outcome = receipt.get("outcome")
-        if status == "refunded":
-            heading, detail = "تم رد الرهان", "الجولة اتقفلت من غير خسارة رصيد؛ الرهان رجع لمحفظتك."
-        elif outcome == "push":
-            heading, detail = "تعادل", "النتيجة متعادلة، فرجع لك الرهان كاملًا."
-        elif outcome == "win" and self.result_kind == "natural":
-            heading, detail = "Blackjack طبيعي!", "21 من أول بطاقتين؛ اتصرف العائد الخاص بيها."
-        elif outcome == "win":
-            heading, detail = "كسبت الجولة", "مجموعك أعلى من الموزّع أو الموزّع تجاوز 21."
-        else:
-            heading, detail = "انتهت الجولة", "الموزّع كسب الجولة أو مجموعك تجاوز 21."
-
-        balance = receipt.get("balance_after")
-        balance_line = (
-            f"\n**رصيدك:** {int(balance):,} {COIN}"
-            if balance is not None
-            else ""
-        )
         return (
-            f"# Blackjack · {heading}\n{detail}\n\n"
-            f"**يدك:** {_cards_text(self.player_cards)} ({_hand_value(self.player_cards)})\n"
-            f"**يد الموزّع:** {_cards_text(self.dealer_cards)} ({_hand_value(self.dealer_cards)})"
-            f"{balance_line}"
+            f"يدك: {_hand_value(self.player_cards)}\n"
+            f"يد الموزع: {_hand_value(self.dealer_cards)}"
         )
 
     async def _art_file(self):
@@ -752,33 +731,16 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.stop()
 
     async def _publish_final_result(self):
-        """Publish a separate V2 result receipt while preserving the final table image."""
+        """Publish only the two final numeric hand totals in a Components V2 receipt."""
         if self.result_published or self.context is None or self.receipt is None:
             return
-        status = self.receipt.get("status")
-        outcome = self.receipt.get("outcome")
-        if status == "refunded" or outcome == "balance_limit":
-            title, accent = "تم رد رهان Blackjack", "warning"
-        elif outcome == "win" and self.result_kind == "natural":
-            title, accent = "Blackjack طبيعي! · كسبت الجولة", "win"
-        elif outcome == "win":
-            title, accent = "كسبت جولة Blackjack", "win"
-        elif outcome == "push":
-            title, accent = "تعادل في Blackjack", "neutral"
-        else:
-            title, accent = "انتهت جولة Blackjack", "loss"
-
-        details = self._finished_content().split("\n", 1)
-        description = details[1] if len(details) > 1 else details[0]
         kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
         if getattr(self.context, "interaction", None) is not None:
-            # The Blackjack table was sent publicly; make the final receipt public as well.
             kwargs["ephemeral"] = False
+        receipt_view = LayoutView(timeout=120)
+        receipt_view.add_item(Container(TextDisplay(self._finished_content())))
         try:
-            await self.context.send(
-                view=StatusPanel(title, description, accent),
-                **kwargs,
-            )
+            await self.context.send(view=receipt_view, **kwargs)
             self.result_published = True
         except Exception:
             logger.exception(
