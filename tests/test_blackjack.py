@@ -7,6 +7,7 @@ import discord
 from discord.ui import Container, LayoutView
 
 from cogs.casino.blackjack import (
+    BLACKJACK_BRAND,
     BlackjackView,
     _dealer_display_cards,
     _final_outcome,
@@ -18,6 +19,9 @@ from cogs.casino.blackjack import (
 
 
 class BlackjackArtTests(unittest.TestCase):
+    def test_blackjack_art_uses_the_requested_ckr_brand(self):
+        self.assertEqual(BLACKJACK_BRAND, "CKR")
+
     def test_generated_table_is_a_png_and_hides_the_hole_card_in_play(self):
         player = [("10", "♠"), ("7", "♥")]
         dealer = [("9", "♣"), ("8", "♦")]
