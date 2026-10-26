@@ -117,7 +117,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_winning_coinflip_posts_a_separate_v2_result_receipt(self):
         self.cog._schedule_recovery = Mock()
-        self.view.context = SimpleNamespace(interaction=None, send=AsyncMock())
+        self.view.context = SimpleNamespace(interaction=object(), send=AsyncMock())
         message = SimpleNamespace(id=555, edit=AsyncMock())
         interaction = SimpleNamespace(
             user=self.requester,
@@ -165,7 +165,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("اتقفلت أزرار اللعبة", self.view._panel_text.content)
         self.view.context.send.assert_awaited_once()
         receipt_kwargs = self.view.context.send.await_args.kwargs
-        self.assertNotIn("ephemeral", receipt_kwargs)
+        self.assertIs(receipt_kwargs["ephemeral"], False)
         self.assertIsInstance(receipt_kwargs["view"], StatusPanel)
         receipt_text = "\n".join(
             item.content
