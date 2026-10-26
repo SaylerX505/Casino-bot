@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import random
-import re
 
 import discord
 from discord.ext import commands
@@ -510,50 +509,6 @@ class Currency(commands.Cog):
             ephemeral=private,
         )
 
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        """Treat +@member as the compact profile shortcut without intercepting commands."""
-        if message.author.bot or message.guild is None:
-            return
-        match = re.fullmatch(
-            rf"{re.escape(config.PREFIX)}\s*<@!?(\d+)>\s*",
-            (message.content or "").strip(),
-        )
-        if match is None:
-            return
-
-        target_id = int(match.group(1))
-        target = message.guild.get_member(target_id)
-        if target is None:
-            try:
-                target = await message.guild.fetch_member(target_id)
-            except discord.NotFound:
-                return await message.channel.send(
-                    "العضو غير موجود.",
-                    delete_after=2,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-            except discord.HTTPException:
-                logger.warning("Could not resolve profile shortcut target_id=%s", target_id, exc_info=True)
-                return await message.channel.send(
-                    "تعذّر فتح البروفايل.",
-                    delete_after=2,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-
-        try:
-            panel = await build_profile_panel(self, target)
-        except Exception:
-            logger.exception("Could not load profile shortcut target_id=%s", target_id)
-            return await message.channel.send(
-                "تعذّر فتح البروفايل.",
-                delete_after=2,
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-        await message.channel.send(
-            view=panel,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
 
 async def setup(bot):
     """Let Cog lifecycle own persistent-view registration and cleanup."""
