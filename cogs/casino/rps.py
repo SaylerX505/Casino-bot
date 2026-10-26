@@ -233,6 +233,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         self.message = None
         self.deadline = None
         self._deadline_task = None
+        self.result_published = False
         self._panel_text = TextDisplay(self._embed_content(self.make_embed()))
         self._buttons = []
         self._render_view()
@@ -800,51 +801,83 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             )
 
     async def publish_result(self, embed, interaction=None):
+        """Close the challenge board, then publish the full result as a separate V2 message."""
         self.done = True
-        self._refresh_panel(embed)
+        deferred_private_ack = interaction is not None and interaction.response.is_done()
+        result_title = embed.title or "التحدي انتهى"
+        self._panel_text.content = (
+            "# انتهى تحدي حومص\n"
+            f"**الحالة النهائية:** {result_title}\n"
+            "اتقفلت أزرار التحدي. تفاصيل النتيجة والرهان في الإيصال العام التالي."
+        )
+        color = getattr(embed, "color", None)
+        if color is not None:
+            self._panel_accent = color.value
+        self._render_view()
 
         try:
-            if interaction is not None and not interaction.response.is_done():
-                try:
-                    await interaction.response.edit_message(view=self)
-                except discord.NotFound:
-                    await self.ctx.send(view=self)
-                except discord.HTTPException:
-                    logging.getLogger(__name__).exception(
-                        "Could not update the RPS result through its interaction"
-                    )
-            elif self.message is not None:
-                try:
-                    await self.message.edit(view=self)
-                except discord.NotFound:
-                    await self.ctx.send(view=self)
-                except discord.HTTPException:
-                    logging.getLogger(__name__).exception(
-                        "Could not edit the existing RPS result message; not sending a duplicate"
-                    )
-                if interaction is not None and interaction.response.is_done():
+            # Preserve the interactive board as history; never use its edit as a
+            # substitute for the separate public result receipt.
+            try:
+                if interaction is not None and not deferred_private_ack:
                     try:
-                        await interaction.edit_original_response(
-                            content=None,
-                            embeds=[],
-                            attachments=[],
-                            view=StatusPanel(
-                                "تم تسجيل اختيارك",
-                                "اكتملت الجولة؛ النتيجة النهائية موجودة في لوحة التحدي بالقناة.",
-                                "success",
-                            ),
+                        await interaction.response.edit_message(view=self)
+                    except discord.NotFound:
+                        self.message = await self.ctx.send(
+                            view=self,
                             allowed_mentions=discord.AllowedMentions.none(),
                         )
-                    except discord.HTTPException:
-                        logging.getLogger(__name__).warning(
-                            "Could not close deferred RPS acknowledgement game_id=%s",
-                            self.game_id,
-                            exc_info=True,
+                elif self.message is not None:
+                    try:
+                        await self.message.edit(view=self)
+                    except discord.NotFound:
+                        self.message = await self.ctx.send(
+                            view=self,
+                            allowed_mentions=discord.AllowedMentions.none(),
                         )
-            else:
-                await self.ctx.send(view=self)
-        except discord.HTTPException:
-            logging.getLogger(__name__).exception("Could not publish the RPS result")
+                elif self.message is None:
+                    self.message = await self.ctx.send(
+                        view=self,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+            except discord.HTTPException:
+                logging.getLogger(__name__).exception(
+                    "Could not close the original RPS board; still attempting to publish the result game_id=%s",
+                    self.game_id,
+                )
+
+            if not self.result_published:
+                try:
+                    await self.ctx.send(
+                        view=embed_to_v2(embed),
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    self.result_published = True
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Could not publish separate RPS result receipt game_id=%s",
+                        self.game_id,
+                    )
+
+            if deferred_private_ack:
+                try:
+                    await interaction.edit_original_response(
+                        content=None,
+                        embeds=[],
+                        attachments=[],
+                        view=StatusPanel(
+                            "تم تسجيل اختيارك",
+                            "انتهت الجولة؛ إيصال النتيجة النهائية موجود في رسالة عامة منفصلة بالقناة.",
+                            "success",
+                        ),
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                except discord.HTTPException:
+                    logging.getLogger(__name__).warning(
+                        "Could not close deferred RPS acknowledgement game_id=%s",
+                        self.game_id,
+                        exc_info=True,
+                    )
         finally:
             self.stop()
 
