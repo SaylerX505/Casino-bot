@@ -3,7 +3,11 @@
 import unittest
 from types import SimpleNamespace
 
-from cogs.casino.geoguessr import SERVER_LOGO_URL, build_final_result, order_guesses_by_submission
+from cogs.casino.geoguessr import (
+    SERVER_LOGO_URL,
+    build_final_result,
+    order_guesses_by_submission,
+)
 
 
 class GeoGuessrFinalResultTests(unittest.TestCase):
@@ -18,7 +22,7 @@ class GeoGuessrFinalResultTests(unittest.TestCase):
         first = self.player(101)
         second = self.player(202)
 
-        description, _image_url, outcome = build_final_result({first: 0, second: 0})
+        description, image_url, outcome = build_final_result({first: 0, second: 0})
 
         self.assertIn("مفيش فائز بالنقاط", description)
         self.assertNotIn("تعادل", description)
