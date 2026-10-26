@@ -43,7 +43,8 @@ The table is a design reference, not a claim that every product has the same arc
 - **Active round:** only the state and controls relevant to that phase.
 - **Result/receipt:** winner/outcome, stake, gross payout, net change, fees/refunds when applicable.
 - **Private status:** ownership/permission errors and personal economy results.
-- Ongoing game messages are edited in place when the update represents the same event. Distinct game events remain separate messages so a busy channel is not collapsed into one giant panel.
+- Live boards/lobbies are edited in place only to reflect the same ongoing state (join list, current hand, current timed phase). Start announcements, phase transitions, winners, payouts/refunds, and separate result receipts are sent as new V2 messages when they represent distinct events; the channel is not artificially compressed into one giant panel.
+- Blackjack uses a generated table image on every state transition and brands the art/card backs with **CKR**; the final receipt is a separate public V2 panel, with stake, doubled stake when applicable, gross payout, net change and post-settlement balance.
 - UI buttons use secondary styling consistently unless a truly exceptional action needs a stronger visual signal.
 - Legacy developer-promo buttons have been removed. Branding is handled by the shared theme/assets rather than a disabled button pasted onto a panel.
 
@@ -91,6 +92,6 @@ CI does not prove the Discord API accepted every live component arrangement or t
 
 ## Current readout
 
-- **Latest verified automated status:** head `576c4a762caeb0ce4b266b546c6f760e8916720b` passed Python 3.11 and 3.14 (340 unit tests in the Python 3.11 run), Ruff, broad syntax/undefined-name checks, `compileall`, Docker build/startup smoke, and dependency audit. See [GitHub Actions #40183931873](https://github.com/SaylerX505/Casino-bot/actions/runs/40183931873). Changes made after that SHA must pass their own CI run before release.
+- **Latest verified automated status:** head \`9a1dc5a5110af4e832e7e2fa40d54067f3cf0aac\` passed Python 3.11 and 3.14 (359 unit tests in the Python 3.11 run), Ruff, broad syntax/undefined-name checks, \`compileall\`, Docker build/startup smoke, and dependency audit. See [GitHub Actions #40270677560](https://github.com/SaylerX505/Casino-bot/actions/runs/40270677560). Changes made after that SHA must pass their own CI run before release.
 - **Not yet verified:** a live Discord staging session on the newest branch head. Components V2 has been unit-checked, but live attachment rendering, mobile layouts, actual Discord API interactions, and real server permissions still require staging.
 - **Release policy:** keep this branch separate; do not merge or deploy on CI success alone.
