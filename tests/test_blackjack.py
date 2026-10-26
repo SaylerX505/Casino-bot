@@ -16,6 +16,8 @@ from cogs.casino.blackjack import (
     _is_natural_blackjack,
     render_blackjack_table,
 )
+from cogs.utility.theme import StatusPanel
+
 
 
 class BlackjackArtTests(unittest.TestCase):
@@ -116,7 +118,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(container.accent_color, 0xF5C542)
 
-    def test_playing_phase_exposes_hit_and_stand_not_start_or_cancel(self):
+    def test_playing_phase_offers_double_down_only_before_the_first_hit(self):
         self.view.phase = "playing"
         self.view.player_cards = [("10", "♠"), ("7", "♥")]
         self.view.dealer_cards = [("9", "♣"), ("8", "♦")]
@@ -125,8 +127,114 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
             item for item in self.view.walk_children()
             if isinstance(item, discord.ui.Button)
         ]
+        self.assertEqual(
+            {button.label for button in buttons},
+            {"اسحب بطاقة", "قف", "ضاعف الرهان"},
+        )
+        self.assertEqual(len({button.custom_id for button in buttons}), 3)
+
+        self.view.player_cards.append(("2", "♦"))
+        self.view._render_view()
+        buttons = [
+            item for item in self.view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        ]
         self.assertEqual({button.label for button in buttons}, {"اسحب بطاقة", "قف"})
-        self.assertEqual(len({button.custom_id for button in buttons}), 2)
+
+
+    async def test_double_down_adds_one_card_and_stands_automatically(self):
+        self.view.phase = "playing"
+        self.view.game_id = "blackjack-double-down-ui"
+        self.view.player_cards = [("10", "♠"), ("7", "♥")]
+        self.view.dealer_cards = [("10", "♣"), ("7", "♠")]
+        self.view.deck = [("2", "♦")]
+        message = SimpleNamespace(id=555, edit=AsyncMock())
+        self.view.message = message
+        self.view._double_down_wager = AsyncMock(
+            return_value={"doubled": True, "stake": 200, "balance_after": 800}
+        )
+        self.view._settle_outcome = AsyncMock()
+        interaction = SimpleNamespace(
+            message=message,
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await self.view.double_down(interaction)
+
+        self.assertEqual(self.view.amount, 200)
+        self.assertEqual(self.view.player_cards[-1], ("2", "♦"))
+        self.assertTrue(self.view.doubled_down)
+        self.assertTrue(self.view.resolving)
+        self.view._double_down_wager.assert_awaited_once()
+        self.view._settle_outcome.assert_awaited_once_with("win")
+        interaction.followup.send.assert_not_awaited()
+
+    async def test_double_down_with_insufficient_funds_keeps_normal_actions_available(self):
+        self.view.phase = "playing"
+        self.view.game_id = "blackjack-double-down-no-balance"
+        self.view.player_cards = [("10", "♠"), ("7", "♥")]
+        self.view.dealer_cards = [("10", "♣"), ("7", "♠")]
+        message = SimpleNamespace(id=556, edit=AsyncMock())
+        self.view.message = message
+        self.view._double_down_wager = AsyncMock(
+            return_value={"doubled": False, "reason": "insufficient_funds", "balance": 20}
+        )
+        interaction = SimpleNamespace(
+            message=message,
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        await self.view.double_down(interaction)
+
+        self.assertEqual(self.view.amount, 100)
+        self.assertFalse(self.view.doubled_down)
+        self.assertFalse(self.view.resolving)
+        self.assertEqual(self.view.phase, "playing")
+        interaction.followup.send.assert_awaited_once()
+        self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
+        controls = [
+            item for item in self.view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        ]
+        self.assertEqual(
+            {button.label for button in controls},
+            {"اسحب بطاقة", "قف", "ضاعف الرهان"},
+        )
+
+    async def test_final_receipt_is_a_separate_v2_message_and_discloses_double_stake(self):
+        user_context = SimpleNamespace(interaction=None, send=AsyncMock())
+        self.view.context = user_context
+        self.view.player_cards = [("10", "♠"), ("7", "♥"), ("2", "♦")]
+        self.view.dealer_cards = [("10", "♣"), ("7", "♠")]
+        self.view.amount = 200
+        self.view.doubled_down = True
+        self.view.receipt = {
+            "status": "settled",
+            "outcome": "win",
+            "stake": 200,
+            "payout": 400,
+            "balance_after": 1000,
+        }
+        self.view.result_kind = "win"
+        self.view._edit = AsyncMock()
+
+        await self.view._apply_settlement(self.view.receipt)
+
+        self.view._edit.assert_awaited_once()
+        user_context.send.assert_awaited_once()
+        sent_view = user_context.send.await_args.kwargs["view"]
+        self.assertIsInstance(sent_view, StatusPanel)
+        rendered_text = "\n".join(
+            item.content
+            for item in sent_view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("الرهان الأصلي", rendered_text)
+        self.assertIn("الرهان النهائي", rendered_text)
+        self.assertIn("صافي الربح", rendered_text)
+        self.assertTrue(self.view.result_published)
 
 
 if __name__ == "__main__":
