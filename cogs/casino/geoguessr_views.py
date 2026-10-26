@@ -322,7 +322,7 @@ class ActiveGameView(LayoutView):
 
     def _content(self, remaining=None):
         if remaining is None:
-            remaining = max(0, int(self.timer_state["end_time"] - time.time()))
+            remaining = max(0, int(self.timer_state["end_time"] - time.monotonic()))
         return (
             f"# 🌍 الجولة {self.round_num} من {self.total_rounds} — أين نحن؟\n"
             "اكتب اسم الدولة بالعربية أو الإنجليزية في الشات.\n"
@@ -346,7 +346,7 @@ class ActiveGameView(LayoutView):
                 view=StatusPanel("التحكم مش متاح", "مضيف اللعبة فقط يقدر يمدد الوقت.", "warning"),
                 ephemeral=True,
             )
-        if self.round_closed or time.time() >= self.timer_state["end_time"]:
+        if self.round_closed or time.monotonic() >= self.timer_state["end_time"]:
             self.disable_controls()
             return await interaction.response.send_message(
                 view=StatusPanel("الجولة انتهت", "انتهى وقت التخمين بالفعل؛ مش ممكن نفتح الجولة من جديد.", "warning"),
@@ -367,7 +367,7 @@ class ActiveGameView(LayoutView):
         if self.extensions_left <= 0:
             self.button.disabled = True
         self.timer_state["end_time"] += 10
-        remaining = max(0, int(self.timer_state["end_time"] - time.time()))
+        remaining = max(0, int(self.timer_state["end_time"] - time.monotonic()))
         self.update_timer(remaining)
         await interaction.response.send_message(
             view=StatusPanel(
