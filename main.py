@@ -366,6 +366,66 @@ async def on_casino_component_error(
         )
 
 
+def _format_prefix_usage_error(ctx, error) -> str:
+    """Explain the specific input problem and show a safe, copyable command example."""
+    command = getattr(ctx, "command", None)
+    prefix = getattr(ctx, "prefix", None) or config.PREFIX
+    invoked = getattr(ctx, "invoked_with", None) or getattr(command, "name", "command")
+    command_name = str(getattr(command, "name", "") or "").casefold()
+    invoked_name = str(invoked).casefold()
+
+    is_transfer = (
+        command_name in {"تحويل", "transfer"}
+        or invoked_name in {"تحويل", "transfer", "ckrc"}
+    )
+    if is_transfer:
+        usage = f"{prefix}{invoked} @user <المبلغ>"
+        example = f"{prefix}{invoked} @user 100"
+        if isinstance(error, commands.MissingRequiredArgument):
+            parameter = getattr(error, "param", None)
+            parameter_name = str(getattr(parameter, "name", "") or "").casefold()
+            if parameter_name in {"target", "member", "user", "recipient"}:
+                reason = "حدّد العضو اللي هتحوّل له."
+            elif parameter_name in {"amount", "value", "coins"}:
+                reason = "اكتب مبلغ التحويل بالأرقام."
+            else:
+                reason = "الأمر محتاج العضو والمبلغ."
+        elif isinstance(error, commands.TooManyArguments):
+            reason = "فيه مدخلات زيادة عن المطلوب."
+        else:
+            reason = "منشن العضو بشكل صحيح، واكتب المبلغ كرقم موجب."
+        return f"{reason}\nالاستخدام: \u0060{usage}\u0060\nمثال: \u0060{example}\u0060"
+
+    signature = str(getattr(command, "signature", "") or "").strip()
+    usage = f"{prefix}{invoked}"
+    if signature:
+        usage = f"{usage} {signature}"
+
+    if isinstance(error, commands.MissingRequiredArgument):
+        parameter = getattr(error, "param", None)
+        parameter_name = str(getattr(parameter, "name", "") or "").casefold()
+        labels = {
+            "target": "العضو",
+            "member": "العضو",
+            "user": "العضو",
+            "amount": "المبلغ",
+            "bet": "قيمة الرهان",
+            "item": "اسم الغرض",
+            "game": "اللعبة",
+            "choice": "الاختيار",
+            "channel": "القناة",
+        }
+        label = labels.get(parameter_name)
+        reason = f"ناقصك {label}." if label else "فيه جزء ناقص من الأمر."
+    elif isinstance(error, commands.TooManyArguments):
+        reason = "كتبت مدخلات زيادة عن المطلوب."
+    elif isinstance(error, commands.BadArgument):
+        reason = "فيه قيمة مش صحيحة؛ راجع المنشن والأرقام."
+    else:
+        reason = "صيغة الأمر مش صحيحة."
+    return f"{reason}\nالاستخدام الصحيح: \u0060{usage}\u0060"
+
+
 @bot.event
 async def on_command_error(ctx, error):
     """Handle expected user errors quietly; correlate and report unexpected failures."""
@@ -403,8 +463,13 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.UserInputError):
         logger.debug("Invalid command input command=%s user_id=%s guild_id=%s error_type=%s",
                      command_name, user_id, guild_id, type(error).__name__)
+        message = (
+            _format_prefix_usage_error(ctx, error)
+            if getattr(ctx, "interaction", None) is None
+            else "فيه قيمة ناقصة أو غير صحيحة. راجع صيغة الأمر وجرب تاني."
+        )
         try:
-            await _send_command_error(ctx, "تعذّر تنفيذ الأمر.")
+            await _send_command_error(ctx, message)
         except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
             logger.debug("Could not acknowledge invalid command input", exc_info=True)
         return
