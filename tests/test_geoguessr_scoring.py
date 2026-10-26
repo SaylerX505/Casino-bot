@@ -10,13 +10,16 @@ from cogs.casino.geoguessr import (
 )
 
 
+class _FakePlayer:
+    def __init__(self, user_id):
+        self.id = user_id
+        self.mention = f"<@{user_id}>"
+        self.display_avatar = SimpleNamespace(url=f"https://example.com/{user_id}.png")
+
+
 class GeoGuessrFinalResultTests(unittest.TestCase):
     def player(self, user_id):
-        return SimpleNamespace(
-            id=user_id,
-            mention=f"<@{user_id}>",
-            display_avatar=SimpleNamespace(url=f"https://example.com/{user_id}.png"),
-        )
+        return _FakePlayer(user_id)
 
     def test_zero_score_game_is_not_announced_as_a_tie(self):
         first = self.player(101)
