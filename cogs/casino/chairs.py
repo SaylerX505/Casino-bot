@@ -39,7 +39,7 @@ class ChairPrepView(LayoutView):
     def __init__(self, round_num, num_chairs):
         super().__init__(timeout=30)
         self._panel_text = TextDisplay(
-            f"# الجولة {round_num} — استعد\nالموسيقى شغالة. الكراسي بتجهز؛ استعد للضغط لما الموسيقى تقف."
+            f"# الجولة {round_num} — استعد\nانتظر توقف الموسيقى ثم اختر كرسيًا متاحًا."
         )
         disabled_buttons = [
             discord.ui.Button(
@@ -204,7 +204,7 @@ class ChairsLobby(LayoutView):
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
-        rules = "اضغط على كرسي متاح في الجولة العادية، وفي جولة الفخ، متضغطش على أي زر. آخر لاعب يفوز."
+        rules = "اختر كرسيًا في الجولة العادية؛ في جولة الفخ لا تضغط أي زر. آخر لاعب يفوز."
         embed = lobby_embed(
             "🪑 لعبة الكراسي الموسيقية",
             rules.strip(),
