@@ -136,7 +136,9 @@ class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(buttons), 4)
             self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
             self.assertTrue(all(button.custom_id.startswith("chairs_") for button in buttons))
-            self.assertIn("آخر لاعب يفوز", view._panel_text.content)
+            self.assertIn("# 🪑 لعبة الكراسي الموسيقية", view._panel_text.content)
+            self.assertNotIn("آخر لاعب يفوز", view._panel_text.content)
+            self.assertIn("اللاعبون (0/25)", view._panel_text.content)
             view.time_left += 10
             view._refresh_panel()
             self.assertIn("45", view._panel_text.content)
