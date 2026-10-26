@@ -256,9 +256,11 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
             if isinstance(item, discord.ui.TextDisplay)
         )
         self.assertIn("كسبت جولة Blackjack", rendered_text)
-        self.assertIn("الرهان الأصلي", rendered_text)
-        self.assertIn("الرهان النهائي", rendered_text)
-        self.assertIn("صافي الربح", rendered_text)
+        self.assertIn("رصيدك:** 1,000", rendered_text)
+        self.assertNotIn("الرهان الأصلي", rendered_text)
+        self.assertNotIn("الرهان النهائي", rendered_text)
+        self.assertNotIn("إجمالي الصرف", rendered_text)
+        self.assertNotIn("صافي الربح", rendered_text)
         self.assertTrue(self.view.result_published)
 
 
