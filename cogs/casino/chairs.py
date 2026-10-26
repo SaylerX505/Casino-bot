@@ -204,7 +204,7 @@ class ChairsLobby(LayoutView):
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
-        rules = "اضغط على كرسي متاح في الجولة العادية، وتجنّب الأزرار الحمراء في جولة الفخ. آخر لاعب يفوز."
+        rules = "اضغط على كرسي متاح في الجولة العادية، وفي جولة الفخ، متضغطش على أي زر. آخر لاعب يفوز."
         embed = lobby_embed(
             "🪑 لعبة الكراسي الموسيقية",
             rules.strip(),
@@ -223,7 +223,7 @@ class ChairsLobby(LayoutView):
         description = embed.description or ""
         return (
             f"# {embed.title or 'لعبة الكراسي الموسيقية'}\n{description}\n\n"
-            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            f"**تمديدات متاحة:** {self.extensions_left}\n\n"
             f"-# كازينو الحفرة • {config.BRAND}"
         )[:4000]
 
