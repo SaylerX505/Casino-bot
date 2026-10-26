@@ -990,7 +990,7 @@ class GeoGuessrRoundExtensionPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_expired_round_cannot_be_reopened_by_a_stale_button(self):
         executor = _FakeMember(8102)
-        timer_state = {"end_time": __import__("time").time() - 1}
+        timer_state = {"end_time": __import__("time").monotonic() - 1}
         view = ActiveGameView(executor, timer_state, round_num=2, total_rounds=6)
         interaction = SimpleNamespace(
             user=executor,
@@ -1001,7 +1001,7 @@ class GeoGuessrRoundExtensionPolicyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(view.round_closed)
         self.assertTrue(view.button.disabled)
-        self.assertLess(timer_state["end_time"], __import__("time").time())
+        self.assertLess(timer_state["end_time"], __import__("time").monotonic())
         self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
         view.stop()
 
