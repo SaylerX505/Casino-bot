@@ -214,7 +214,7 @@ class Fazoora(commands.Cog):
 
             winner_embed = base_embed(
                 title="🎉 عبقري الحفرة!",
-                description=f"**{winner_message.author.mention}** جاوب صح: **{winner_message.content}**\n\n💰 خد **{REWARD:,}** {COIN_EMOJI}!\n🏦 رصيدك بقى **{balance:,}**",
+                description=f"**{winner_message.author.mention}** جاوب صح: **{winner_message.content}**\n\n**رصيدك:** {balance:,} {COIN_EMOJI}",
                 color=THEME["gold"],
             )
             winner_embed.set_thumbnail(url=winner_message.author.display_avatar.url)
