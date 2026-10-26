@@ -42,11 +42,11 @@ class RPSPanelReliabilityTests(unittest.IsolatedAsyncioTestCase):
         text = view._panel_text.content
 
         self.assertIn("الرهان:", text)
-        self.assertIn("جائزة الفائز:", text)
-        self.assertIn("ضريبة البنك:", text)
+        self.assertIn("الجائزة:", text)
         self.assertIn("60 ثانية", text)
-        self.assertIn("مفيش رصيد اتحجز قبل القبول", text)
-        self.assertLess(len(text), 520)
+        self.assertNotIn("ضريبة البنك:", text)
+        self.assertNotIn("مفيش رصيد اتحجز قبل القبول", text)
+        self.assertLess(len(text), 360)
         view.stop()
 
     async def test_transient_edit_failure_retries_original_message_without_duplicate(self):
