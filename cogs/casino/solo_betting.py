@@ -10,9 +10,9 @@ from collections.abc import Callable
 from functools import partial
 
 import discord
+from PIL import Image, ImageDraw, ImageFont
 from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
-from PIL import Image, ImageDraw, ImageFont
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
