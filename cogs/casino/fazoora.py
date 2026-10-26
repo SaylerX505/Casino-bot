@@ -165,7 +165,7 @@ class Fazoora(commands.Cog):
             question, answers = item["q"], [normalize(answer) for answer in item["a"]]
             embed = base_embed(
                 title="🧠 فزورة الحفرة",
-                description=f"**{question}**\n\n⏳ معاكم **30 ثانية**! اول واحد يجاوب صح يكسب **{REWARD}** {COIN_EMOJI}\nاكتب الاجابة في الشات على طول 👇",
+                description=f"**{question}**\n\n⏳ 30 ثانية · المكافأة: **{REWARD}** {COIN_EMOJI}",
                 color=THEME["teal"],
             )
             question_message = await ctx.send(
