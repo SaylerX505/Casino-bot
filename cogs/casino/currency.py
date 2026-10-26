@@ -1,16 +1,17 @@
 import asyncio
 import logging
 import random
+import re
 
 import discord
 from discord.ext import commands
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 import config
 from cogs.casino import bank
 from cogs.casino.currency_catalog import COIN_EMOJI, fmt
 from cogs.casino.currency_views import (
     CurrencyHubLayout,
-    build_currency_hub_view,
     build_inventory_view,
     build_profile_panel,
 )
@@ -20,6 +21,173 @@ from cogs.utility.theme import StatusPanel, embed_to_v2
 
 LOG_CHANNEL_ID = int(getattr(config, "CURRENCY_LOG_CHANNEL_ID", 0) or 0)
 logger = logging.getLogger(__name__)
+
+class TransferConfirmationView(LayoutView):
+    """Owner-bound, single-use confirmation for an atomic wallet transfer."""
+
+    def __init__(self, cog, sender, recipient, amount: int):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.sender = sender
+        self.recipient = recipient
+        self.amount = int(amount)
+        self.done = False
+        self.message = None
+        self._panel_text = TextDisplay(
+            "# تأكيد التحويل\n"
+            f"تحويل **{fmt(self.amount)} {COIN_EMOJI}** إلى **{recipient.display_name}**؟\n"
+            "لن يتم خصم أي مبلغ قبل التأكيد."
+        )
+        self.confirm_button = discord.ui.Button(
+            label="تأكيد التحويل",
+            style=discord.ButtonStyle.secondary,
+            custom_id="currency_transfer_confirm",
+        )
+        self.confirm_button.callback = self.confirm_transfer
+        self.cancel_button = discord.ui.Button(
+            label="إلغاء",
+            style=discord.ButtonStyle.secondary,
+            custom_id="currency_transfer_cancel",
+        )
+        self.cancel_button.callback = self.cancel_transfer
+        self.add_item(
+            Container(
+                self._panel_text,
+                Separator(),
+                ActionRow(self.confirm_button, self.cancel_button),
+                accent_color=config.EMBED_COLOR,
+            )
+        )
+
+    def _close_controls(self):
+        self.confirm_button.disabled = True
+        self.cancel_button.disabled = True
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.sender.id:
+            await interaction.response.send_message(
+                "ده تأكيد التحويل الخاص بعضو تاني.",
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return False
+        return True
+
+    async def confirm_transfer(self, interaction: discord.Interaction):
+        if self.done:
+            return await interaction.response.send_message(
+                "تم إغلاق تأكيد التحويل.",
+                ephemeral=True,
+            )
+        try:
+            await interaction.response.defer()
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.warning(
+                "Could not acknowledge transfer confirmation sender_id=%s recipient_id=%s",
+                self.sender.id,
+                self.recipient.id,
+                exc_info=True,
+            )
+            return
+
+        self.done = True
+        self._close_controls()
+        try:
+            transferred, balance_after = await asyncio.to_thread(
+                bank.transfer_balance,
+                self.sender.id,
+                self.recipient.id,
+                self.amount,
+            )
+        except Exception:
+            logger.exception(
+                "Currency transfer failed sender_id=%s recipient_id=%s",
+                self.sender.id,
+                self.recipient.id,
+            )
+            self._panel_text.content = (
+                "# تعذّر إتمام التحويل\n"
+                "لم يتم تأكيد العملية. راجع رصيدك قبل إعادة المحاولة."
+            )
+        else:
+            if transferred:
+                self._panel_text.content = (
+                    "# تم التحويل بنجاح\n"
+                    f"المستلم: **{self.recipient.display_name}**\n"
+                    f"المبلغ: **{fmt(self.amount)} {COIN_EMOJI}**\n"
+                    f"رصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**"
+                )
+                try:
+                    await self.cog.log_action(
+                        interaction.guild,
+                        "Currency Transfer",
+                        (
+                            f"From {self.sender.id} to {self.recipient.id}: "
+                            f"{fmt(self.amount)}"
+                        ),
+                        discord.Color.orange(),
+                    )
+                except Exception:
+                    logger.exception(
+                        "Transfer committed but audit log failed sender_id=%s recipient_id=%s",
+                        self.sender.id,
+                        self.recipient.id,
+                    )
+            elif int(balance_after) < self.amount:
+                self._panel_text.content = (
+                    "# التحويل لم يتم\n"
+                    f"رصيدك الحالي: **{fmt(balance_after)} {COIN_EMOJI}**."
+                )
+            else:
+                self._panel_text.content = (
+                    "# التحويل لم يتم\n"
+                    "لم يتم خصم أي عملات. حاول مرة أخرى لاحقًا."
+                )
+
+        try:
+            await interaction.message.edit(view=self)
+        except discord.HTTPException:
+            logger.warning(
+                "Could not refresh currency transfer confirmation sender_id=%s recipient_id=%s",
+                self.sender.id,
+                self.recipient.id,
+                exc_info=True,
+            )
+        self.stop()
+
+    async def cancel_transfer(self, interaction: discord.Interaction):
+        if self.done:
+            return await interaction.response.send_message(
+                "تم إغلاق تأكيد التحويل.",
+                ephemeral=True,
+            )
+        self.done = True
+        self._close_controls()
+        self._panel_text.content = "# تم إلغاء التحويل\nلم يتم خصم أي عملات."
+        try:
+            await interaction.response.edit_message(view=self)
+        except discord.HTTPException:
+            logger.warning(
+                "Could not update cancelled transfer sender_id=%s recipient_id=%s",
+                self.sender.id,
+                self.recipient.id,
+                exc_info=True,
+            )
+        self.stop()
+
+    async def on_timeout(self):
+        if self.done:
+            return
+        self.done = True
+        self._close_controls()
+        self._panel_text.content = "# انتهى التأكيد\nلم يتم تنفيذ التحويل."
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                logger.debug("Could not close expired transfer confirmation", exc_info=True)
+        self.stop()
+
 
 class Currency(commands.Cog):
     def __init__(self, bot):
@@ -60,6 +228,18 @@ class Currency(commands.Cog):
             return True
         role_ids = {role.id for role in getattr(user, "roles", ())}
         return bool(role_ids.intersection(wl["roles"]))
+    async def _short_feedback(self, ctx, message: str):
+        if ctx.interaction is None:
+            return await ctx.send(
+                message,
+                delete_after=2,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        return await ctx.send(
+            view=StatusPanel("تعذّر تنفيذ العملية", message, "warning"),
+            ephemeral=True,
+        )
+
     def update_balance(self, user_id: int, amount: int):
         return bank.update_balance(user_id, amount)
 
@@ -143,18 +323,97 @@ class Currency(commands.Cog):
         except discord.HTTPException as exc:
             logger.warning("Could not send economy audit log (%s)", type(exc).__name__)
 
-    @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك وفتح مركز الاقتصاد')
+    @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك الحالي')
     async def balance(self, ctx):
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         try:
-            view = await build_currency_hub_view(self, ctx.author)
+            balance = await asyncio.to_thread(self.get_balance, ctx.author.id)
         except Exception:
-            logger.exception("Could not load economy hub requester_id=%s", ctx.author.id)
+            logger.exception("Could not load balance requester_id=%s", ctx.author.id)
+            return await self._short_feedback(ctx, "تعذّر عرض الرصيد.")
+        await ctx.send(
+            view=StatusPanel(
+                "رصيدك",
+                f"الرصيد الحالي: **{fmt(balance)} {COIN_EMOJI}**",
+                "neutral",
+            ),
+            **send_kwargs,
+        )
+
+    @commands.hybrid_command(name="daily", aliases=["يومية"], description="استلام المكافأة اليومية")
+    async def daily(self, ctx):
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        try:
+            claim = await asyncio.to_thread(
+                bank.claim_daily,
+                ctx.author.id,
+                bank.now(),
+                random.randint(20, 45),
+            )
+        except Exception:
+            logger.exception("Daily reward transaction failed user_id=%s", ctx.author.id)
+            return await self._short_feedback(ctx, "تعذّر استلام اليومية.")
+
+        if not claim["claimed"]:
+            if claim.get("reason") == "balance_limit":
+                title = "المكافأة غير متاحة"
+                description = "الرصيد وصل للحد الأقصى المدعوم."
+            else:
+                next_available_time = int(claim["last_daily"] + 86400)
+                title = "اليومية مستلمة بالفعل"
+                description = f"تقدر تستلمها <t:{next_available_time}:R>."
             return await ctx.send(
-                view=StatusPanel("تعذر فتح الخزنة", "حصل عطل أثناء قراءة رصيدك. جرّب تاني بعد شوية.", "warning"),
+                view=StatusPanel(title, description, "warning"),
                 **send_kwargs,
             )
-        await ctx.send(view=view, **send_kwargs)
+
+        await ctx.send(
+            view=StatusPanel(
+                "استلمت اليومية",
+                (
+                    f"المكافأة: **{fmt(claim['amount'])} {COIN_EMOJI}**\n"
+                    f"الستريك: **{claim['streak']}** يوم."
+                ),
+                "success",
+            ),
+            **send_kwargs,
+        )
+
+    @commands.hybrid_command(
+        name="تحويل",
+        aliases=["ckrc", "transfer"],
+        description="تحويل عملات لعضو بعد التأكيد",
+    )
+    async def transfer(self, ctx, target: discord.Member, amount: int):
+        if ctx.guild is None:
+            return await self._short_feedback(ctx, "التحويل متاح داخل السيرفر فقط.")
+        if target.id == ctx.author.id:
+            return await self._short_feedback(ctx, "لا يمكن التحويل إلى حسابك.")
+        if target.bot:
+            return await self._short_feedback(ctx, "التحويل لحسابات البوتات غير متاح.")
+        if amount <= 0:
+            return await self._short_feedback(ctx, "المبلغ غير صالح.")
+
+        try:
+            balance = await asyncio.to_thread(self.get_balance, ctx.author.id)
+        except Exception:
+            logger.exception("Could not validate transfer balance sender_id=%s", ctx.author.id)
+            return await self._short_feedback(ctx, "تعذّر التحقق من الرصيد.")
+        if balance < amount:
+            return await self._short_feedback(ctx, "الرصيد غير كافٍ.")
+
+        view = TransferConfirmationView(self, ctx.author, target, amount)
+        send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+        try:
+            view.message = await ctx.send(view=view, **send_kwargs)
+        except Exception:
+            view.stop()
+            logger.exception(
+                "Could not send transfer confirmation sender_id=%s recipient_id=%s",
+                ctx.author.id,
+                target.id,
+            )
+            raise
 
     @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
@@ -249,6 +508,51 @@ class Currency(commands.Cog):
         await ctx.send(
             view=StatusPanel("🍀 حظك!", description, "success"),
             ephemeral=private,
+        )
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Treat +@member as the compact profile shortcut without intercepting commands."""
+        if message.author.bot or message.guild is None:
+            return
+        match = re.fullmatch(
+            rf"{re.escape(config.PREFIX)}\s*<@!?(\d+)>\s*",
+            (message.content or "").strip(),
+        )
+        if match is None:
+            return
+
+        target_id = int(match.group(1))
+        target = message.guild.get_member(target_id)
+        if target is None:
+            try:
+                target = await message.guild.fetch_member(target_id)
+            except discord.NotFound:
+                return await message.channel.send(
+                    "العضو غير موجود.",
+                    delete_after=2,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except discord.HTTPException:
+                logger.warning("Could not resolve profile shortcut target_id=%s", target_id, exc_info=True)
+                return await message.channel.send(
+                    "تعذّر فتح البروفايل.",
+                    delete_after=2,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+
+        try:
+            panel = await build_profile_panel(self, target)
+        except Exception:
+            logger.exception("Could not load profile shortcut target_id=%s", target_id)
+            return await message.channel.send(
+                "تعذّر فتح البروفايل.",
+                delete_after=2,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        await message.channel.send(
+            view=panel,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
 async def setup(bot):
