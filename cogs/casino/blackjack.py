@@ -91,6 +91,7 @@ def _final_outcome(player_cards, dealer_cards):
 
 
 BLACKJACK_ART_FILENAME = "blackjack-table.png"
+BLACKJACK_BRAND = "CKR"
 _ART_WIDTH = 1200
 _ART_HEIGHT = 620
 _CARD_WIDTH = 124
@@ -130,7 +131,7 @@ def _draw_card(draw, x: int, y: int, card, *, hidden: bool = False):
             )
         draw.text(
             (x + _CARD_WIDTH // 2, y + _CARD_HEIGHT // 2),
-            "CHUKUR",
+            BLACKJACK_BRAND,
             fill=(242, 213, 150),
             font=_art_font(14),
             anchor="mm",
@@ -194,7 +195,7 @@ def render_blackjack_table(player_cards, dealer_cards, *, phase: str, amount: in
     )
     draw.text(
         (_ART_WIDTH // 2, 54),
-        "CHUKUR CASINO  /  BLACKJACK",
+        f"{BLACKJACK_BRAND} CASINO  /  BLACKJACK",
         fill=(245, 211, 145),
         font=_art_font(24),
         anchor="mm",
