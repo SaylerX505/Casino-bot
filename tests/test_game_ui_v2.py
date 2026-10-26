@@ -26,7 +26,7 @@ from cogs.casino.mafia_views import (
 from cogs.casino.roulette import RouletteLobby
 from cogs.casino.roulette_views import KickView
 from cogs.casino.wheel import WheelLobby, WheelResultPanel
-from cogs.utility.theme import embed_to_v2, wait_for_view_fixed_timeout
+from cogs.utility.theme import StatusPanel, embed_to_v2, wait_for_view_fixed_timeout
 
 
 class _FakeMember:
@@ -69,6 +69,56 @@ class LegacyAnnouncementMigrationTests(unittest.TestCase):
             if isinstance(item, discord.ui.MediaGallery)
         )
         self.assertIn("attachment://result.png", str(gallery.items[0].media.url))
+
+
+class MusicalChairsResultDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_winner_receipt_is_a_separate_message_when_delivery_succeeds(self):
+        send = AsyncMock()
+        lobby = SimpleNamespace(
+            ctx=SimpleNamespace(channel=SimpleNamespace(id=300), send=send)
+        )
+        message = SimpleNamespace(edit=AsyncMock())
+        view = SimpleNamespace(_panel_text=SimpleNamespace(content="# نهاية الجولة 3\nآخر لاعب خرج."))
+
+        published = await ChairsLobby._publish_end_receipt(
+            lobby,
+            message,
+            view,
+            title="بطل الكراسي الموسيقية!",
+            description="الفائز النهائي هو <@101>.",
+            outcome="success",
+            context="winner",
+        )
+
+        self.assertTrue(published)
+        send.assert_awaited_once()
+        self.assertIsInstance(send.await_args.kwargs["view"], StatusPanel)
+        message.edit.assert_not_awaited()
+
+    async def test_failed_winner_receipt_is_preserved_on_the_last_round_panel(self):
+        send = AsyncMock(side_effect=RuntimeError("synthetic receipt failure"))
+        lobby = SimpleNamespace(
+            ctx=SimpleNamespace(channel=SimpleNamespace(id=300), send=send)
+        )
+        message = SimpleNamespace(edit=AsyncMock())
+        view = SimpleNamespace(_panel_text=SimpleNamespace(content="# نهاية الجولة 3\nآخر لاعب خرج."))
+
+        published = await ChairsLobby._publish_end_receipt(
+            lobby,
+            message,
+            view,
+            title="بطل الكراسي الموسيقية!",
+            description="الفائز النهائي هو <@101>.",
+            outcome="success",
+            context="winner",
+        )
+
+        self.assertFalse(published)
+        send.assert_awaited_once()
+        message.edit.assert_awaited_once_with(view=view)
+        self.assertIn("نهاية الجولة 3", view._panel_text.content)
+        self.assertIn("بطل الكراسي الموسيقية", view._panel_text.content)
+        self.assertIn("الفائز النهائي هو <@101>", view._panel_text.content)
 
 
 class MusicalChairsV2Tests(unittest.IsolatedAsyncioTestCase):
