@@ -39,8 +39,9 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
         self.assertEqual({button.label for button in buttons}, {"صورة", "كتابة", "إلغاء"})
         self.assertEqual(len({button.custom_id for button in buttons}), 3)
-        self.assertIn("1.9x", self.view._panel_text.content)
-        self.assertIn("100", self.view._panel_text.content)
+        self.assertIn("# رمي العملة", self.view._panel_text.content)
+        self.assertIn("**الرهان:** 100", self.view._panel_text.content)
+        self.assertNotIn("1.9x", self.view._panel_text.content)
 
     def test_coinflip_panel_uses_its_own_brand_accent(self):
         container = next(
