@@ -166,7 +166,7 @@ def _render_solo_game_art(
     result: str | None = None,
     won: bool | None = None,
 ) -> bytes:
-    """Draw a polished, game-specific visual for the dice and slots Components V2 panels."""
+    """Draw polished, result-aware visuals for coinflip, dice, and slots V2 panels."""
     width, height = 1200, 420
     is_slots = game_type == "slots"
     is_coinflip = game_type == "coinflip"
