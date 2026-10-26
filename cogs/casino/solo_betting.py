@@ -192,7 +192,7 @@ async def recover_orphaned_casino_wagers(bot, schedule_recovery):
 
 
 class SoloWagerView(DiagnosticViewMixin, LayoutView):
-    """One-message solo game with requester-bound controls and durable settlement."""
+    """Requester-bound solo game with a distinct final receipt and durable settlement."""
 
     def __init__(
         self,
@@ -209,11 +209,14 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         instructions: str = "اختار صورة أو كتابة.",
         payout_description: str | None = None,
         outcome_resolver: Callable[[str, int], tuple[str, bool, int]] | None = None,
+        context=None,
     ):
         super().__init__(timeout=120)
         self.cog = cog
         self.requester = requester
+        self.context = context
         self.amount = amount
+        self.result_published = False
         self.game_type = game_type
         self.game_title = game_title
         self.choices = choices or SIDES
@@ -285,7 +288,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             f"**فرصة الفوز:** {self.odds_description}\n"
             f"{payout_lines}\n"
             f"{self.instructions} رصيدك مش هيتخصم غير لما تختار، "
-            "والنتيجة هتظهر في الرسالة دي من غير رسائل إضافية."
+            "وبعد تأكيد التسوية هتظهر رسالة منفصلة بنتيجة الجولة."
         )
 
     def _disable_buttons(self) -> None:
@@ -539,12 +542,44 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 f"{balance_line}"
             )
 
+        result_content = self._panel_text.content
+        if self.context is not None:
+            self._panel_text.content = (
+                f"# انتهت {self.game_title}\n"
+                "اتقفلت أزرار اللعبة بعد تأكيد التسوية. النتيجة التفصيلية في الرسالة التالية."
+            )
+
         try:
             await self._edit_message()
+            await self._publish_result(
+                result_content,
+                "warning"
+                if result.get("status") == "refunded" or result.get("outcome") == "balance_limit"
+                else "win"
+                if result.get("outcome") == "win"
+                else "loss",
+            )
         finally:
             self._release_session()
             self.stop()
 
+    async def _publish_result(self, content: str, outcome: str) -> None:
+        """Publish the receipt separately so the active controls stay easy to scan."""
+        if self.context is None or self.result_published:
+            return
+        self.result_published = True
+        lines = content.split("\n", 1)
+        description = lines[1] if len(lines) > 1 else lines[0]
+        kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
+        if getattr(self.context, "interaction", None) is not None:
+            kwargs["ephemeral"] = True
+        try:
+            await self.context.send(
+                view=StatusPanel(f"نتيجة {self.game_title}", description, outcome),
+                **kwargs,
+            )
+        except Exception:
+            logger.exception("Could not publish solo wager result game_type=%s", self.game_type)
 
     async def cancel(self, interaction: discord.Interaction) -> None:
         if self.done or self.resolving:
@@ -733,6 +768,7 @@ class SoloBetting(commands.Cog):
             instructions=instructions,
             payout_description=payout_description,
             outcome_resolver=outcome_resolver,
+            context=ctx,
         )
         if not claim_solo_session(ctx.author.id, view):
             view.stop()
