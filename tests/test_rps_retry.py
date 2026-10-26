@@ -38,7 +38,8 @@ class RPSComponentsV2Tests(unittest.TestCase):
         self.assertIn("100", view._panel_text.content)
         self.assertIn("<@101>", view._panel_text.content)
         self.assertIn("<@202>", view._panel_text.content)
-        self.assertIn("مفيش رصيد اتحجز", view._panel_text.content)
+        self.assertIn("بانتظار القبول", view._panel_text.content)
+        self.assertNotIn("مفيش رصيد اتحجز", view._panel_text.content)
 
         view.accepted = True
         view._refresh_panel()
