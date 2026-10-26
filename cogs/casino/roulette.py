@@ -397,11 +397,11 @@ class RouletteLobby(LayoutView):
                 winner = active_players[0]
                 final_description = f"الناجي الوحيد والأقوى في الحفرة!\n\nالفائز النهائي هو {winner.mention}."
                 if currency_cog:
-                    credited, _balance = await asyncio.to_thread(currency_cog.credit_balance, winner.id, 20)
+                    credited, balance = await asyncio.to_thread(currency_cog.credit_balance, winner.id, 20)
                     if credited:
-                        final_description += "\n\n💰 تم إضافة 20 عملة كمكافأة فوز."
+                        final_description += f"\n\n**رصيدك:** {balance:,} <:ckrcoin:1513743032124575784>"
                     else:
-                        final_description += "\n\n⚠️ الفوز مؤكد، لكن المكافأة لم تُصرف لأن الرصيد وصل للحد الأقصى."
+                        final_description += "\n\n⚠️ الفوز مؤكد، لكن تعذر تحديث الرصيد بسبب الحد الأقصى."
                 if last_round_message is not None and last_round_view is not None:
                     await self._publish_result_receipt(
                         last_round_message,
