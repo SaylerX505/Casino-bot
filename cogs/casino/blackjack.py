@@ -253,7 +253,7 @@ def _cards_text(cards):
 
 
 class BlackjackView(DiagnosticViewMixin, LayoutView):
-    """A one-message hand controlled only by its original player."""
+    """A private-control blackjack table with a separately published final receipt."""
 
     def __init__(self, cog, requester, amount, *, context=None, deck=None):
         super().__init__(timeout=180)
@@ -362,7 +362,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
                 "**إجمالي الصرف:** 2.0x للفوز العادي، و2.5x للـ Blackjack الطبيعي. "
                 "التعادل يرجّع الرهان بالكامل.\n"
                 "**القواعد:** قرّب مجموعك من 21 من غير ما تتجاوزها. الموزّع يقف عند 17، "
-                "والـ Blackjack الطبيعي هو 21 من أول بطاقتين.\n\n"
+                "والـ Blackjack الطبيعي هو 21 من أول بطاقتين.\n"
+                "**مضاعفة الرهان:** متاحة بعد أول بطاقتين؛ الرهان بيتضاعف وتسحب بطاقة واحدة فقط.\n\n"
                 "اضغط «ابدأ اللعب» لتثبيت الرهان وتوزيع الورق. مفيش خصم قبل البداية."
             )
         if self.phase == "starting":
@@ -414,11 +415,17 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             net = f"**صافي النتيجة:** −{stake:,} {COIN}"
         balance = receipt.get("balance_after")
         balance_line = f"\n**الرصيد بعد التسوية:** {int(balance):,} {COIN}" if balance is not None else ""
+        original_stake_line = (
+            f"**الرهان الأصلي:** {self.original_amount:,} {COIN}\n"
+            if self.doubled_down
+            else ""
+        )
         return (
             f"# Blackjack · {heading}\n{detail}\n\n"
             f"**يدك:** {_cards_text(self.player_cards)} ({_hand_value(self.player_cards)})\n"
             f"**يد الموزّع:** {_cards_text(self.dealer_cards)} ({_hand_value(self.dealer_cards)})\n\n"
-            f"**الرهان:** {stake:,} {COIN}\n"
+            f"{original_stake_line}"
+            f"**الرهان النهائي:** {stake:,} {COIN}\n"
             f"**إجمالي الصرف:** {payout:,} {COIN}\n{net}{balance_line}"
         )
 
@@ -780,7 +787,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         else:
             accent = "loss"
 
-        details = self._finished_content().split("\\n", 1)
+        details = self._finished_content().split("\n", 1)
         description = details[1] if len(details) > 1 else details[0]
         kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
         if getattr(self.context, "interaction", None) is not None:
@@ -790,7 +797,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
                 view=StatusPanel("Blackjack · النتيجة النهائية", description, accent),
                 **kwargs,
             )
-        except (discord.HTTPException, discord.InteractionResponded):
+        except Exception:
             logger.exception(
                 "Could not publish separate Blackjack result game_id=%s",
                 self.game_id,
