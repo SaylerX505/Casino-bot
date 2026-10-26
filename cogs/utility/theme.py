@@ -177,11 +177,10 @@ async def try_edit_view(message, view, *, context: str) -> bool:
 
 
 async def report_game_failure(ctx, title: str, description: str, fallback_view=None) -> bool:
-    """Report an unexpected game failure by editing the live panel when possible.
+    """Close active controls and publish a separate V2 failure receipt.
 
-    Editing the active message is preferred to avoid stacking duplicate failure
-    posts into a game channel. A new panel is sent only when no usable message
-    is available or Discord rejects the edit.
+    The original round/table remains visible as game history; only its controls are
+    disabled. Repeated error paths for the same registered game are de-duplicated.
     """
     logger = logging.getLogger(__name__)
     panel = StatusPanel(title, description, "warning")
@@ -189,25 +188,51 @@ async def report_game_failure(ctx, title: str, description: str, fallback_view=N
     entry = active_games.get(ctx.channel.id, {}) if isinstance(active_games, dict) else {}
     if not isinstance(entry, dict):
         entry = {}
-    active_view = entry.get("view")
+
+    if entry.get("failure_reported"):
+        return False
+    # Reserve the failure receipt before the first await so concurrent exception
+    # handlers cannot publish duplicate warnings for one game.
+    entry["failure_reported"] = "pending"
+
+    active_view = entry.get("view") or fallback_view
     message = (
         getattr(active_view, "message", None)
-        or getattr(fallback_view, "message", None)
         or entry.get("message")
     )
 
-    if message is not None:
+    if active_view is not None:
         try:
-            await message.edit(content=None, embeds=[], attachments=[], view=panel)
-            return True
+            disable = getattr(active_view, "_disable_buttons", None)
+            if callable(disable):
+                disable()
+            else:
+                for item in active_view.walk_children():
+                    if hasattr(item, "disabled"):
+                        item.disabled = True
+            stop = getattr(active_view, "stop", None)
+            if callable(stop):
+                stop()
+            if message is not None:
+                await message.edit(view=active_view)
         except discord.HTTPException:
-            logger.exception("Failed to replace the active game message with a failure panel")
+            logger.warning(
+                "Could not disable failed game controls; preserving the separate failure receipt",
+                exc_info=True,
+            )
+        except Exception:
+            logger.exception("Unexpected failure while closing broken game controls")
 
     try:
-        await ctx.send(view=panel)
+        await ctx.send(
+            view=panel,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        entry["failure_reported"] = True
         return True
     except discord.HTTPException:
-        logger.exception("Failed to send a game failure panel")
+        entry.pop("failure_reported", None)
+        logger.exception("Failed to send a separate game failure receipt")
         return False
 
 
