@@ -559,6 +559,11 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 if result.get("outcome") == "win"
                 else "loss",
             )
+            if self.context is not None and not self.result_published:
+                # A distinct receipt is preferred, but never leave only a teaser
+                # on the original board if Discord rejects the receipt message.
+                self._panel_text.content = result_content
+                await self._edit_message()
         finally:
             self._release_session()
             self.stop()
