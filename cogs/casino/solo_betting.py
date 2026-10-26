@@ -572,7 +572,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         description = lines[1] if len(lines) > 1 else lines[0]
         kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
         if getattr(self.context, "interaction", None) is not None:
-            kwargs["ephemeral"] = True
+            # The original solo-game panel is public, so keep its separate receipt public too.
+            kwargs["ephemeral"] = False
         if outcome == "win":
             title = f"كسبت الرهان · {self.game_title}"
         elif outcome == "warning":
