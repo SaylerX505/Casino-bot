@@ -1248,6 +1248,121 @@ def create_casino_wager(
 
 
 
+def double_down_casino_wager(game_id, user_id, expected_stake):
+    """Atomically double an active Blackjack stake after checking its expected value.
+
+    The expected-stake precondition makes retries safe: if a previous call
+    already doubled the wager, another call with the original amount cannot
+    debit the account a second time.
+    """
+    game_id = str(game_id).strip()
+    uid = str(user_id).strip()
+    if not game_id or not uid:
+        raise ValueError("game_id and user_id are required")
+    if (
+        isinstance(expected_stake, bool)
+        or not isinstance(expected_stake, int)
+        or not 0 < expected_stake <= SQLITE_MAX_INT
+    ):
+        raise ValueError("expected stake must be a positive SQLite-safe integer")
+
+    with _lock:
+        c = _connect()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            wager = c.execute(
+                "SELECT user_id,game_type,stake,status FROM casino_wagers WHERE game_id=?",
+                (game_id,),
+            ).fetchone()
+            if wager is None:
+                c.rollback()
+                return {"doubled": False, "reason": "not_found"}
+            if str(wager["user_id"]) != uid:
+                c.rollback()
+                return {"doubled": False, "reason": "not_owner"}
+            if str(wager["game_type"]) != "blackjack":
+                c.rollback()
+                return {"doubled": False, "reason": "unsupported_game"}
+            if str(wager["status"]) != "active":
+                c.rollback()
+                return {"doubled": False, "reason": "not_active"}
+
+            current_stake = int(wager["stake"])
+            if current_stake != expected_stake:
+                c.rollback()
+                return {
+                    "doubled": False,
+                    "reason": "stake_changed",
+                    "stake": current_stake,
+                }
+            if current_stake > SQLITE_MAX_INT // 2:
+                c.rollback()
+                return {
+                    "doubled": False,
+                    "reason": "stake_limit",
+                    "stake": current_stake,
+                }
+
+            wallet = c.execute(
+                "SELECT balance FROM users WHERE user_id=?",
+                (uid,),
+            ).fetchone()
+            if wallet is None:
+                c.rollback()
+                return {"doubled": False, "reason": "wallet_missing"}
+            balance = int(wallet["balance"])
+            if balance < current_stake:
+                c.rollback()
+                return {
+                    "doubled": False,
+                    "reason": "insufficient_funds",
+                    "balance": balance,
+                    "stake": current_stake,
+                }
+
+            new_stake = current_stake * 2
+            balance_after = balance - current_stake
+            c.execute(
+                "UPDATE users SET balance=? WHERE user_id=?",
+                (balance_after, uid),
+            )
+            updated = c.execute(
+                "UPDATE casino_wagers SET stake=? "
+                "WHERE game_id=? AND status='active' AND stake=?",
+                (new_stake, game_id, current_stake),
+            )
+            if updated.rowcount != 1:
+                c.rollback()
+                return {"doubled": False, "reason": "stake_changed"}
+
+            transaction_id = uuid.uuid4().hex
+            _record_ledger(
+                c,
+                event_type="casino_wager_stake",
+                user_id=uid,
+                delta=-current_stake,
+                balance_after=balance_after,
+                transaction_id=transaction_id,
+                reference=game_id,
+                metadata={
+                    "game_type": "blackjack",
+                    "stake": current_stake,
+                    "total_stake": new_stake,
+                    "reason": "double_down",
+                },
+            )
+            c.commit()
+            return {
+                "doubled": True,
+                "stake": new_stake,
+                "additional_stake": current_stake,
+                "balance_after": balance_after,
+            }
+        except Exception:
+            c.rollback()
+            raise
+
+
 def play_casino_wager(
     game_id,
     user_id,
