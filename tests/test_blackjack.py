@@ -205,7 +205,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_final_receipt_is_a_separate_v2_message_and_discloses_double_stake(self):
-        user_context = SimpleNamespace(interaction=None, send=AsyncMock())
+        user_context = SimpleNamespace(interaction=object(), send=AsyncMock())
         self.view.context = user_context
         self.view.player_cards = [("10", "♠"), ("7", "♥"), ("2", "♦")]
         self.view.dealer_cards = [("10", "♣"), ("7", "♠")]
@@ -225,7 +225,9 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
 
         self.view._edit.assert_awaited_once()
         user_context.send.assert_awaited_once()
-        sent_view = user_context.send.await_args.kwargs["view"]
+        receipt_kwargs = user_context.send.await_args.kwargs
+        self.assertIs(receipt_kwargs["ephemeral"], False)
+        sent_view = receipt_kwargs["view"]
         self.assertIsInstance(sent_view, StatusPanel)
         rendered_text = "\n".join(
             item.content
