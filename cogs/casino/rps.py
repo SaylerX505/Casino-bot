@@ -304,27 +304,25 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 title="✊ تحدي حومص",
                 description=(
                     f"{self.player.mention} **تحدى** {self.opponent.mention}\n"
-                    f"**الرهان:** {self.bet:,} عملة لكل لاعب\n"
-                    f"**جائزة الفائز:** {prize:,} عملة · **صافي الربح:** +{net_profit:,}\n\n"
-                    f"**الرسوم:** ضريبة البنك {self.bet * 2 - prize:,} عملة من مجموع الرهانات.\n"
-                    "لسه مفيش رصيد اتحجز. الخصم المحدد يقدر يقبل أو يرفض، وصاحب التحدي يقدر يلغيه.\n"
-                    "**مهلة القبول:** 60 ثانية. لو التحدي انتهى من غير قبول، مفيش أي خصم."
+                    f"**الرهان:** {self.bet:,} لكل لاعب · **جائزة الفائز:** {prize:,} · **صافي الربح:** +{net_profit:,}\n"
+                    f"**ضريبة البنك:** {self.bet * 2 - prize:,} من إجمالي الرهانات.\n"
+                    "**القبول:** في انتظار الخصم · **المهلة:** 60 ثانية\n"
+                    "مفيش رصيد اتحجز قبل القبول؛ لو المهلة انتهت، التحدي بيتقفل من غير خصم."
                 ),
                 color=THEME["teal"],
             )
 
         player_status = "✅ اختار" if self.player.id in self.choices else "⏳ مستني"
         opponent_status = "✅ اختار" if self.opponent.id in self.choices else "⏳ مستني"
+        player_name = getattr(self.player, "display_name", self.player.mention)
+        opponent_name = getattr(self.opponent, "display_name", self.opponent.mention)
         return base_embed(
             title="✊ حومص · الجولة بدأت",
             description=(
                 f"{self.player.mention} **VS** {self.opponent.mention}\n"
-                f"**الرهان المحجوز:** {self.bet:,} عملة لكل لاعب\n"
-                f"**إجمالي الصرف للفائز:** {prize:,} · **صافي ربحه:** +{net_profit:,}\n\n"
-                f"{self.player.mention}: {player_status}\n"
-                f"{self.opponent.mention}: {opponent_status}\n\n"
-                "اختار حركتك بسرية؛ الحركة مش هتظهر للخصم قبل ما الطرفين يختاروا. "
-                "التعادل أو انتهاء الوقت يرجّع الرهان للطرفين."
+                f"**الرهان:** {self.bet:,} لكل لاعب · **جائزة الفائز:** {prize:,} · **الصافي:** +{net_profit:,}\n"
+                f"**الاختيارات:** {player_name} — {player_status} · {opponent_name} — {opponent_status}\n"
+                "اختار حركة بسرية. التعادل أو انتهاء المهلة يرجّع الرهان للطرفين."
             ),
             color=THEME["teal"],
         )
