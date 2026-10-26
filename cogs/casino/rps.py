@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 import time
 import uuid
 from functools import partial
@@ -10,6 +9,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
+from cogs.casino.bet_validation import parse_bet_amount
 from cogs.casino.game_registry import (
     is_active_game,
     register_game_task,
@@ -1196,8 +1196,7 @@ class RPS(commands.Cog):
                 ))
             )
 
-        raw_bet = (bet or "").strip().replace(",", "")
-        amount = int(raw_bet) if re.fullmatch(r"[0-9]+", raw_bet) else 0
+        amount = parse_bet_amount(bet, max_bet=MAX_BET)
 
         usage = "/حومص" if ctx.interaction is not None else f"{ctx.prefix}حومص"
         if amount < MIN_BET:
