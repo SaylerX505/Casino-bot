@@ -83,7 +83,7 @@ class RouletteLobby(LayoutView):
         self.timer_task = self.ctx.bot.loop.create_task(self.run_timer())
 
     def get_embed(self):
-        rules = "قناص عشوائي يستبعد لاعبًا كل دور؛ آخر لاعب باقٍ يفوز بـ20 عملة."
+        rules = ""
         embed = lobby_embed(
             "🎯 روليت الحفرة",
             rules,
