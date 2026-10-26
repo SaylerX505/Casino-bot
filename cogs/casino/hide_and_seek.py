@@ -260,7 +260,7 @@ class LobbyView(LayoutView):
     def get_embed(self):
         embed = lobby_embed(
             "🙈 غميضة الحفرة",
-            "الخريطة كبيرة واللي هيتمسك هيتطرد بره الحفرة.",
+            "اختبئ على الخريطة قبل ما الباحث يبدأ يدور عليك.",
             self.players,
             self.time_left,
             max_players=25,
