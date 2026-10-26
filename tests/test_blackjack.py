@@ -17,7 +17,6 @@ from cogs.casino.blackjack import (
     _is_natural_blackjack,
     render_blackjack_table,
 )
-from cogs.utility.theme import StatusPanel
 
 
 class BlackjackArtTests(unittest.TestCase):
