@@ -464,15 +464,14 @@ class WheelLobby(LayoutView):
                         title = "رصيد غير كافٍ"
                         description = (
                             f"**اللاعب:** {player.mention}\n"
-                            f"رصيدك أقل من رسوم الدخول ({FEE:,} {COIN}).\n"
-                            "لم يتم خصم أي عملات."
+                            f"**رصيدك:** {settlement['after']:,} {COIN}"
                         )
                     else:
                         results.append((player, "balance_limit", 0))
                         title = "تعذر صرف النتيجة"
                         description = (
                             f"**اللاعب:** {player.mention}\n"
-                            "رصيدك قريب من الحد الأقصى المدعوم؛ لم يتم خصم رسوم الدخول."
+                            f"**رصيدك:** {settlement['after']:,} {COIN}"
                         )
                     panel = WheelResultPanel(
                         f"🎡 نتيجة اللفة {index}/{len(players)} • {title}",
