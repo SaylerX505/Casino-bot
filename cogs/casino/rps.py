@@ -1189,40 +1189,46 @@ class RPS(commands.Cog):
             )
 
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send(
-                view=embed_to_v2(base_embed(
-                    description="❌ فيه لعبة شغالة في الروم؛ استنوا لما تخلص.",
-                    color=THEME["red_dark"],
-                ))
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة شغالة في الروم؛ استنوا لما تخلص قبل ما تبدأ تحديًا جديدًا.",
+                "warning",
             )
 
         amount = parse_bet_amount(bet, max_bet=MAX_BET)
 
         usage = "/حومص" if ctx.interaction is not None else f"{ctx.prefix}حومص"
         if amount < MIN_BET:
-            return await ctx.send(
-                view=embed_to_v2(base_embed(
-                    description=f"❌ مثال: `{usage} 100 @صاحبك` (أقل رهان {MIN_BET}).",
-                    color=THEME["red_dark"],
-                ))
+            return await send_status(
+                ctx,
+                "قيمة الرهان مش مناسبة",
+                f"مثال: \`{usage} 100 @صاحبك\`. أقل رهان **{MIN_BET:,}** {COIN}.",
+                "warning",
             )
         if amount > MAX_BET:
-            return await ctx.send(
-                view=embed_to_v2(base_embed(
-                    description=f"❌ أقصى رهان **{MAX_BET:,}**.",
-                    color=THEME["red_dark"],
-                ))
+            return await send_status(
+                ctx,
+                "قيمة الرهان أعلى من الحد",
+                f"أقصى رهان مسموح هو **{MAX_BET:,} {COIN}**.",
+                "warning",
             )
         if opponent is None:
-            return await ctx.send(view=embed_to_v2(base_embed(description="❌ منشن خصمك!", color=THEME["red_dark"])))
+            return await send_status(ctx, "حدد خصمك", "منشن عضوًا من السيرفر لبدء التحدي.", "warning")
         if opponent.id == ctx.author.id:
-            return await ctx.send(view=embed_to_v2(base_embed(description="❌ مش هتلاعب نفسك!", color=THEME["red_dark"])))
+            return await send_status(ctx, "اختار لاعبًا آخر", "مينفعش تتحدى نفسك في حجرة ورقة مقص.", "warning")
         if opponent.bot:
-            return await ctx.send(view=embed_to_v2(base_embed(description="❌ البوتات مابتلعبش!", color=THEME["red_dark"])))
+            return await send_status(ctx, "الخصم غير صالح", "حسابات البوتات مش متاحة للتحديات.", "warning")
 
         currency = get_currency(self.bot)
         if currency is None:
-            return await ctx.send(view=embed_to_v2(base_embed(description="❌ الفلوس واقعة! كلم نجلاوي.", color=THEME["red_dark"])))
+            return await send_status(
+                ctx,
+                "الاقتصاد غير متاح",
+                "نظام العملات مش متاح حاليًا؛ التحدي اتوقف قبل حجز أي رصيد.",
+                "warning",
+            )
+
         try:
             player_balance, opponent_balance = await asyncio.gather(
                 asyncio.to_thread(bank.get_balance, ctx.author.id),
