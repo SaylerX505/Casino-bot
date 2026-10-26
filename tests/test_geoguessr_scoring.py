@@ -3,7 +3,7 @@
 import unittest
 from types import SimpleNamespace
 
-from cogs.casino.geoguessr import build_final_result, order_guesses_by_submission
+from cogs.casino.geoguessr import SERVER_LOGO_URL, build_final_result, order_guesses_by_submission
 
 
 class GeoGuessrFinalResultTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class GeoGuessrFinalResultTests(unittest.TestCase):
 
         self.assertIn("مفيش فائز بالنقاط", description)
         self.assertNotIn("تعادل", description)
-        self.assertEqual(image_url, __import__("cogs.casino.geoguessr", fromlist=["SERVER_LOGO_URL"]).SERVER_LOGO_URL)
+        self.assertEqual(image_url, SERVER_LOGO_URL)
         self.assertEqual(outcome, "neutral")
 
     def test_positive_equal_scores_are_announced_as_a_true_tie(self):
