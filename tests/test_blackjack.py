@@ -204,6 +204,28 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
             {"اسحب بطاقة", "قف", "ضاعف الرهان"},
         )
 
+    async def test_cancelled_waiting_hand_refreshes_the_table_art(self):
+        art_file = object()
+        self.view._art_file = AsyncMock(return_value=art_file)
+        message = SimpleNamespace(id=991)
+        interaction = SimpleNamespace(
+            message=message,
+            response=SimpleNamespace(edit_message=AsyncMock()),
+        )
+
+        await self.view.cancel(interaction)
+
+        interaction.response.edit_message.assert_awaited_once_with(
+            view=self.view,
+            attachments=[art_file],
+        )
+        self.assertTrue(self.view.done)
+        self.assertEqual(self.view.phase, "finished")
+        self.assertIn("مفيش رهان اتخصم", self.view.notice)
+        self.assertFalse(
+            any(isinstance(item, discord.ui.Button) for item in self.view.walk_children())
+        )
+
     async def test_final_receipt_is_a_separate_v2_message_and_discloses_double_stake(self):
         user_context = SimpleNamespace(interaction=object(), send=AsyncMock())
         self.view.context = user_context
