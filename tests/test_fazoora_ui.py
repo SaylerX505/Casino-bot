@@ -67,11 +67,15 @@ class RiddleResultMessageTests(unittest.IsolatedAsyncioTestCase):
         published = await publish_riddle_result(ctx, panel, context="test")
 
         self.assertTrue(published)
-        ctx.send.assert_awaited_once_with(
-            view=panel,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-        self.assertIsInstance(ctx.send.await_args.kwargs["view"], LayoutView)
+        ctx.send.assert_awaited_once()
+        kwargs = ctx.send.await_args.kwargs
+        self.assertIs(kwargs["view"], panel)
+        self.assertIsInstance(kwargs["view"], LayoutView)
+        allowed_mentions = kwargs["allowed_mentions"]
+        self.assertIs(allowed_mentions.everyone, False)
+        self.assertIs(allowed_mentions.users, False)
+        self.assertIs(allowed_mentions.roles, False)
+        self.assertIs(allowed_mentions.replied_user, False)
 
 
 class RiddleRewardThreadingTests(unittest.IsolatedAsyncioTestCase):
