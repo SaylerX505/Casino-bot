@@ -449,7 +449,7 @@ class WheelLobby(LayoutView):
             players = list(self.players)
             for index, player in enumerate(players, start=1):
                 segment_index = secrets.randbelow(len(SEGMENTS))
-                label, payout, target_loss, outcome_note = resolve_wheel_segment(segment_index)
+                label, payout, target_loss, _outcome_note = resolve_wheel_segment(segment_index)
 
                 settlement = await asyncio.to_thread(
                     currency.settle_wheel,
