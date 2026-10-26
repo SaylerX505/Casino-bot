@@ -136,7 +136,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
                     outcome_resolver=_spin_slots if game_type == "slots" else None,
                 )
                 try:
-                    self.assertTrue(view._art_bytes.startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+                    self.assertTrue(view._art_bytes.startswith(b"\x89PNG\r\n\x1a\n"))
                     self.assertEqual(view._art_filename, f"{game_type}.png")
                     galleries = [
                         item for item in view.walk_children()
