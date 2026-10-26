@@ -178,6 +178,32 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.view.result_published)
 
 
+    async def test_failed_separate_receipt_restores_full_result_on_original_board(self):
+        self.view.context = SimpleNamespace(
+            interaction=object(),
+            send=AsyncMock(side_effect=RuntimeError("transient receipt failure")),
+        )
+        self.view.message = SimpleNamespace(id=556, edit=AsyncMock())
+        receipt = {
+            "status": "settled",
+            "outcome": "win",
+            "choice": "heads",
+            "result": "heads",
+            "stake": 100,
+            "payout": 190,
+            "balance_after": 1_090,
+        }
+
+        await self.view._finalize(receipt)
+
+        self.assertFalse(self.view.result_published)
+        self.assertGreaterEqual(self.view.message.edit.await_count, 2)
+        self.assertIn("كسبت الرهان", self.view._panel_text.content)
+        self.assertIn("صافي الربح:** +90", self.view._panel_text.content)
+        self.assertIn("رصيدك بعد التسوية:** 1,090", self.view._panel_text.content)
+        self.assertNotIn("النتيجة التفصيلية في الرسالة التالية", self.view._panel_text.content)
+
+
     async def test_result_receipt_can_retry_after_a_transient_send_failure(self):
         context = SimpleNamespace(
             interaction=object(),
