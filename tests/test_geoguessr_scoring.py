@@ -18,7 +18,7 @@ class GeoGuessrFinalResultTests(unittest.TestCase):
         first = self.player(101)
         second = self.player(202)
 
-        description, image_url, outcome = build_final_result({first: 0, second: 0})
+        description, _image_url, outcome = build_final_result({first: 0, second: 0})
 
         self.assertIn("مفيش فائز بالنقاط", description)
         self.assertNotIn("تعادل", description)
