@@ -255,11 +255,13 @@ def _cards_text(cards):
 class BlackjackView(DiagnosticViewMixin, LayoutView):
     """A one-message hand controlled only by its original player."""
 
-    def __init__(self, cog, requester, amount, *, deck=None):
+    def __init__(self, cog, requester, amount, *, context=None, deck=None):
         super().__init__(timeout=180)
         self.cog = cog
         self.requester = requester
+        self.context = context
         self.amount = amount
+        self.original_amount = amount
         self.game_id = uuid.uuid4().hex
         self.deck = list(deck) if deck is not None else _new_shuffled_deck()
         self.player_cards = []
@@ -268,6 +270,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.phase = "waiting"
         self.done = False
         self.resolving = False
+        self.doubled_down = False
+        self.result_published = False
         self.result_kind = None
         self.receipt = None
         self.notice = None
@@ -318,10 +322,15 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
                 self._button("cancel", "إلغاء", self.cancel, "❌"),
             ))
         elif self.phase == "playing":
-            elements.append(ActionRow(
+            controls = [
                 self._button("hit", "اسحب بطاقة", self.hit, "🎴"),
                 self._button("stand", "قف", self.stand, "🛑"),
-            ))
+            ]
+            if len(self.player_cards) == 2 and not self.doubled_down:
+                controls.append(
+                    self._button("double", "ضاعف الرهان", self.double_down, "2️⃣")
+                )
+            elements.append(ActionRow(*controls))
         self.add_item(Container(*elements, accent_color=THEME["gold"]))
 
     async def _recover_after_component_error(self, incident_id: str) -> None:
@@ -365,7 +374,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
                 f"**الموزّع:** {_cards_text(self.dealer_cards[:1])}  [🂠]\n"
                 f"**يدك:** {_cards_text(self.player_cards)}\n"
                 f"**مجموعك:** {_hand_value(self.player_cards)}\n\n"
-                "اسحب بطاقة أو قف. الموزّع هيكشف ورقه ويسحب حتى يوصل إلى 17."
+                "اسحب بطاقة أو قف. تقدر تضاعف الرهان قبل أول سحب؛ هتاخد بطاقة واحدة وبعدها الموزّع يكمل.\n"
+                f"{f'-# {self.notice}' if self.notice else ''}"
             )
         if self.phase in ("settling", "pending"):
             label = "جاري تسجيل النتيجة" if self.phase == "settling" else "التسوية قيد المعالجة"
@@ -524,6 +534,169 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.resolving = False
         await self._edit()
 
+    async def _double_down_wager(self):
+        """Apply or reconcile the extra stake without ever charging it twice."""
+        expected_stake = self.amount
+        for attempt in range(3):
+            try:
+                result = await asyncio.to_thread(
+                    bank.double_down_casino_wager,
+                    self.game_id,
+                    self.requester.id,
+                    expected_stake,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Blackjack double-down transaction failed game_id=%s attempt=%s",
+                    self.game_id,
+                    attempt + 1,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(0.25 * (2 ** attempt))
+                    continue
+                return {"doubled": False, "reason": "database_error"}
+
+            if result.get("doubled"):
+                return result
+
+            # A prior call may have committed while its await was cancelled.
+            # The expected-stake guard makes this response a safe receipt check.
+            if (
+                result.get("reason") == "stake_changed"
+                and result.get("stake") == expected_stake * 2
+            ):
+                balance_after = None
+                try:
+                    balance_after = await asyncio.to_thread(
+                        bank.get_balance,
+                        self.requester.id,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not read balance after reconciling double down game_id=%s",
+                        self.game_id,
+                    )
+                return {
+                    "doubled": True,
+                    "stake": expected_stake * 2,
+                    "additional_stake": expected_stake,
+                    "balance_after": balance_after,
+                    "reconciled": True,
+                }
+
+            if result.get("reason") in {
+                "insufficient_funds",
+                "stake_limit",
+                "not_found",
+                "not_owner",
+                "unsupported_game",
+                "not_active",
+                "wallet_missing",
+            }:
+                return result
+
+            if attempt < 2:
+                await asyncio.sleep(0.25 * (2 ** attempt))
+
+        return {"doubled": False, "reason": "database_error"}
+
+    async def double_down(self, interaction):
+        if (
+            self.phase != "playing"
+            or self.resolving
+            or self.doubled_down
+            or len(self.player_cards) != 2
+        ):
+            return await self._closed(interaction)
+
+        self.resolving = True
+        self.message = interaction.message or self.message
+        self.notice = "جاري تأكيد الرهان الإضافي قبل سحب البطاقة..."
+        try:
+            await interaction.response.defer()
+        except discord.HTTPException:
+            self.resolving = False
+            self.notice = None
+            return
+
+        await self._edit()
+        try:
+            receipt = await self._double_down_wager()
+        except asyncio.CancelledError:
+            self.cog._schedule_recovery(
+                self.game_id,
+                force_refund=True,
+                callback=self._recovered,
+            )
+            raise
+
+        if not receipt.get("doubled"):
+            reason = receipt.get("reason", "database_error")
+            if reason == "insufficient_funds":
+                detail = (
+                    f"رصيدك الحالي **{int(receipt.get('balance', 0)):,} {COIN}** "
+                    f"ومحتاج **{self.amount:,} {COIN}** إضافية."
+                )
+                self.resolving = False
+                self.notice = "الرصيد مش كفاية لمضاعفة الرهان؛ تقدر تسحب بطاقة أو تقف."
+                await self._edit()
+                try:
+                    await interaction.followup.send(
+                        view=StatusPanel("رصيد غير كافٍ", detail, "warning"),
+                        ephemeral=True,
+                    )
+                except discord.HTTPException:
+                    logger.debug(
+                        "Could not send private double-down balance warning game_id=%s",
+                        self.game_id,
+                        exc_info=True,
+                    )
+                return
+            if reason == "stake_limit":
+                self.resolving = False
+                self.notice = "قيمة الرهان وصلت للحد الآمن؛ كمل الجولة من غير مضاعفة."
+                await self._edit()
+                try:
+                    await interaction.followup.send(
+                        view=StatusPanel(
+                            "تعذر مضاعفة الرهان",
+                            "قيمة الرهان الجديدة هتتجاوز الحد الآمن للنظام.",
+                            "warning",
+                        ),
+                        ephemeral=True,
+                    )
+                except discord.HTTPException:
+                    logger.debug("Could not send double-down limit warning", exc_info=True)
+                return
+
+            self.phase = "pending"
+            self.notice = (
+                "تعذر تأكيد الرهان المضاعف. قفلنا التحكم مؤقتًا وبنراجع العملية "
+                "قبل ما نعلن نتيجة أو نسمح بحركة جديدة."
+            )
+            await self._edit()
+            self.cog._schedule_recovery(
+                self.game_id,
+                force_refund=True,
+                callback=self._recovered,
+            )
+            return
+
+        self.amount = int(receipt["stake"])
+        self.doubled_down = True
+        self.notice = None
+        # Standard double-down rules: exactly one card, then the dealer plays out.
+        self.player_cards.append(self._draw())
+        if _hand_value(self.player_cards) <= 21:
+            while _hand_value(self.dealer_cards) < DEALER_STANDS_AT:
+                self.dealer_cards.append(self._draw())
+            kind = _final_outcome(self.player_cards, self.dealer_cards)
+        else:
+            kind = "loss"
+        await self._settle_outcome(kind)
+
     async def stand(self, interaction):
         if self.phase != "playing" or self.resolving:
             return await self._closed(interaction)
@@ -574,7 +747,11 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
     def _durable_result(self, kind):
         player = ",".join(f"{rank}{suit}" for rank, suit in self.player_cards)
         dealer = ",".join(f"{rank}{suit}" for rank, suit in self.dealer_cards)
-        return f"player={_hand_value(self.player_cards)};dealer={_hand_value(self.dealer_cards)};player_cards={player};dealer_cards={dealer};result={kind}"
+        return (
+            f"player={_hand_value(self.player_cards)};dealer={_hand_value(self.dealer_cards)};"
+            f"player_cards={player};dealer_cards={dealer};result={kind};"
+            f"double_down={str(self.doubled_down).lower()};original_stake={self.original_amount}"
+        )
 
     async def _apply_settlement(self, result):
         self.receipt = result
@@ -583,8 +760,41 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.done = True
         self.notice = None
         await self._edit()
+        await self._publish_final_result()
         release_solo_session(self.requester.id, self)
         self.stop()
+
+    async def _publish_final_result(self):
+        """Publish a separate V2 result receipt while preserving the final table image."""
+        if self.result_published or self.context is None or self.receipt is None:
+            return
+        self.result_published = True
+        status = self.receipt.get("status")
+        outcome = self.receipt.get("outcome")
+        if status == "refunded" or outcome == "balance_limit":
+            accent = "warning"
+        elif outcome == "win":
+            accent = "win"
+        elif outcome == "push":
+            accent = "neutral"
+        else:
+            accent = "loss"
+
+        details = self._finished_content().split("\\n", 1)
+        description = details[1] if len(details) > 1 else details[0]
+        kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
+        if getattr(self.context, "interaction", None) is not None:
+            kwargs["ephemeral"] = True
+        try:
+            await self.context.send(
+                view=StatusPanel("Blackjack · النتيجة النهائية", description, accent),
+                **kwargs,
+            )
+        except (discord.HTTPException, discord.InteractionResponded):
+            logger.exception(
+                "Could not publish separate Blackjack result game_id=%s",
+                self.game_id,
+            )
 
     async def _recovered(self, result):
         if result.get("settled"):
@@ -734,7 +944,7 @@ class Blackjack(commands.Cog):
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
-        view = BlackjackView(self, ctx.author, amount)
+        view = BlackjackView(self, ctx.author, amount, context=ctx)
         if not claim_solo_session(ctx.author.id, view):
             view.stop()
             return await ctx.send(
