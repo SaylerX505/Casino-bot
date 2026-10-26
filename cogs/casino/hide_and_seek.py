@@ -283,7 +283,7 @@ class LobbyView(LayoutView):
         description = f"{embed.description or ''}\n\n"
         return (
             title + description
-            + f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            + f"**تمديدات متاحة:** {self.extensions_left}\n\n"
             + f"-# كازينو الحفرة • {config.BRAND}"
         )[:4000]
 
