@@ -801,41 +801,39 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             )
 
     async def publish_result(self, embed, interaction=None):
-        """Close the challenge board, then publish a separate V2 receipt when possible."""
+        """Close the challenge board and publish a separate V2 receipt when possible."""
         self.done = True
         deferred_private_ack = interaction is not None and interaction.response.is_done()
-        # Keep the full settlement on the original board until the separate receipt
-        # is confirmed. A temporary send failure must never leave only a teaser.
+        # Build the complete result first. It stays available as a fallback until
+        # Discord confirms the separate receipt was actually sent.
         self._refresh_panel(embed)
 
+        board_already_updated = False
         try:
-            try:
-                if interaction is not None and not deferred_private_ack:
+            # Acknowledge a still-open component interaction promptly. Deferred
+            # actions can wait for receipt delivery before updating the public board.
+            if interaction is not None and not deferred_private_ack:
+                try:
+                    await interaction.response.edit_message(view=self)
+                    self.message = interaction.message or self.message
+                    board_already_updated = True
+                except discord.NotFound:
                     try:
-                        await interaction.response.edit_message(view=self)
-                    except discord.NotFound:
                         self.message = await self.ctx.send(
                             view=self,
                             allowed_mentions=discord.AllowedMentions.none(),
                         )
-                elif self.message is not None:
-                    try:
-                        await self.message.edit(view=self)
-                    except discord.NotFound:
-                        self.message = await self.ctx.send(
-                            view=self,
-                            allowed_mentions=discord.AllowedMentions.none(),
+                        board_already_updated = True
+                    except discord.HTTPException:
+                        logging.getLogger(__name__).exception(
+                            "Could not recreate closed RPS board game_id=%s",
+                            self.game_id,
                         )
-                elif self.message is None:
-                    self.message = await self.ctx.send(
-                        view=self,
-                        allowed_mentions=discord.AllowedMentions.none(),
+                except discord.HTTPException:
+                    logging.getLogger(__name__).exception(
+                        "Could not acknowledge final RPS board update game_id=%s",
+                        self.game_id,
                     )
-            except discord.HTTPException:
-                logging.getLogger(__name__).exception(
-                    "Could not update the closed RPS board; still attempting to publish the result game_id=%s",
-                    self.game_id,
-                )
 
             if not self.result_published:
                 try:
@@ -851,8 +849,8 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                     )
 
             if self.result_published:
-                # Normal UX: a compact closed board plus a distinct receipt message.
-                # If this edit fails, the original board still contains the full result.
+                # Normal UX: the full result has a dedicated message; the
+                # original challenge becomes a compact, closed history panel.
                 self._panel_text.content = (
                     "# انتهى تحدي حومص\n"
                     f"**الحالة النهائية:** {embed.title or 'التحدي انتهى'}\n"
@@ -862,15 +860,35 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 if color is not None:
                     self._panel_accent = color.value
                 self._render_view()
-                if self.message is not None:
-                    try:
+
+            # On a failed receipt send, keep/render the full result on the board;
+            # never leave a teaser claiming a message exists when it does not.
+            if not board_already_updated or self.result_published:
+                try:
+                    if self.message is not None:
                         await self.message.edit(view=self)
-                    except discord.HTTPException:
-                        logging.getLogger(__name__).warning(
-                            "RPS receipt was published, but the original board could not be compacted game_id=%s",
-                            self.game_id,
-                            exc_info=True,
+                    else:
+                        self.message = await self.ctx.send(
+                            view=self,
+                            allowed_mentions=discord.AllowedMentions.none(),
                         )
+                except discord.NotFound:
+                    try:
+                        self.message = await self.ctx.send(
+                            view=self,
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                    except discord.HTTPException:
+                        logging.getLogger(__name__).exception(
+                            "Could not publish closed RPS board fallback game_id=%s",
+                            self.game_id,
+                        )
+                except discord.HTTPException:
+                    logging.getLogger(__name__).warning(
+                        "Could not update closed RPS board after receipt attempt game_id=%s",
+                        self.game_id,
+                        exc_info=True,
+                    )
 
             if deferred_private_ack:
                 if self.result_published:
