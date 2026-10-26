@@ -12,6 +12,7 @@ from cogs.casino import solo_betting as solo_betting_module
 from cogs.casino.solo_betting import (
     DICE_CHOICES,
     SLOT_CHOICES,
+    SIDES,
     SoloWagerView,
     _spin_slots,
     claim_solo_session,
@@ -120,8 +121,9 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         finally:
             view.stop()
 
-    def test_dice_and_slots_panels_include_generated_artwork(self):
+    def test_coinflip_dice_and_slots_panels_include_generated_artwork(self):
         for game_type, title, choices in (
+            ("coinflip", "رمي العملة", SIDES),
             ("dice", "رمي النرد", DICE_CHOICES),
             ("slots", "ماكينة الحظ", SLOT_CHOICES),
         ):
@@ -147,6 +149,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
                     view.stop()
 
     async def test_dice_result_uses_only_current_balance_and_includes_art(self):
+        context = SimpleNamespace(interaction=object(), send=AsyncMock())
         view = SoloWagerView(
             self.cog,
             self.requester,
@@ -155,7 +158,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             game_title="رمي النرد",
             choices=DICE_CHOICES,
             payout_numerator=570,
-            context=SimpleNamespace(interaction=object(), send=AsyncMock()),
+            context=context,
         )
         view.message = SimpleNamespace(id=777, edit=AsyncMock())
         original_art = view._art_bytes
@@ -170,36 +173,25 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
                 "balance_after": 53,
             })
             board_text = view._panel_text.content
-            self.assertIn("انتهت رمي النرد", board_text)
+            self.assertIn("خسرت · رمي النرد", board_text)
+            self.assertIn("اختيارك: **2** · النتيجة: **4**", board_text)
+            self.assertIn("رصيدك:** 53", board_text)
             self.assertNotIn("الرهان:", board_text)
             self.assertNotIn("إجمالي الصرف", board_text)
             self.assertNotEqual(view._art_bytes, original_art)
-            view.context.send.assert_awaited_once()
-            kwargs = view.context.send.await_args.kwargs
-            self.assertEqual(kwargs["file"].filename, "dice.png")
-            self.assertIsInstance(kwargs["view"], LayoutView)
-            receipt_text = "\\n".join(
-                item.content
-                for item in kwargs["view"].walk_children()
-                if isinstance(item, discord.ui.TextDisplay)
-            )
-            self.assertIn("خسرت · رمي النرد", receipt_text)
-            self.assertIn("اختيارك: **2** · النتيجة: **4**", receipt_text)
-            self.assertIn("رصيدك:** 53", receipt_text)
-            self.assertNotIn("الرهان:", receipt_text)
-            self.assertNotIn("إجمالي الصرف", receipt_text)
-            self.assertNotIn("صافي النتيجة", receipt_text)
-            self.assertNotIn("رصيدك بعد التسوية", receipt_text)
-            self.assertTrue(
-                any(isinstance(item, discord.ui.MediaGallery)
-                    for item in kwargs["view"].walk_children())
-            )
+            view.message.edit.assert_awaited_once()
+            edit_kwargs = view.message.edit.await_args.kwargs
+            self.assertIs(edit_kwargs["view"], view)
+            self.assertEqual(edit_kwargs["attachments"][0].filename, "dice.png")
+            context.send.assert_not_awaited()
+            self.assertTrue(view.result_published)
         finally:
             view.stop()
 
-    async def test_winning_coinflip_posts_a_separate_v2_result_receipt(self):
+    async def test_winning_coinflip_updates_the_original_v2_panel(self):
         self.cog._schedule_recovery = Mock()
-        self.view.context = SimpleNamespace(interaction=object(), send=AsyncMock())
+        context = SimpleNamespace(interaction=object(), send=AsyncMock())
+        self.view.context = context
         message = SimpleNamespace(id=555, edit=AsyncMock())
         interaction = SimpleNamespace(
             user=self.requester,
@@ -242,31 +234,21 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             message_id=555,
         )
         interaction.response.edit_message.assert_awaited_once_with(view=self.view)
-        message.edit.assert_awaited_once_with(view=self.view)
+        message.edit.assert_awaited_once()
+        edit_kwargs = message.edit.await_args.kwargs
+        self.assertIs(edit_kwargs["view"], self.view)
+        self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip.png")
         self.assertTrue(self.view.done)
-        self.assertIn("اتقفلت أزرار اللعبة", self.view._panel_text.content)
-        self.view.context.send.assert_awaited_once()
-        receipt_kwargs = self.view.context.send.await_args.kwargs
-        self.assertIs(receipt_kwargs["ephemeral"], False)
-        self.assertIsInstance(receipt_kwargs["view"], StatusPanel)
-        receipt_text = "\n".join(
-            item.content
-            for item in receipt_kwargs["view"].walk_children()
-            if isinstance(item, discord.ui.TextDisplay)
-        )
-        self.assertIn("كسبت · رمي العملة", receipt_text)
-        self.assertIn("رصيدك:** 1,090", receipt_text)
-        self.assertNotIn("الرهان:", receipt_text)
-        self.assertNotIn("إجمالي الصرف", receipt_text)
-        self.assertNotIn("صافي الربح", receipt_text)
+        self.assertIn("كسبت · رمي العملة", self.view._panel_text.content)
+        self.assertIn("رصيدك:** 1,090", self.view._panel_text.content)
+        self.assertNotIn("الرهان:", self.view._panel_text.content)
+        self.assertNotIn("إجمالي الصرف", self.view._panel_text.content)
+        context.send.assert_not_awaited()
         self.assertTrue(self.view.result_published)
 
-
-    async def test_failed_separate_receipt_restores_full_result_on_original_board(self):
-        self.view.context = SimpleNamespace(
-            interaction=object(),
-            send=AsyncMock(side_effect=RuntimeError("transient receipt failure")),
-        )
+    async def test_settled_result_updates_the_original_message_without_sending_receipt(self):
+        context = SimpleNamespace(interaction=object(), send=AsyncMock())
+        self.view.context = context
         self.view.message = SimpleNamespace(id=556, edit=AsyncMock())
         receipt = {
             "status": "settled",
@@ -280,15 +262,13 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
 
         await self.view._finalize(receipt)
 
-        self.assertFalse(self.view.result_published)
-        self.assertGreaterEqual(self.view.message.edit.await_count, 2)
+        self.view.message.edit.assert_awaited_once()
+        self.assertTrue(self.view.result_published)
+        context.send.assert_not_awaited()
         self.assertIn("كسبت · رمي العملة", self.view._panel_text.content)
         self.assertIn("رصيدك:** 1,090", self.view._panel_text.content)
         self.assertNotIn("الرهان:", self.view._panel_text.content)
         self.assertNotIn("إجمالي الصرف", self.view._panel_text.content)
-        self.assertNotIn("صافي الربح", self.view._panel_text.content)
-        self.assertNotIn("النتيجة التفصيلية في الرسالة التالية", self.view._panel_text.content)
-
 
     async def test_result_receipt_can_retry_after_a_transient_send_failure(self):
         context = SimpleNamespace(
@@ -307,7 +287,8 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.send.await_count, 2)
         kwargs = context.send.await_args.kwargs
         self.assertIs(kwargs["ephemeral"], False)
-        self.assertIsInstance(kwargs["view"], StatusPanel)
+        self.assertIsInstance(kwargs["view"], LayoutView)
+        self.assertEqual(kwargs["file"].filename, "coinflip.png")
 
 
 
