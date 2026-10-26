@@ -719,7 +719,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
     def test_wheel_result_panel_uses_v2_gallery_when_result_has_art(self):
         panel = WheelResultPanel(
             "نتيجة اللفة",
-            "النتيجة: x2\nصافي الرصيد: +50",
+            "النتيجة: مكسب\nرصيدك: 1,050",
             outcome="win",
             image_name="wheel.png",
         )
@@ -730,7 +730,7 @@ class OtherGameLobbyV2Tests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(len(galleries), 1)
         self.assertIn("attachment://wheel.png", str(galleries[0].items[0].media.url))
-        self.assertIn("صافي الرصيد", panel._panel_text.content)
+        self.assertIn("رصيدك: 1,050", panel._panel_text.content)
 
     def test_wheel_final_result_uses_v2_without_gallery(self):
         panel = WheelResultPanel("انتهت العجلة", "مفيش نتائج.", outcome="success")
@@ -826,7 +826,7 @@ class WheelReceiptDeliveryTests(unittest.IsolatedAsyncioTestCase):
             send=AsyncMock(return_value=sent),
         )
         fallback_message = SimpleNamespace(edit=AsyncMock())
-        panel = WheelResultPanel("نتيجة اللفة 1/2", "صافي الرصيد: +50", "win")
+        panel = WheelResultPanel("نتيجة اللفة 1/2", "رصيدك: 1,050", "win")
         pending = []
 
         message = await publish_wheel_panel(
@@ -848,7 +848,7 @@ class WheelReceiptDeliveryTests(unittest.IsolatedAsyncioTestCase):
             send=AsyncMock(side_effect=RuntimeError("synthetic result delivery failure")),
         )
         fallback_message = SimpleNamespace(edit=AsyncMock())
-        panel = WheelResultPanel("نتيجة اللفة 2/3", "النتيجة: +100\nصافي الرصيد: +50", "win")
+        panel = WheelResultPanel("نتيجة اللفة 2/3", "النتيجة: مكسب\nرصيدك: 1,050", "win")
         pending = []
 
         message = await publish_wheel_panel(
@@ -869,7 +869,7 @@ class WheelReceiptDeliveryTests(unittest.IsolatedAsyncioTestCase):
             if isinstance(item, discord.ui.TextDisplay)
         )
         self.assertIn("نتيجة اللفة 2/3", text)
-        self.assertIn("صافي الرصيد: +50", text)
+        self.assertIn("رصيدك: 1,050", text)
 
 class WheelLobbyStartRaceTests(unittest.IsolatedAsyncioTestCase):
     async def test_duplicate_start_after_defer_gets_private_v2_feedback(self):
