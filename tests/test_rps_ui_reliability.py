@@ -37,6 +37,18 @@ class RPSPanelReliabilityTests(unittest.IsolatedAsyncioTestCase):
         view._store_panel_reference = AsyncMock()
         return view, ctx
 
+    async def test_pending_invitation_copy_is_compact_and_keeps_wager_terms(self):
+        view, _ctx = self._view()
+        text = view._panel_text.content
+
+        self.assertIn("الرهان:", text)
+        self.assertIn("جائزة الفائز:", text)
+        self.assertIn("ضريبة البنك:", text)
+        self.assertIn("60 ثانية", text)
+        self.assertIn("مفيش رصيد اتحجز قبل القبول", text)
+        self.assertLess(len(text), 520)
+        view.stop()
+
     async def test_transient_edit_failure_retries_original_message_without_duplicate(self):
         view, ctx = self._view()
         original = SimpleNamespace(
