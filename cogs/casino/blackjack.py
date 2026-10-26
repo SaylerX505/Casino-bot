@@ -793,7 +793,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         description = details[1] if len(details) > 1 else details[0]
         kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
         if getattr(self.context, "interaction", None) is not None:
-            kwargs["ephemeral"] = True
+            # The Blackjack table was sent publicly; make the final receipt public as well.
+            kwargs["ephemeral"] = False
         try:
             await self.context.send(
                 view=StatusPanel(title, description, accent),
