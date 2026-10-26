@@ -59,7 +59,7 @@ class GuessGameMenu(LayoutView):
     def get_embed(self):
         embed = lobby_embed(
             "🌍 GeoGuessr • تخمين الموقع",
-            "اضغط على 'انضمام' للعب.",
+            "خمن الدولة من صورة الشارع؛ النقاط بتعتمد على الدقة والتوقيت.",
             sorted(self.players, key=lambda player: player.id),
             self.time_left,
             max_players=15,
