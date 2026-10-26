@@ -11,6 +11,7 @@ class ExtensionLoaderClassificationTests(unittest.TestCase):
             "bank.py",
             "bank_ledger.py",
             "bank_schema.py",
+            "bet_validation.py",
             "permissions.py",
             "game_registry.py",
             "game_assets.py",
