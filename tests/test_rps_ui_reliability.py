@@ -2,7 +2,7 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import discord
 
@@ -69,6 +69,78 @@ class RPSPanelReliabilityTests(unittest.IsolatedAsyncioTestCase):
         original.edit.assert_awaited_once()
         ctx.send.assert_not_awaited()
         view._store_panel_reference.assert_not_awaited()
+        view.stop()
+
+    async def test_successful_result_keeps_receipt_separate_and_compacts_closed_board(self):
+        view, ctx = self._view()
+        message = SimpleNamespace(id=505, edit=AsyncMock())
+        view.message = message
+        result = discord.Embed(
+            title="كسبت الرهان",
+            description="**الرهان:** 100\n**صافي الربح:** +90\n**رصيدك بعد التسوية:** 1,090",
+        )
+
+        await view.publish_result(result)
+
+        ctx.send.assert_awaited_once()
+        self.assertTrue(view.result_published)
+        self.assertEqual(message.edit.await_count, 2)
+        self.assertIn("إيصال منفصل", view._panel_text.content)
+        self.assertNotIn("صافي الربح", view._panel_text.content)
+        result_view = ctx.send.await_args.kwargs["view"]
+        self.assertIsInstance(result_view, discord.ui.LayoutView)
+        result_text = "\n".join(
+            item.content for item in result_view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("صافي الربح", result_text)
+        view.stop()
+
+    async def test_failed_result_receipt_keeps_full_result_on_closed_board(self):
+        view, ctx = self._view()
+        ctx.send.side_effect = RuntimeError("temporary result-message failure")
+        message = SimpleNamespace(id=505, edit=AsyncMock())
+        view.message = message
+        result = discord.Embed(
+            title="كسبت الرهان",
+            description="**الرهان:** 100\n**صافي الربح:** +90\n**رصيدك بعد التسوية:** 1,090",
+        )
+
+        await view.publish_result(result)
+
+        ctx.send.assert_awaited_once()
+        self.assertFalse(view.result_published)
+        message.edit.assert_awaited_once_with(view=view)
+        self.assertIn("صافي الربح", view._panel_text.content)
+        self.assertIn("1,090", view._panel_text.content)
+        self.assertNotIn("إيصال العام التالي", view._panel_text.content)
+        self.assertEqual(view._buttons, [])
+        view.stop()
+
+    async def test_deferred_player_ack_never_claims_receipt_exists_after_send_failure(self):
+        view, ctx = self._view()
+        ctx.send.side_effect = RuntimeError("temporary result-message failure")
+        message = SimpleNamespace(id=505, edit=AsyncMock())
+        view.message = message
+        interaction = SimpleNamespace(
+            response=SimpleNamespace(is_done=Mock(return_value=True)),
+            edit_original_response=AsyncMock(),
+        )
+        result = discord.Embed(
+            title="انتهى التحدي",
+            description="**الرهان:** 100\n**صافي النتيجة:** −100",
+        )
+
+        await view.publish_result(result, interaction=interaction)
+
+        ack_view = interaction.edit_original_response.await_args.kwargs["view"]
+        ack_text = "\n".join(
+            item.content for item in ack_view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertFalse(view.result_published)
+        self.assertIn("تفاصيل النتيجة والرهان موجودة على لوحة التحدي", ack_text)
+        self.assertNotIn("إيصال النتيجة النهائية موجود", ack_text)
         view.stop()
 
     async def test_replacement_is_sent_only_after_discord_confirms_original_missing(self):
