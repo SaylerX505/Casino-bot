@@ -827,8 +827,31 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.done = True
         self.phase = "finished"
         self.notice = "اتلغت الجلسة قبل توزيع الورق؛ مفيش رهان اتخصم."
+        self.message = interaction.message or self.message
         self._render_view()
-        await interaction.response.edit_message(view=self)
+        try:
+            await interaction.response.edit_message(
+                view=self,
+                attachments=[await self._art_file()],
+            )
+        except discord.HTTPException:
+            logger.warning(
+                "Could not refresh cancelled Blackjack art game_id=%s",
+                self.game_id,
+                exc_info=True,
+            )
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.send_message(
+                        view=StatusPanel(
+                            "اتلغت الجولة",
+                            "الجولة اتقفلت قبل خصم الرهان، لكن تعذر تحديث صورة الطاولة. الرسالة القديمة لن تسمح بتنفيذ حركة جديدة.",
+                            "warning",
+                        ),
+                        ephemeral=True,
+                    )
+                except discord.HTTPException:
+                    logger.debug("Could not acknowledge cancelled Blackjack fallback", exc_info=True)
         release_solo_session(self.requester.id, self)
         self.stop()
 
