@@ -573,9 +573,16 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
         if getattr(self.context, "interaction", None) is not None:
             kwargs["ephemeral"] = True
+        if outcome == "win":
+            title = f"كسبت الرهان · {self.game_title}"
+        elif outcome == "warning":
+            title = f"تم إرجاع الرهان · {self.game_title}"
+        else:
+            title = f"خسرت الرهان · {self.game_title}"
+
         try:
             await self.context.send(
-                view=StatusPanel(f"نتيجة {self.game_title}", description, outcome),
+                view=StatusPanel(title, description, outcome),
                 **kwargs,
             )
         except Exception:
