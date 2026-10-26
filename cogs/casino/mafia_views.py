@@ -411,7 +411,7 @@ class MafiaLobbyView(LayoutView):
     def get_embed(self):
         embed = lobby_embed(
             "🕵️ مافيا الحفرة",
-            "أدوار سرية ليلًا؛ اكشف المافيا بالتصويت نهارًا.",
+            "",
             self.players,
             self.time_left,
             max_players=25,
