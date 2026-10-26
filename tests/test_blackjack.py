@@ -225,7 +225,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
             any(isinstance(item, discord.ui.Button) for item in self.view.walk_children())
         )
 
-    async def test_final_receipt_is_a_separate_v2_message_and_discloses_double_stake(self):
+    async def test_final_receipt_contains_only_numeric_hand_values(self):
         user_context = SimpleNamespace(interaction=object(), send=AsyncMock())
         self.view.context = user_context
         self.view.player_cards = [("10", "♠"), ("7", "♥"), ("2", "♦")]
@@ -249,20 +249,17 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         receipt_kwargs = user_context.send.await_args.kwargs
         self.assertIs(receipt_kwargs["ephemeral"], False)
         sent_view = receipt_kwargs["view"]
-        self.assertIsInstance(sent_view, StatusPanel)
+        self.assertIsInstance(sent_view, LayoutView)
         rendered_text = "\n".join(
             item.content
             for item in sent_view.walk_children()
             if isinstance(item, discord.ui.TextDisplay)
         )
-        self.assertIn("كسبت جولة Blackjack", rendered_text)
-        self.assertIn("رصيدك:** 1,000", rendered_text)
-        self.assertNotIn("الرهان الأصلي", rendered_text)
-        self.assertNotIn("الرهان النهائي", rendered_text)
-        self.assertNotIn("إجمالي الصرف", rendered_text)
-        self.assertNotIn("صافي الربح", rendered_text)
+        self.assertEqual(rendered_text, "يدك: 19\nيد الموزع: 17")
+        self.assertNotIn("Blackjack", rendered_text)
+        self.assertNotIn("رصيدك", rendered_text)
+        self.assertNotIn("♠", rendered_text)
         self.assertTrue(self.view.result_published)
-
 
     async def test_final_receipt_can_retry_after_transient_send_failure(self):
         self.view.context = SimpleNamespace(
@@ -289,8 +286,13 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.view.context.send.await_count, 2)
         kwargs = self.view.context.send.await_args.kwargs
         self.assertIs(kwargs["ephemeral"], False)
-        self.assertIsInstance(kwargs["view"], StatusPanel)
-
+        self.assertIsInstance(kwargs["view"], LayoutView)
+        text = "\n".join(
+            item.content
+            for item in kwargs["view"].walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertEqual(text, "يدك: 19\nيد الموزع: 17")
 
 if __name__ == "__main__":
     unittest.main()
