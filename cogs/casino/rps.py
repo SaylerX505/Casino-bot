@@ -298,7 +298,6 @@ class RPSView(DiagnosticViewMixin, LayoutView):
 
     def make_embed(self):
         prize = int(self.bet * 2 * PAYOUT_RATE)
-        net_profit = prize - self.bet
         if not self.accepted:
             return base_embed(
                 title="✊ تحدي حومص",
