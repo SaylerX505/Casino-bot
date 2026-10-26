@@ -20,7 +20,13 @@ from cogs.casino.currency_views import (
     build_shop_view,
     render_profile_panel,
 )
-from cogs.casino.fazoora import DEFAULT_QUESTIONS, credit_riddle_reward, load_bank, normalize
+from cogs.casino.fazoora import (
+    DEFAULT_QUESTIONS,
+    credit_riddle_reward,
+    load_bank,
+    normalize,
+    publish_riddle_result,
+)
 from cogs.utility.theme import (
     StatusPanel,
     base_embed,
@@ -49,6 +55,24 @@ class RiddleInputTests(unittest.TestCase):
         }
         with patch("builtins.open", mock_open(read_data=json.dumps(payload, ensure_ascii=False))):
             self.assertEqual(load_bank(), [{"q": "سؤال صالح؟", "a": ["إجابة!"]}])
+
+
+class RiddleResultMessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_result_is_a_new_v2_message_instead_of_replacing_the_question(self):
+        ctx = SimpleNamespace(
+            channel=SimpleNamespace(id=123),
+            send=AsyncMock(),
+        )
+        panel = StatusPanel("انتهى الوقت", "الإجابة الصحيحة هي الحفرة.", "loss")
+
+        published = await publish_riddle_result(ctx, panel, context="test")
+
+        self.assertTrue(published)
+        ctx.send.assert_awaited_once_with(
+            view=panel,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        self.assertIsInstance(ctx.send.await_args.kwargs["view"], LayoutView)
 
 
 class RiddleRewardThreadingTests(unittest.IsolatedAsyncioTestCase):
