@@ -1,4 +1,5 @@
 """Shared solo betting games with durable economy settlement and Components V2 UI."""
+# ruff: noqa: I001
 
 import asyncio
 import io
