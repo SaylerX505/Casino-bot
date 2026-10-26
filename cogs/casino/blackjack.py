@@ -4,7 +4,6 @@
 import asyncio
 import io
 import logging
-import re
 import secrets
 import uuid
 
@@ -14,6 +13,7 @@ from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator
 from PIL import Image, ImageDraw, ImageFont
 
 from cogs.casino import bank
+from cogs.casino.bet_validation import parse_bet_amount
 from cogs.casino.solo_betting import (
     COIN,
     MAX_BET,
@@ -723,8 +723,7 @@ class Blackjack(commands.Cog):
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
-        raw = bet.strip().replace(",", "") if isinstance(bet, str) else ""
-        amount = int(raw) if re.fullmatch(r"[0-9]+", raw) else 0
+        amount = parse_bet_amount(bet, max_bet=MAX_BET)
         if not MIN_BET <= amount <= MAX_BET:
             usage = "/blackjack bet:100" if ctx.interaction is not None else f"{ctx.prefix}blackjack 100"
             return await ctx.send(
