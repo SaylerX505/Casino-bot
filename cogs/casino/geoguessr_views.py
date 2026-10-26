@@ -81,7 +81,7 @@ class GuessGameMenu(LayoutView):
         return (
             f"# {embed.title or 'GeoGuessr'}\n"
             f"{embed.description or ''}\n\n"
-            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            f"**تمديدات متاحة:** {self.extensions_left}\n\n"
             f"-# كازينو الحفرة • {config.BRAND}"
         )[:4000]
 
@@ -90,7 +90,7 @@ class GuessGameMenu(LayoutView):
         title = f"# {embed.title}\n" if embed.title else ""
         description = f"{embed.description}\n\n" if embed.description else ""
         footer = (
-            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            f"**تمديدات متاحة:** {self.extensions_left}\n\n"
             f"-# كازينو الحفرة • {config.BRAND}"
         )
         self._panel_text.content = (title + description + footer)[:4000]
@@ -327,7 +327,7 @@ class ActiveGameView(LayoutView):
             f"# 🌍 الجولة {self.round_num} من {self.total_rounds} — أين نحن؟\n"
             "اكتب اسم الدولة بالعربية أو الإنجليزية في الشات.\n"
             f"الوقت المتبقي: **{remaining}** ثانية.\n"
-            f"**تمديدات الوقت المتبقية:** {self.extensions_left}\n\n"
+            f"**تمديدات متاحة:** {self.extensions_left}\n\n"
             f"-# كازينو الحفرة • {config.BRAND}"
         )
 
