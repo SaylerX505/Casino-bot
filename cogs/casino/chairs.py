@@ -364,11 +364,44 @@ class ChairsLobby(LayoutView):
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
 
+    async def _publish_end_receipt(
+        self,
+        message,
+        view,
+        *,
+        title: str,
+        description: str,
+        outcome: str,
+        context: str,
+    ) -> bool:
+        """Post a final event separately, preserving it on the last round if sending fails."""
+        try:
+            await self.ctx.send(view=StatusPanel(title, description, outcome))
+            return True
+        except Exception:
+            logger.exception(
+                "Could not publish musical chairs result context=%s channel_id=%s",
+                context,
+                self.ctx.channel.id,
+            )
+            if message is not None and view is not None:
+                view._panel_text.content = (
+                    f"{view._panel_text.content}\n\n# {title}\n{description}"
+                )[:4000]
+                await try_edit_view(
+                    message,
+                    view,
+                    context=f"chairs_{context}_receipt_fallback",
+                )
+            return False
+
     # --- MUSICAL CHAIRS LOOP ---
     async def run_game_loop(self):
         try:
             active_players = self.players.copy()
             round_num = 1
+            last_round_message = None
+            last_round_view = None
 
             while len(active_players) > 1:
                 num_chairs = len(active_players) - 1
@@ -428,14 +461,16 @@ class ChairsLobby(LayoutView):
                     await msg.edit(view=action_view)
                 except discord.HTTPException:
                     logger.debug("Could not disable musical chairs V2 controls", exc_info=True)
+                last_round_message, last_round_view = msg, action_view
 
                 if len(active_players) == 0:
-                    await self.ctx.send(
-                        view=StatusPanel(
-                            "انتهت لعبة الكراسي",
-                            "كله خرج من اللعبة؛ مفيش فائز في الجولة دي.",
-                            "warning",
-                        )
+                    await self._publish_end_receipt(
+                        msg,
+                        action_view,
+                        title="انتهت لعبة الكراسي",
+                        description="كله خرج من اللعبة؛ مفيش فائز في الجولة دي.",
+                        outcome="warning",
+                        context="no_winner",
                     )
                     break
                     
@@ -445,12 +480,13 @@ class ChairsLobby(LayoutView):
             # --- WINNER ANNOUNCEMENT ---
             if len(active_players) == 1:
                 winner = active_players[0]
-                await self.ctx.send(
-                    view=StatusPanel(
-                        "بطل الكراسي الموسيقية!",
-                        f"الفائز النهائي والناجي الوحيد هو {winner.mention}.",
-                        "success",
-                    )
+                await self._publish_end_receipt(
+                    last_round_message,
+                    last_round_view,
+                    title="بطل الكراسي الموسيقية!",
+                    description=f"الفائز النهائي والناجي الوحيد هو {winner.mention}.",
+                    outcome="success",
+                    context="winner",
                 )
 
         except asyncio.CancelledError:
