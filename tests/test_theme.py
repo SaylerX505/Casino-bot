@@ -90,10 +90,15 @@ class PrivateStatusTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GameFailureReportingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_edits_active_game_message_instead_of_sending_duplicate(self):
+    async def test_disables_active_game_panel_and_sends_separate_failure_receipt(self):
         message = SimpleNamespace(edit=AsyncMock())
+        active_view = SimpleNamespace(
+            message=message,
+            _disable_buttons=Mock(),
+            stop=Mock(),
+        )
         bot = SimpleNamespace(
-            active_games={10: {"view": SimpleNamespace(message=message)}}
+            active_games={10: {"view": active_view}}
         )
         ctx = SimpleNamespace(
             bot=bot,
@@ -108,11 +113,31 @@ class GameFailureReportingTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(reported)
-        message.edit.assert_awaited_once()
+        active_view._disable_buttons.assert_called_once()
+        active_view.stop.assert_called_once()
+        message.edit.assert_awaited_once_with(view=active_view)
+        ctx.send.assert_awaited_once()
+        sent_kwargs = ctx.send.await_args.kwargs
+        self.assertIsInstance(sent_kwargs["view"], StatusPanel)
+        self.assertIs(sent_kwargs["allowed_mentions"].everyone, False)
+        self.assertTrue(bot.active_games[10]["failure_reported"])
+
+
+
+    async def test_repeated_failure_reports_are_suppressed_for_the_same_game(self):
+        message = SimpleNamespace(edit=AsyncMock())
+        active_view = SimpleNamespace(message=message, _disable_buttons=Mock(), stop=Mock())
+        ctx = SimpleNamespace(
+            bot=SimpleNamespace(active_games={10: {"view": active_view, "failure_reported": True}}),
+            channel=SimpleNamespace(id=10),
+            send=AsyncMock(),
+        )
+
+        reported = await report_game_failure(ctx, "Game stopped", "Duplicate report")
+
+        self.assertFalse(reported)
+        message.edit.assert_not_awaited()
         ctx.send.assert_not_awaited()
-        kwargs = message.edit.await_args.kwargs
-        self.assertEqual(kwargs["embeds"], [])
-        self.assertIsInstance(kwargs["view"], StatusPanel)
 
     async def test_sends_failure_panel_when_no_active_message_exists(self):
         ctx = SimpleNamespace(
