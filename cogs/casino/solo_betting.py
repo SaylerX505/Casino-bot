@@ -269,26 +269,9 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         )
 
     def _waiting_content(self) -> str:
-        payout = _gross_payout(
-            self.amount, self.payout_numerator, self.payout_denominator
-        )
-        multiplier = self.payout_numerator / self.payout_denominator
-        payout_lines = (
-            f"**جدول الجوائز:** {self.payout_description}\n"
-            if self.payout_description
-            else (
-                f"**إجمالي الصرف عند الفوز:** {payout:,} {COIN} "
-                f"({multiplier:.1f}x شامل الرهان)\n"
-                f"**صافي الربح عند الفوز:** {payout - self.amount:,} {COIN}\n"
-            )
-        )
         return (
             f"# {self.game_title}\n"
-            f"**الرهان:** {self.amount:,} {COIN}\n"
-            f"**فرصة الفوز:** {self.odds_description}\n"
-            f"{payout_lines}\n"
-            f"{self.instructions} رصيدك مش هيتخصم غير لما تختار، "
-            "وبعد تأكيد التسوية هتظهر رسالة منفصلة بنتيجة الجولة."
+            f"**الرهان:** {self.amount:,} {COIN}"
         )
 
     def _disable_buttons(self) -> None:
