@@ -402,8 +402,16 @@ class ChairsLobby(LayoutView):
                 is_forbidden = False if round_num == 1 else (random.random() < 0.25)
 
                 prep_view = ChairPrepView(round_num, num_chairs)
-                await self.ctx.send(view=prep_view)
+                prep_msg = await self.ctx.send(view=prep_view)
                 await asyncio.sleep(random.uniform(3.0, 6.0))
+                prep_view._panel_text.content = (
+                    f"# الجولة {round_num} — انتهى الاستعداد\n"
+                    "الموسيقى وقفت. الاختيارات في رسالة اللعب التالية."
+                )
+                try:
+                    await prep_msg.edit(view=prep_view)
+                except discord.HTTPException:
+                    logger.debug("Could not close musical chairs preparation board", exc_info=True)
 
                 round_type = "forbidden" if is_forbidden else "normal"
                 action_view = ChairActionView(
