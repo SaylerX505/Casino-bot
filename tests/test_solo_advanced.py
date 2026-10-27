@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from cogs.casino import solo_advanced
+from cogs.casino.permissions import GAME_COMMAND_ALIASES, GAME_LABELS
 
 
 class SoloAdvancedGameTests(unittest.TestCase):
@@ -66,6 +67,27 @@ class SoloAdvancedGameTests(unittest.TestCase):
         for choice in ("-1", "37", "not-a-number", "١٧"):
             with self.subTest(choice=choice), self.assertRaises(ValueError):
                 solo_advanced._number_roulette(choice, 100)
+
+    def test_new_games_are_registered_for_channel_policy(self):
+        expected = {
+            "mines": "Mines",
+            "crash": "Crash",
+            "plinko": "Plinko",
+            "number_roulette": "روليت الأرقام",
+            "hilo": "Hi-Lo",
+        }
+        for key, label in expected.items():
+            with self.subTest(game=key):
+                self.assertEqual(GAME_LABELS[key], label)
+        for command, key in (
+            ("mines", "mines"),
+            ("crash", "crash"),
+            ("plinko", "plinko"),
+            ("numberroulette", "number_roulette"),
+            ("hilo", "hilo"),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(GAME_COMMAND_ALIASES[command], key)
 
     def test_game_art_generates_png_for_each_new_game(self):
         for game_type in ("mines", "crash", "hilo"):
