@@ -327,7 +327,6 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
 
     def _on_finished(self, receipt):
         """Update game-specific terminal controls before rendering the receipt."""
-        return None
 
     def _set_controls_enabled(self, enabled: bool):
         for control in self._controls:
