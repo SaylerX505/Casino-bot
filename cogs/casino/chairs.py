@@ -471,7 +471,7 @@ class ChairsLobby(LayoutView):
 
                 if len(active_players) == 0:
                     await self._publish_end_receipt(
-                        msg,
+                        action_msg,
                         action_view,
                         title="انتهت لعبة الكراسي",
                         description="كله خرج من اللعبة؛ مفيش فائز في الجولة دي.",
