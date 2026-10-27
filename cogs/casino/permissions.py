@@ -24,6 +24,11 @@ GAME_LABELS = {
     "dice": "رمي النرد",
     "slots": "ماكينة الحظ",
     "blackjack": "Blackjack",
+    "mines": "Mines",
+    "crash": "Crash",
+    "plinko": "Plinko",
+    "number_roulette": "روليت الأرقام",
+    "hilo": "Hi-Lo",
 }
 GAME_COMMAND_ALIASES = {
     "mafia": "mafia",
@@ -60,6 +65,23 @@ GAME_COMMAND_ALIASES = {
     "bj": "blackjack",
     "بلجاك": "blackjack",
     "بلاكجاك": "blackjack",
+    "mines": "mines",
+    "الألغام": "mines",
+    "الغام": "mines",
+    "minesweeper": "mines",
+    "crash": "crash",
+    "كراش": "crash",
+    "plinko": "plinko",
+    "بلينكو": "plinko",
+    "numberroulette": "number_roulette",
+    "number-roulette": "number_roulette",
+    "روليت_الأرقام": "number_roulette",
+    "روليت_ارقام": "number_roulette",
+    "روليت_الارقام": "number_roulette",
+    "hilo": "hilo",
+    "hi-lo": "hilo",
+    "highlow": "hilo",
+    "هاي_لو": "hilo",
 }
 
 
