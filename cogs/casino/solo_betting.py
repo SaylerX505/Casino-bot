@@ -662,10 +662,15 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         )
 
     def _waiting_content(self) -> str:
-        return (
+        content = (
             f"# {self.game_title}\n"
             f"**الرهان:** {self.amount:,} {COIN}"
         )
+        if self.game_type in {"plinko", "number_roulette"}:
+            content += f"\n{self.instructions}"
+            if self.payout_description:
+                content += f"\n-# {self.payout_description}"
+        return content
 
     def _art_file(self):
         if self._art_filename is None or self._art_bytes is None:
