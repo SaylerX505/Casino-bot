@@ -307,7 +307,6 @@ def _render_advanced_instant_art(
     draw.line((58, 143, 340, 143), fill=accent, width=4)
 
     if is_plinko:
-        weights = (1, 8, 28, 56, 70, 56, 28, 8, 1)
         multipliers = (3.0, 2.0, 1.5, 1.1, 0.0, 1.1, 1.5, 2.0, 3.0)
         slot = None
         if result and "slot=" in result:
