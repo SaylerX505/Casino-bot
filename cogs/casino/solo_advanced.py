@@ -332,6 +332,40 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         for control in self._controls:
             control.disabled = not enabled
 
+    def _prepare_refund(self, display_result: str):
+        """Disable the panel and preserve a refund path even if artwork rendering fails."""
+        self.resolving = True
+        self._pending_display_result = display_result
+        self._pending_resolution = {"force_refund": True}
+        self._set_controls_enabled(False)
+        try:
+            self._refresh()
+        except Exception:
+            logger.exception("Could not render refund state game_id=%s", self.game_id)
+            self._panel_text.content = (
+                f"# جاري إرجاع الرهان · {self.game_title}\n{display_result}"
+            )
+
+    def _schedule_settlement_worker(self):
+        """Start at most one database settlement/retry task for this wager."""
+        if self._settlement_task is None or self._settlement_task.done():
+            resolution = self._pending_resolution or {"force_refund": True}
+            self._settlement_task = asyncio.create_task(
+                self._settlement_worker(**resolution)
+            )
+
+    async def _queue_refund(self, display_result: str):
+        """Ensure an already-debited stake is refunded if startup or rendering fails."""
+        self._prepare_refund(display_result)
+        try:
+            await self._edit()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Could not publish refund state game_id=%s", self.game_id)
+        finally:
+            self._schedule_settlement_worker()
+
     async def _edit(self):
         if self.message is None:
             return False
@@ -477,18 +511,34 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             "outcome": outcome,
         }
         self._set_controls_enabled(False)
-        self._refresh()
-        if interaction is not None:
+        try:
             try:
-                await interaction.response.edit_message(view=self)
-            except asyncio.CancelledError:
-                raise
-            except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
-                logger.warning("Could not acknowledge interactive wager settlement game_id=%s", self.game_id, exc_info=True)
+                self._refresh()
+            except Exception:
+                logger.exception("Could not render terminal game state game_id=%s", self.game_id)
+                self._prepare_refund(
+                    "حصل عطل في تجهيز نتيجة الجولة؛ هنرجع الرهان بدل ما نحتسب نتيجة غير مؤكدة."
+                )
+            if interaction is not None:
+                try:
+                    await interaction.response.edit_message(view=self)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning(
+                        "Could not acknowledge interactive wager settlement game_id=%s",
+                        self.game_id,
+                        exc_info=True,
+                    )
+                    await self._edit()
+            else:
                 await self._edit()
-        else:
-            await self._edit()
-        self._settlement_task = asyncio.create_task(self._settlement_worker(**self._pending_resolution))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Could not publish terminal wager state game_id=%s", self.game_id)
+        finally:
+            self._schedule_settlement_worker()
 
     async def _settlement_worker(
         self,
@@ -545,17 +595,26 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self.receipt = receipt
         self.done = True
         self.resolving = False
-        self._set_controls_enabled(False)
-        self._on_finished(receipt)
-        self._refresh()
         try:
-            updated = await self._edit()
-            if not updated:
-                logger.error(
-                    "Wager was settled but final panel could not be edited game_id=%s status=%s",
-                    self.game_id,
-                    receipt.get("status"),
-                )
+            self._set_controls_enabled(False)
+            try:
+                self._on_finished(receipt)
+                self._refresh()
+            except Exception:
+                logger.exception("Could not render settled wager panel game_id=%s", self.game_id)
+                self._panel_text.content = self._final_content()
+            try:
+                updated = await self._edit()
+                if not updated:
+                    logger.error(
+                        "Wager was settled but final panel could not be edited game_id=%s status=%s",
+                        self.game_id,
+                        receipt.get("status"),
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Could not publish settled wager receipt game_id=%s", self.game_id)
         finally:
             release_solo_session(self.requester.id, self)
             self.stop()
