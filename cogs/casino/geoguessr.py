@@ -142,14 +142,6 @@ async def run_game_loop(ctx, players):
         selected_rounds = random.sample(unused_keys, total_rounds)
 
         for round_num, db_key in enumerate(selected_rounds, 1):
-            round_msg = await ctx.send(
-                view=StatusPanel(
-                    f"الجولة {round_num} من {total_rounds}",
-                    "بنجهز صورة الجولة وبيانات الدولة...",
-                    "neutral",
-                )
-            )
-
             round_data = game_db[db_key]
             actual_country_code = round_data['country_code']
             actual_country_ar = round_data['country_ar']
@@ -164,13 +156,12 @@ async def run_game_loop(ctx, players):
                 file = discord.File(fp=image_file_path, filename="streetview.png")
             except OSError:
                 logger.exception("GeoGuessr image became unavailable during a game path=%s", image_file_path)
-                await round_msg.edit(
+                await ctx.send(
                     view=StatusPanel(
                         "تعذر تجهيز الجولة",
                         "صورة الجولة اختفت أو تعذر فتحها. أوقفنا اللعبة بدل ما نعرض جولة ناقصة.",
                         "warning",
-                    ),
-                    attachments=[],
+                    )
                 )
                 return
 
@@ -179,21 +170,21 @@ async def run_game_loop(ctx, players):
                 save_used_images(used_images)
             except OSError:
                 logger.exception("Could not save GeoGuessr used-image tracker")
-                await round_msg.edit(
+                await ctx.send(
                     view=StatusPanel(
                         "تعذر حفظ الجولة",
                         "حالة الصور لم تُحفظ بأمان، لذلك أوقفنا اللعبة قبل بدء الجولة.",
                         "warning",
-                    ),
-                    attachments=[],
+                    )
                 )
                 return
 
             timer_state = {"end_time": time.monotonic() + 30.0}
             active_view = ActiveGameView(ctx.author, timer_state, round_num, total_rounds)
-            msg = round_msg
             try:
-                await msg.edit(view=active_view, attachments=[file])
+                # Publish the playable round once; preparation errors and results
+                # are posted separately instead of replacing this message.
+                msg = await ctx.send(view=active_view, file=file)
             except discord.HTTPException:
                 logger.exception("Could not publish GeoGuessr round=%s", round_num)
                 file.close()
@@ -276,7 +267,7 @@ async def run_game_loop(ctx, players):
 
             active_view.disable_controls()
             active_view._panel_text.content = (
-                f"# انتهت الجولة {round_num}\nتم إغلاق التخمينات. بنحسب النتائج..."
+                f"# انتهت الجولة {round_num}\nتم إغلاق التخمينات. النتيجة في الرسالة التالية."
             )
             try:
                 await msg.edit(view=active_view)
@@ -351,13 +342,13 @@ async def run_game_loop(ctx, players):
                 outcome="neutral",
                 image_names=("result_map.png", "dashboard.png"),
             )
-            await msg.edit(
+            await ctx.send(
                 view=result_view,
-                attachments=[map_file, board_file],
+                files=[map_file, board_file],
+                allowed_mentions=discord.AllowedMentions.none(),
             )
-            # Keep a readable round receipt in the channel; the next round gets
-            # its own message so players can revisit scores/maps without racing
-            # edits that replace one result panel with another.
+            # Each round result gets its own message, preserving the closed
+            # guessing board and keeping earlier maps/scores readable in chat.
             await asyncio.sleep(4)
 
         # --- FINAL WINNER ANNOUNCEMENT ---
