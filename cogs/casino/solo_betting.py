@@ -188,7 +188,15 @@ def _render_solo_game_art(
 
     title = "SLOT MACHINE" if is_slots else "COIN FLIP" if is_coinflip else "DICE TABLE"
     draw.text((68, 48), "ÇUKUR  /  CASINO", font=_art_font(22, bold=True), fill=accent)
-    draw.text((68, 82), title, font=_art_font(43, bold=True), fill=(245, 245, 239))
+    title_size = 43
+    title_font = _art_font(title_size, bold=True)
+    # Keep the full SLOT MACHINE label left of the cabinet instead of letting
+    # its final letter sit underneath the machine artwork.
+    if is_slots:
+        while draw.textbbox((0, 0), title, font=title_font)[2] > 300 and title_size > 28:
+            title_size -= 1
+            title_font = _art_font(title_size, bold=True)
+    draw.text((68, 82), title, font=title_font, fill=(245, 245, 239))
     draw.line((68, 145, 355, 145), fill=accent, width=4)
 
     if is_slots:
