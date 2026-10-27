@@ -50,6 +50,11 @@ GAME_ORDER = (
     "dice",
     "slots",
     "blackjack",
+    "mines",
+    "crash",
+    "plinko",
+    "number_roulette",
+    "hilo",
 )
 
 
