@@ -635,6 +635,7 @@ class MinesView(InteractiveSoloWagerView):
             and self.receipt.get("outcome") in {"loss", "win"}
             and self.receipt.get("status") != "refunded"
         )
+        actual_result = show_mines
         return _render_live_art(
             "mines",
             revealed=self.revealed,
@@ -643,7 +644,7 @@ class MinesView(InteractiveSoloWagerView):
             mines_count=self.mines_count,
             multiplier=_mines_multiplier(self.mines_count, len(self.revealed)),
             final=show_mines,
-            won=self.receipt.get("outcome") == "win" if self.receipt is not None else None,
+            won=self.receipt.get("outcome") == "win" if actual_result else None,
         )
 
     def _content(self):
@@ -791,14 +792,19 @@ class CrashView(InteractiveSoloWagerView):
     def _render_art(self):
         current = self._current_multiplier()
         final = self.receipt is not None
-        shown_crash = self.crash_point if final else None
+        actual_result = (
+            final
+            and self.receipt.get("status") != "refunded"
+            and self.receipt.get("outcome") in {"loss", "win", "push"}
+        )
+        shown_crash = self.crash_point if actual_result else None
         return _render_live_art(
             "crash",
             multiplier=self.result_multiplier if final and self.result_multiplier is not None else current,
             elapsed=max(0.0, time.monotonic() - self.started_at) if self.started_at is not None else 0.0,
             crash_point=shown_crash,
             final=final,
-            won=self.receipt.get("outcome") == "win" if self.receipt is not None else None,
+            won=self.receipt.get("outcome") == "win" if actual_result else None,
         )
 
     def _content(self):
@@ -964,13 +970,18 @@ class HiLoView(InteractiveSoloWagerView):
         self._build([ActionRow(*self._controls)])
 
     def _render_art(self):
+        actual_result = (
+            self.receipt is not None
+            and self.receipt.get("status") != "refunded"
+            and self.receipt.get("outcome") in {"loss", "win", "push"}
+        )
         return _render_live_art(
             "hilo",
             current_rank=self.current_rank,
             previous_rank=self.previous_rank if self.receipt is not None else None,
             multiplier=self.multiplier,
             final=self.receipt is not None,
-            won=self.receipt.get("outcome") == "win" if self.receipt is not None else None,
+            won=self.receipt.get("outcome") == "win" if actual_result else None,
         )
 
     def _content(self):
@@ -997,6 +1008,13 @@ class HiLoView(InteractiveSoloWagerView):
                 return
             previous = self.current_rank
             next_rank = secrets.randbelow(13) + 2
+            if (direction == "higher" and previous == 14) or (direction == "lower" and previous == 2):
+                self._set_controls_enabled(True)
+                try:
+                    await interaction.response.edit_message(view=self)
+                except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+                    logger.warning("Could not refresh boundary Hi-Lo controls game_id=%s", self.game_id, exc_info=True)
+                return
             correct = next_rank > previous if direction == "higher" else next_rank < previous
             self.previous_rank = previous
             self.current_rank = next_rank
