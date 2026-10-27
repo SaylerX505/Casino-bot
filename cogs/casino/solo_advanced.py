@@ -325,6 +325,10 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             f"\n**الرهان المفقود:** {self.amount:,} {COIN}{balance_line}"
         )
 
+    def _on_finished(self, receipt):
+        """Update game-specific terminal controls before rendering the receipt."""
+        return None
+
     def _set_controls_enabled(self, enabled: bool):
         for control in self._controls:
             control.disabled = not enabled
@@ -543,6 +547,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self.done = True
         self.resolving = False
         self._set_controls_enabled(False)
+        self._on_finished(receipt)
         self._refresh()
         try:
             updated = await self._edit()
@@ -625,7 +630,11 @@ class MinesView(InteractiveSoloWagerView):
         return callback
 
     def _render_art(self):
-        show_mines = self.done and self.receipt is not None
+        show_mines = (
+            self.receipt is not None
+            and self.receipt.get("outcome") in {"loss", "win"}
+            and self.receipt.get("status") != "refunded"
+        )
         return _render_live_art(
             "mines",
             revealed=self.revealed,
@@ -648,6 +657,20 @@ class MinesView(InteractiveSoloWagerView):
             f"**مضاعف السحب الحالي:** {multiplier:.2f}x · **الصرف الحالي:** {cashout:,} {COIN}\n"
             "اكشف خانات آمنة لرفع المضاعف، أو اسحب قبل ما تفتح لغم. نسبة الصرف النظرية 97%."
         )
+
+    def _on_finished(self, receipt):
+        reveal_board = (
+            receipt.get("outcome") in {"loss", "win"}
+            and receipt.get("status") != "refunded"
+        )
+        for index, button in self.tile_buttons.items():
+            button.disabled = True
+            if reveal_board and index in self.mines:
+                button.emoji = "💣"
+                button.style = discord.ButtonStyle.danger
+            elif index in self.revealed:
+                button.emoji = "💎"
+                button.style = discord.ButtonStyle.success
 
     def _set_controls_enabled(self, enabled: bool):
         for index, button in self.tile_buttons.items():
@@ -739,6 +762,7 @@ class CrashView(InteractiveSoloWagerView):
         self.started_at = None
         self._ticker_task = None
         self._last_drawn_multiplier = 1.0
+        self.result_multiplier = None
         super().__init__(
             solo_cog,
             ctx,
@@ -770,10 +794,7 @@ class CrashView(InteractiveSoloWagerView):
         shown_crash = self.crash_point if final else None
         return _render_live_art(
             "crash",
-            multiplier=current if not final else (
-                float(self._pending_resolution.get("display_multiplier", current))
-                if self._pending_resolution else current
-            ),
+            multiplier=self.result_multiplier if final and self.result_multiplier is not None else current,
             elapsed=max(0.0, time.monotonic() - self.started_at) if self.started_at is not None else 0.0,
             crash_point=shown_crash,
             final=final,
@@ -798,6 +819,7 @@ class CrashView(InteractiveSoloWagerView):
         self._refresh()
         await self._edit()
         if self.crash_point <= 1.0:
+            self.result_multiplier = self.crash_point
             self._pending_resolution = {"display_multiplier": self.crash_point}
             await self._begin_settlement(
                 result=f"crash:{self.crash_point:.2f}x",
@@ -812,12 +834,13 @@ class CrashView(InteractiveSoloWagerView):
     async def _run_crash(self):
         try:
             while not self.done and not self.resolving:
-                await asyncio.sleep(0.8)
+                await asyncio.sleep(1.2)
                 async with self._state_lock:
                     if self.done or self.resolving:
                         return
                     current = self._current_multiplier()
                     if current >= self.crash_point:
+                        self.result_multiplier = self.crash_point
                         self._pending_resolution = {"display_multiplier": self.crash_point}
                         await self._begin_settlement(
                             result=f"crash:{self.crash_point:.2f}x",
@@ -848,6 +871,7 @@ class CrashView(InteractiveSoloWagerView):
                 return
             current = self._current_multiplier()
             if current >= self.crash_point:
+                self.result_multiplier = self.crash_point
                 self._pending_resolution = {"display_multiplier": self.crash_point}
                 await self._begin_settlement(
                     interaction,
@@ -860,6 +884,7 @@ class CrashView(InteractiveSoloWagerView):
                 return
             payout = max(self.amount, int(self.amount * current))
             outcome = "push" if payout <= self.amount else "win"
+            self.result_multiplier = current
             self._pending_resolution = {"display_multiplier": current}
             await self._begin_settlement(
                 interaction,
@@ -873,6 +898,7 @@ class CrashView(InteractiveSoloWagerView):
     async def _on_timeout(self):
         current = self._current_multiplier()
         if self.started_at is not None and current >= self.crash_point:
+            self.result_multiplier = self.crash_point
             self._pending_resolution = {"display_multiplier": self.crash_point}
             await self._begin_settlement(
                 result=f"crash:{self.crash_point:.2f}x",
@@ -884,6 +910,7 @@ class CrashView(InteractiveSoloWagerView):
             return
         payout = max(self.amount, int(self.amount * current))
         outcome = "push" if payout <= self.amount else "win"
+        self.result_multiplier = current
         self._pending_resolution = {"display_multiplier": current}
         await self._begin_settlement(
             result=f"timeout_cashout:{current:.2f}x",
@@ -907,7 +934,7 @@ class HiLoView(InteractiveSoloWagerView):
             amount,
             game_type="hilo",
             game_title="Hi-Lo",
-            accent=THEME["purple"],
+            accent=THEME["teal"],
         )
         self.higher_button = discord.ui.Button(
             label="أعلى",
@@ -1200,8 +1227,6 @@ class AdvancedSoloGames(commands.Cog):
         solo = await self._command_ready(ctx)
         if solo is None:
             return
-        from cogs.casino.solo_betting import SoloBetting
-
         return await solo._start_wager(
             ctx,
             bet,
