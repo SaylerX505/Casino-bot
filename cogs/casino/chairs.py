@@ -402,7 +402,7 @@ class ChairsLobby(LayoutView):
                 is_forbidden = False if round_num == 1 else (random.random() < 0.25)
 
                 prep_view = ChairPrepView(round_num, num_chairs)
-                msg = await self.ctx.send(view=prep_view)
+                await self.ctx.send(view=prep_view)
                 await asyncio.sleep(random.uniform(3.0, 6.0))
 
                 round_type = "forbidden" if is_forbidden else "normal"
@@ -412,8 +412,10 @@ class ChairsLobby(LayoutView):
                     round_type,
                     round_num=round_num,
                 )
-                await msg.edit(view=action_view)
-                action_view.message = msg
+                # Keep the preparation board in the channel and publish the
+                # playable chair board as its own message.
+                action_msg = await self.ctx.send(view=action_view)
+                action_view.message = action_msg
                 set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)
                 await wait_for_view_fixed_timeout(action_view, max(0.0, action_view.deadline - time.monotonic()))
 
@@ -425,14 +427,13 @@ class ChairsLobby(LayoutView):
                     active_players = list(action_view.seated_players)
                     if losers:
                         loser_mentions = " ".join(player.mention for player in losers)
-                        action_view._panel_text.content = (
-                            f"# نهاية الجولة {round_num}\n"
-                            f"اللي ما لحقش كرسي وخرج من اللعبة: {loser_mentions}"
-                        )
+                        result_title = f"نتيجة الجولة {round_num}"
+                        result_description = f"اللي ما لحقش كرسي خرج من اللعبة: {loser_mentions}"
+                        result_outcome = "warning"
                     else:
-                        action_view._panel_text.content = (
-                            f"# نهاية الجولة {round_num}\nكل الكراسي اتحجزت."
-                        )
+                        result_title = f"نتيجة الجولة {round_num}"
+                        result_description = "كل الكراسي اتحجزت؛ مفيش لاعب خرج في الجولة دي."
+                        result_outcome = "success"
                 else:
                     if action_view.eliminated_fools:
                         removed = action_view.eliminated_fools
@@ -440,22 +441,33 @@ class ChairsLobby(LayoutView):
                             player for player in active_players if player not in removed
                         ]
                         removed_mentions = " ".join(player.mention for player in removed)
-                        action_view._panel_text.content = (
-                            f"# نهاية الفخ — الجولة {round_num}\n"
-                            f"اللاعبون اللي ضغطوا كرسي مكسور وخرجوا: {removed_mentions}"
-                        )
+                        result_title = f"نتيجة الفخ — الجولة {round_num}"
+                        result_description = f"اللاعبون اللي ضغطوا كرسي مكسور وخرجوا: {removed_mentions}"
+                        result_outcome = "warning"
                     else:
-                        action_view._panel_text.content = (
-                            f"# نهاية الفخ — الجولة {round_num}\n"
-                            "محدش وقع في الفخ؛ كله ركز."
-                        )
+                        result_title = f"نتيجة الفخ — الجولة {round_num}"
+                        result_description = "محدش ضغط على كرسي مكسور؛ الجولة عدّت من غير استبعاد."
+                        result_outcome = "success"
 
                 action_view.disable_controls()
+                action_view._panel_text.content = (
+                    f"# انتهت الجولة {round_num}\n"
+                    "اتقفلت الاختيارات. النتيجة في رسالة منفصلة."
+                )
                 try:
-                    await msg.edit(view=action_view)
+                    await action_msg.edit(view=action_view)
                 except discord.HTTPException:
                     logger.debug("Could not disable musical chairs V2 controls", exc_info=True)
-                last_round_message, last_round_view = msg, action_view
+                last_round_message, last_round_view = action_msg, action_view
+
+                await self._publish_end_receipt(
+                    action_msg,
+                    action_view,
+                    title=result_title,
+                    description=result_description,
+                    outcome=result_outcome,
+                    context=f"round_{round_num}",
+                )
 
                 if len(active_players) == 0:
                     await self._publish_end_receipt(
