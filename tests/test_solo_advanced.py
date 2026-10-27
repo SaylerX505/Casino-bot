@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch
 
-from cogs.casino import solo_advanced
+from cogs.casino import solo_advanced, solo_betting
 from cogs.casino.permissions import GAME_COMMAND_ALIASES, GAME_LABELS
 
 
@@ -95,7 +95,7 @@ class SoloAdvancedGameTests(unittest.TestCase):
                 self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
         for game_type in ("plinko", "number_roulette"):
             with self.subTest(game_type=game_type):
-                image = solo_advanced._render_advanced_instant_art(game_type)
+                image = solo_betting._render_advanced_instant_art(game_type)
                 self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
 
 
