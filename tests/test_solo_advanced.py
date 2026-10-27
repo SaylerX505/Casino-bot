@@ -18,9 +18,8 @@ class SoloAdvancedGameTests(unittest.TestCase):
 
     def test_mines_multiplier_rejects_invalid_ranges(self):
         for mines_count, safe_reveals in ((0, 0), (9, 0), (3, -1), (3, 18)):
-            with self.subTest(mines_count=mines_count, safe_reveals=safe_reveals):
-                with self.assertRaises(ValueError):
-                    solo_advanced._mines_multiplier(mines_count, safe_reveals)
+            with self.subTest(mines_count=mines_count, safe_reveals=safe_reveals), self.assertRaises(ValueError):
+                solo_advanced._mines_multiplier(mines_count, safe_reveals)
 
     def test_crash_point_is_finite_and_within_advertised_bounds(self):
         for _ in range(500):
