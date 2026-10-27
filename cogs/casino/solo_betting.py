@@ -437,6 +437,11 @@ _GAME_TITLES = {
     "dice": "رمي النرد",
     "slots": "ماكينة الحظ",
     "blackjack": "Blackjack",
+    "mines": "Mines",
+    "crash": "Crash",
+    "plinko": "Plinko",
+    "number_roulette": "روليت الأرقام",
+    "hilo": "Hi-Lo",
 }
 
 
