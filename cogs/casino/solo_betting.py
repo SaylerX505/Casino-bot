@@ -646,7 +646,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         elements.append(Separator())
         if self.game_type == "number_roulette":
             elements.append(ActionRow(number_selects[0]))
-            elements.append(ActionRow(number_selects[1], cancel))
+            elements.append(ActionRow(number_selects[1]))
+            elements.append(ActionRow(cancel))
         elif len(choice_buttons) <= 2:
             elements.append(ActionRow(*choice_buttons, cancel))
         else:
