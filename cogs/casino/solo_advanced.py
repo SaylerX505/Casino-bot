@@ -840,7 +840,7 @@ class CrashView(InteractiveSoloWagerView):
     async def _run_crash(self):
         try:
             while not self.done and not self.resolving:
-                await asyncio.sleep(1.2)
+                await asyncio.sleep(1.5)
                 async with self._state_lock:
                     if self.done or self.resolving:
                         return
