@@ -276,6 +276,116 @@ def _render_solo_game_art(
     return buffer.getvalue()
 
 
+
+def _render_advanced_instant_art(
+    game_type: str,
+    *,
+    choice: str | None = None,
+    result: str | None = None,
+    won: bool | None = None,
+) -> bytes:
+    """Render bespoke Plinko and number-roulette artwork for Components V2 panels."""
+    width, height = 1200, 420
+    is_plinko = game_type == "plinko"
+    top = (37, 19, 43) if is_plinko else (17, 26, 39)
+    bottom = (9, 12, 22)
+    accent = (244, 187, 83) if is_plinko else (79, 204, 176)
+    image = Image.new("RGB", (width, height), bottom)
+    draw = ImageDraw.Draw(image)
+
+    for y in range(height):
+        ratio = y / max(1, height - 1)
+        color = tuple(int(top[i] * (1 - ratio) + bottom[i] * ratio) for i in range(3))
+        draw.line((0, y, width, y), fill=color)
+    for offset in range(-height, width, 96):
+        draw.line((offset, 0, offset + height, height), fill=(*accent,), width=1)
+    draw.rounded_rectangle((18, 18, width - 18, height - 18), radius=30, outline=accent, width=3)
+    draw.text((58, 48), "ÇUKUR  /  CASINO", font=_art_font(21, bold=True), fill=accent)
+    title = "PLINKO" if is_plinko else "NUMBER ROULETTE"
+    title_font = _art_font(38 if is_plinko else 31, bold=True)
+    draw.text((58, 84), title, font=title_font, fill=(247, 245, 240))
+    draw.line((58, 143, 340, 143), fill=accent, width=4)
+
+    if is_plinko:
+        weights = (1, 8, 28, 56, 70, 56, 28, 8, 1)
+        multipliers = (3.0, 2.0, 1.5, 1.1, 0.0, 1.1, 1.5, 2.0, 3.0)
+        slot = None
+        if result and "slot=" in result:
+            try:
+                slot = max(0, min(8, int(result.split("slot=", 1)[1].split(";", 1)[0])))
+            except (ValueError, IndexError):
+                slot = None
+
+        draw.rounded_rectangle((390, 38, 901, 380), radius=24, fill=(13, 17, 27), outline=accent, width=4)
+        center_x, top_y = 645, 71
+        path = [(center_x, top_y)]
+        direction = (slot - 4) / 4 if slot is not None else 0
+        for row in range(8):
+            y = top_y + row * 27
+            for col in range(row + 1):
+                x = center_x + (col - row / 2) * 43
+                draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=(226, 226, 225), outline=accent, width=1)
+            if row:
+                path.append((int(center_x + direction * row * 23), y))
+        if slot is not None:
+            path.append((435 + slot * 51 + 24, 302))
+            draw.line(path, fill=(255, 216, 111), width=4)
+        else:
+            draw.ellipse((center_x - 9, top_y - 16, center_x + 9, top_y + 2), fill=(255, 221, 121), outline=(255, 249, 218), width=3)
+
+        for index, multiplier in enumerate(multipliers):
+            left = 409 + index * 54
+            active = index == slot
+            fill = (95, 62, 27) if active else (25, 32, 43)
+            draw.rounded_rectangle((left, 307, left + 49, 355), radius=8, fill=fill, outline=accent, width=2)
+            label = f"{multiplier:g}x"
+            draw.text((left + 24, 331), label, font=_art_font(15, bold=True), fill=(255, 245, 222), anchor="mm")
+        draw.text((645, 365), "DROP  /  LAND  /  WIN", font=_art_font(14, bold=True), fill=accent, anchor="mm")
+        draw.text((73, 191), "ONE DROP.", font=_art_font(20, bold=True), fill=(237, 233, 224))
+        draw.text((73, 226), "NINE BINS.", font=_art_font(20, bold=True), fill=(237, 233, 224))
+        draw.text((73, 261), "ONE RESULT.", font=_art_font(20, bold=True), fill=(237, 233, 224))
+        if won is not None:
+            badge = (48, 166, 112) if won else (170, 48, 58)
+            draw.rounded_rectangle((61, 306, 308, 357), radius=15, fill=badge)
+            draw.text((184, 331), "WIN" if won else "NO WIN", font=_art_font(22, bold=True), fill=(255, 255, 248), anchor="mm")
+    else:
+        red_numbers = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
+        center_x, center_y, radius = 696, 214, 161
+        draw.ellipse((center_x - radius - 8, center_y - radius - 8, center_x + radius + 8, center_y + radius + 8), fill=(24, 36, 33), outline=accent, width=4)
+        for number in range(37):
+            start = -90 + number * (360 / 37)
+            end = -90 + (number + 1) * (360 / 37)
+            fill = (35, 133, 87) if number == 0 else (168, 43, 52) if number in red_numbers else (21, 25, 32)
+            draw.pieslice((center_x - radius, center_y - radius, center_x + radius, center_y + radius), start=start, end=end, fill=fill, outline=(227, 224, 210), width=1)
+            angle = math.radians((start + end) / 2)
+            label_x = center_x + int(math.cos(angle) * 132)
+            label_y = center_y + int(math.sin(angle) * 132)
+            draw.text((label_x, label_y), str(number), font=_art_font(10, bold=True), fill=(255, 250, 237), anchor="mm")
+        draw.ellipse((center_x - 77, center_y - 77, center_x + 77, center_y + 77), fill=(11, 18, 23), outline=accent, width=4)
+        number_text = result if result is not None and str(result).isdigit() else "?"
+        result_fill = (72, 183, 121) if number_text == "0" else (244, 238, 220)
+        draw.text((center_x, center_y - 5), number_text, font=_art_font(57, bold=True), fill=result_fill, anchor="mm")
+        draw.text((center_x, center_y + 46), "RESULT", font=_art_font(13, bold=True), fill=accent, anchor="mm")
+
+        draw.rounded_rectangle((920, 72, 1140, 354), radius=22, fill=(18, 24, 32), outline=accent, width=3)
+        draw.text((1030, 112), "YOUR NUMBER", font=_art_font(15, bold=True), fill=(177, 192, 193), anchor="mm")
+        pick_text = str(choice) if choice is not None and str(choice).isdigit() else "—"
+        draw.text((1030, 164), pick_text, font=_art_font(43, bold=True), fill=(248, 244, 233), anchor="mm")
+        draw.line((946, 199, 1114, 199), fill=(73, 93, 92), width=2)
+        if won is not None:
+            badge = (48, 166, 112) if won else (170, 48, 58)
+            draw.rounded_rectangle((944, 231, 1116, 287), radius=15, fill=badge)
+            draw.text((1030, 259), "WIN" if won else "NO WIN", font=_art_font(21, bold=True), fill=(255, 255, 248), anchor="mm")
+        else:
+            draw.text((1030, 258), "0 — 36", font=_art_font(19, bold=True), fill=accent, anchor="mm")
+        draw.text((74, 204), "EUROPEAN", font=_art_font(18, bold=True), fill=(237, 233, 224))
+        draw.text((74, 235), "SINGLE ZERO", font=_art_font(18, bold=True), fill=(237, 233, 224))
+        draw.text((74, 266), "37 NUMBERS", font=_art_font(18, bold=True), fill=(237, 233, 224))
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
+
 def has_active_solo_session(user_id: int) -> bool:
     """Whether this member already has an open solo-game session."""
     current = _ACTIVE_SESSIONS.get(int(user_id))
@@ -465,15 +575,20 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         self.game_id = None
         self.done = False
         self.resolving = False
-        self._art_filename = f"{game_type}.png" if game_type in {"coinflip", "dice", "slots"} else None
-        self._art_bytes = (
-            _render_solo_game_art(game_type) if self._art_filename is not None else None
-        )
+        art_types = {"coinflip", "dice", "slots", "plinko", "number_roulette"}
+        self._art_filename = f"{game_type}.png" if game_type in art_types else None
+        if game_type in {"plinko", "number_roulette"}:
+            self._art_bytes = _render_advanced_instant_art(game_type)
+        else:
+            self._art_bytes = _render_solo_game_art(game_type) if self._art_filename is not None else None
         self._panel_text = TextDisplay(self._waiting_content())
         self._buttons = {}
 
         choice_buttons = []
+        number_selects = []
         for choice, metadata in self.choices.items():
+            if self.game_type == "number_roulette":
+                continue
             button = discord.ui.Button(
                 label=metadata["label"],
                 emoji=metadata.get("emoji"),
@@ -483,6 +598,31 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             button.callback = partial(self.choose, side=choice)
             self._buttons[choice] = button
             choice_buttons.append(button)
+
+        if self.game_type == "number_roulette":
+            for lower, upper, placeholder in (
+                (0, 18, "اختر رقمًا من 0 إلى 18"),
+                (19, 36, "اختر رقمًا من 19 إلى 36"),
+            ):
+                options = [
+                    discord.SelectOption(
+                        label=self.choices[str(number)]["label"],
+                        value=str(number),
+                    )
+                    for number in range(lower, upper + 1)
+                ]
+                selector = discord.ui.Select(
+                    placeholder=placeholder,
+                    min_values=1,
+                    max_values=1,
+                    options=options,
+                    custom_id=f"number_roulette_{lower}_{upper}",
+                )
+                async def choose_number(interaction, current_selector=selector):
+                    await self.choose(interaction, side=current_selector.values[0])
+                selector.callback = choose_number
+                self._buttons[f"numbers_{lower}_{upper}"] = selector
+                number_selects.append(selector)
 
         cancel = discord.ui.Button(
             label="إلغاء",
@@ -504,7 +644,10 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 )
             )
         elements.append(Separator())
-        if len(choice_buttons) <= 2:
+        if self.game_type == "number_roulette":
+            elements.append(ActionRow(number_selects[0]))
+            elements.append(ActionRow(number_selects[1], cancel))
+        elif len(choice_buttons) <= 2:
             elements.append(ActionRow(*choice_buttons, cancel))
         else:
             split = (len(choice_buttons) + 1) // 2
@@ -556,12 +699,20 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if self._art_filename is None:
             return
         won = outcome == "win"
-        self._art_bytes = _render_solo_game_art(
-            self.game_type,
-            choice=choice if self.game_type in {"coinflip", "dice"} else None,
-            result=result,
-            won=won,
-        )
+        if self.game_type in {"plinko", "number_roulette"}:
+            self._art_bytes = _render_advanced_instant_art(
+                self.game_type,
+                choice=choice,
+                result=result,
+                won=won,
+            )
+        else:
+            self._art_bytes = _render_solo_game_art(
+                self.game_type,
+                choice=choice if self.game_type in {"coinflip", "dice"} else None,
+                result=result,
+                won=won,
+            )
 
     def _disable_buttons(self) -> None:
         for button in self._buttons.values():
@@ -783,6 +934,12 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         result_side = str(result.get("result", ""))
         choice_label = self.choices.get(choice, {}).get("label", choice)
         result_label = self.choices.get(result_side, {}).get("label", result_side)
+        if self.game_type == "plinko" and result_side.startswith("slot="):
+            try:
+                parts = dict(part.split("=", 1) for part in result_side.split(";") if "=" in part)
+                result_label = f"الخانة {int(parts['slot']) + 1} · {parts.get('multiplier', '0x')}"
+            except (KeyError, ValueError):
+                result_label = "تم إسقاط الكرة"
         balance_after = result.get("balance_after")
         balance_line = (
             f"\n**رصيدك:** {int(balance_after):,} {COIN}"
