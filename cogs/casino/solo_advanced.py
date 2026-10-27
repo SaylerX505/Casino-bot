@@ -716,44 +716,50 @@ class MinesView(InteractiveSoloWagerView):
                 await self._edit()
 
     async def cashout(self, interaction):
-        if not self.revealed:
-            await self._begin_settlement(
-                interaction,
-                force_refund=True,
-                display_result="انسحبت قبل فتح أي خانة؛ تم إرجاع الرهان بالكامل.",
-            )
-            return
-        multiplier = _mines_multiplier(self.mines_count, len(self.revealed))
-        payout = max(self.amount, int(self.amount * multiplier))
-        outcome = "push" if payout <= self.amount else "win"
-        await self._begin_settlement(
-            interaction,
-            result=f"cashout:{len(self.revealed)};multiplier={multiplier:.2f}x",
-            display_result=(
-                f"سحبت بعد فتح **{len(self.revealed)}** خانات آمنة عند **{multiplier:.2f}x**."
-            ),
-            won=outcome == "win",
-            payout=payout if outcome == "win" else 0,
-            outcome=outcome,
-        )
-
-    async def _on_timeout(self):
-        if self.revealed:
+        async with self._state_lock:
+            if self.done or self.resolving:
+                return
+            if not self.revealed:
+                await self._begin_settlement(
+                    interaction,
+                    force_refund=True,
+                    display_result="انسحبت قبل فتح أي خانة؛ تم إرجاع الرهان بالكامل.",
+                )
+                return
             multiplier = _mines_multiplier(self.mines_count, len(self.revealed))
             payout = max(self.amount, int(self.amount * multiplier))
             outcome = "push" if payout <= self.amount else "win"
             await self._begin_settlement(
-                result=f"timeout_cashout:{len(self.revealed)};multiplier={multiplier:.2f}x",
-                display_result=f"انتهى الوقت؛ تم السحب تلقائيًا عند **{multiplier:.2f}x**.",
+                interaction,
+                result=f"cashout:{len(self.revealed)};multiplier={multiplier:.2f}x",
+                display_result=(
+                    f"سحبت بعد فتح **{len(self.revealed)}** خانات آمنة عند **{multiplier:.2f}x**."
+                ),
                 won=outcome == "win",
                 payout=payout if outcome == "win" else 0,
                 outcome=outcome,
             )
-        else:
-            await self._begin_settlement(
-                force_refund=True,
-                display_result="انتهى الوقت قبل فتح أي خانة؛ تم إرجاع الرهان.",
-            )
+
+    async def _on_timeout(self):
+        async with self._state_lock:
+            if self.done or self.resolving:
+                return
+            if self.revealed:
+                multiplier = _mines_multiplier(self.mines_count, len(self.revealed))
+                payout = max(self.amount, int(self.amount * multiplier))
+                outcome = "push" if payout <= self.amount else "win"
+                await self._begin_settlement(
+                    result=f"timeout_cashout:{len(self.revealed)};multiplier={multiplier:.2f}x",
+                    display_result=f"انتهى الوقت؛ تم السحب تلقائيًا عند **{multiplier:.2f}x**.",
+                    won=outcome == "win",
+                    payout=payout if outcome == "win" else 0,
+                    outcome=outcome,
+                )
+            else:
+                await self._begin_settlement(
+                    force_refund=True,
+                    display_result="انتهى الوقت قبل فتح أي خانة؛ تم إرجاع الرهان.",
+                )
 
 
 class CrashView(InteractiveSoloWagerView):
@@ -901,29 +907,32 @@ class CrashView(InteractiveSoloWagerView):
             )
 
     async def _on_timeout(self):
-        current = self._current_multiplier()
-        if self.started_at is not None and current >= self.crash_point:
-            self.result_multiplier = self.crash_point
-            self._pending_resolution = {"display_multiplier": self.crash_point}
+        async with self._state_lock:
+            if self.done or self.resolving:
+                return
+            current = self._current_multiplier()
+            if self.started_at is not None and current >= self.crash_point:
+                self.result_multiplier = self.crash_point
+                self._pending_resolution = {"display_multiplier": self.crash_point}
+                await self._begin_settlement(
+                    result=f"crash:{self.crash_point:.2f}x",
+                    display_result=f"الانهيار حصل عند **{self.crash_point:.2f}x** قبل السحب.",
+                    won=False,
+                    payout=0,
+                    outcome="loss",
+                )
+                return
+            payout = max(self.amount, int(self.amount * current))
+            outcome = "push" if payout <= self.amount else "win"
+            self.result_multiplier = current
+            self._pending_resolution = {"display_multiplier": current}
             await self._begin_settlement(
-                result=f"crash:{self.crash_point:.2f}x",
-                display_result=f"الانهيار حصل عند **{self.crash_point:.2f}x** قبل السحب.",
-                won=False,
-                payout=0,
-                outcome="loss",
+                result=f"timeout_cashout:{current:.2f}x",
+                display_result=f"انتهى الوقت؛ تم السحب تلقائيًا عند **{current:.2f}x**.",
+                won=outcome == "win",
+                payout=payout if outcome == "win" else 0,
+                outcome=outcome,
             )
-            return
-        payout = max(self.amount, int(self.amount * current))
-        outcome = "push" if payout <= self.amount else "win"
-        self.result_multiplier = current
-        self._pending_resolution = {"display_multiplier": current}
-        await self._begin_settlement(
-            result=f"timeout_cashout:{current:.2f}x",
-            display_result=f"انتهى الوقت؛ تم السحب تلقائيًا عند **{current:.2f}x**.",
-            won=outcome == "win",
-            payout=payout if outcome == "win" else 0,
-            outcome=outcome,
-        )
 
 
 class HiLoView(InteractiveSoloWagerView):
@@ -1082,19 +1091,22 @@ class HiLoView(InteractiveSoloWagerView):
             )
 
     async def _on_timeout(self):
-        payout = max(self.amount, int(self.amount * self.multiplier))
-        outcome = "push" if self.streak == 0 or payout <= self.amount else "win"
-        await self._begin_settlement(
-            result=f"timeout_cashout:{self.streak};multiplier={self.multiplier:.2f}x",
-            display_result=(
-                "انتهى الوقت قبل التخمين؛ تم استرداد الرهان."
-                if self.streak == 0
-                else f"انتهى الوقت؛ تم السحب تلقائيًا عند **{self.multiplier:.2f}x**."
-            ),
-            won=outcome == "win",
-            payout=payout if outcome == "win" else 0,
-            outcome=outcome,
-        )
+        async with self._state_lock:
+            if self.done or self.resolving:
+                return
+            payout = max(self.amount, int(self.amount * self.multiplier))
+            outcome = "push" if self.streak == 0 or payout <= self.amount else "win"
+            await self._begin_settlement(
+                result=f"timeout_cashout:{self.streak};multiplier={self.multiplier:.2f}x",
+                display_result=(
+                    "انتهى الوقت قبل التخمين؛ تم استرداد الرهان."
+                    if self.streak == 0
+                    else f"انتهى الوقت؛ تم السحب تلقائيًا عند **{self.multiplier:.2f}x**."
+                ),
+                won=outcome == "win",
+                payout=payout if outcome == "win" else 0,
+                outcome=outcome,
+            )
 
 
 PLINKO_WEIGHTS = (1, 8, 28, 56, 70, 56, 28, 8, 1)
