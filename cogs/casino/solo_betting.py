@@ -587,6 +587,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             self._art_bytes = _render_solo_game_art(game_type) if self._art_filename is not None else None
         self._panel_text = TextDisplay(self._waiting_content())
         self._buttons = {}
+        self.selected_number: str | None = None
+        self.confirm_button = None
 
         choice_buttons = []
         number_selects = []
@@ -622,11 +624,24 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                     options=options,
                     custom_id=f"number_roulette_{lower}_{upper}",
                 )
-                async def choose_number(interaction, current_selector=selector):
-                    await self.choose(interaction, side=current_selector.values[0])
-                selector.callback = choose_number
+                async def select_number(interaction, current_selector=selector):
+                    await self.select_roulette_number(
+                        interaction,
+                        current_selector.values[0],
+                    )
+                selector.callback = select_number
                 self._buttons[f"numbers_{lower}_{upper}"] = selector
                 number_selects.append(selector)
+
+            self.confirm_button = discord.ui.Button(
+                label="تأكيد الرقم",
+                emoji="🎯",
+                style=discord.ButtonStyle.secondary,
+                custom_id="number_roulette_confirm",
+                disabled=True,
+            )
+            self.confirm_button.callback = self.confirm_roulette_number
+            self._buttons["confirm"] = self.confirm_button
 
         cancel = discord.ui.Button(
             label="إلغاء",
@@ -651,7 +666,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if self.game_type == "number_roulette":
             elements.append(ActionRow(number_selects[0]))
             elements.append(ActionRow(number_selects[1]))
-            elements.append(ActionRow(cancel))
+            elements.append(ActionRow(self.confirm_button, cancel))
         elif len(choice_buttons) <= 2:
             elements.append(ActionRow(*choice_buttons, cancel))
         else:
@@ -758,6 +773,54 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             )
             return False
         return True
+
+    async def select_roulette_number(
+        self,
+        interaction: discord.Interaction,
+        number: str,
+    ) -> None:
+        if self.done or self.resolving:
+            return await interaction.response.send_message(
+                view=StatusPanel("الجولة اتقفلت", "تم إغلاق اختيار الرقم بالفعل.", "warning"),
+                ephemeral=True,
+            )
+        if interaction.user.id != self.requester.id:
+            return await interaction.response.send_message(
+                view=StatusPanel("الاختيار مش متاح", "الروليت دي خاصة بالشخص اللي بدأها.", "warning"),
+                ephemeral=True,
+            )
+        if not number.isascii() or not number.isdigit() or not 0 <= int(number) <= 36:
+            return await interaction.response.send_message(
+                view=StatusPanel("رقم غير صالح", "اختار رقمًا من 0 إلى 36 من القائمة.", "warning"),
+                ephemeral=True,
+            )
+
+        self.selected_number = number
+        self.confirm_button.disabled = False
+        self._panel_text.content = (
+            self._waiting_content()
+            + f"\n**الرقم المختار:** {number}"
+            + "\nاضغط **تأكيد الرقم** لتثبيت الرهان، أو غيّر اختيارك قبل التأكيد."
+        )
+        try:
+            await interaction.response.edit_message(view=self)
+        except asyncio.CancelledError:
+            raise
+        except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+            logger.warning(
+                "Could not publish selected roulette number game_id=%s",
+                self.game_id,
+                exc_info=True,
+            )
+            await self._edit_message()
+
+    async def confirm_roulette_number(self, interaction: discord.Interaction) -> None:
+        if self.selected_number is None:
+            return await interaction.response.send_message(
+                view=StatusPanel("اختار رقم الأول", "حدد رقمًا من 0 إلى 36 قبل تأكيد الرهان.", "warning"),
+                ephemeral=True,
+            )
+        await self.choose(interaction, side=self.selected_number)
 
     async def choose(self, interaction: discord.Interaction, side: str) -> None:
         if self.done or self.resolving:
@@ -957,7 +1020,16 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             else ""
         )
         outcome = result.get("outcome", "loss")
-        self._update_result_art(choice, result_side, outcome)
+        try:
+            self._update_result_art(choice, result_side, outcome)
+        except Exception:
+            # The wallet has already been settled; artwork must never keep the
+            # member's session locked or prevent the textual receipt from publishing.
+            logger.exception(
+                "Could not render settled solo wager artwork game_id=%s game_type=%s",
+                self.game_id,
+                self.game_type,
+            )
 
         if result.get("status") == "refunded":
             if result.get("outcome") == "balance_limit":
