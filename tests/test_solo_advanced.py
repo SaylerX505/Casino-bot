@@ -89,6 +89,13 @@ class SoloAdvancedGameTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(GAME_COMMAND_ALIASES[command], key)
 
+    def test_european_roulette_wheel_uses_valid_single_zero_order(self):
+        order = solo_betting._EUROPEAN_ROULETTE_ORDER
+        self.assertEqual(len(order), 37)
+        self.assertEqual(set(order), set(range(37)))
+        self.assertEqual(order[:5], (0, 32, 15, 19, 4))
+        self.assertEqual(order.count(0), 1)
+
     def test_game_art_generates_png_for_each_new_game(self):
         for game_type in ("mines", "crash", "hilo"):
             with self.subTest(game_type=game_type):
@@ -145,6 +152,20 @@ class NumberRouletteConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.view.selected_number)
         self.assertTrue(self.view.confirm_button.disabled)
         self.interaction.response.send_message.assert_awaited_once()
+
+    async def test_refund_result_does_not_render_as_a_loss(self):
+        with patch(
+            "cogs.casino.solo_betting._render_advanced_instant_art",
+            return_value=b"refunded-art",
+        ) as render:
+            self.view._update_result_art("17", "5", "refund")
+
+        render.assert_called_once_with(
+            "number_roulette",
+            choice="17",
+            result="5",
+            won=None,
+        )
 
 
 class _TestInteractiveWagerView(solo_advanced.InteractiveSoloWagerView):
