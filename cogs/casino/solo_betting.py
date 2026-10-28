@@ -40,6 +40,13 @@ _SOLO_GAME_ACCENTS = {
     "dice": THEME["teal"],
     "slots": THEME["red_dark"],
 }
+_EUROPEAN_ROULETTE_ORDER = (
+    0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10,
+    5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
+)
+_EUROPEAN_ROULETTE_RED_NUMBERS = frozenset(
+    {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
+)
 _RECOVERY_DELAYS_SECONDS = (2, 5, 15, 30, 60)
 _RECOVERY_TASKS: dict[str, asyncio.Task] = {}
 _ACTIVE_SESSIONS: dict[int, discord.ui.View] = {}
@@ -348,13 +355,24 @@ def _render_advanced_instant_art(
             draw.rounded_rectangle((61, 306, 308, 357), radius=15, fill=badge)
             draw.text((184, 331), "WIN" if won else "NO WIN", font=_art_font(22, bold=True), fill=(255, 255, 248), anchor="mm")
     else:
-        red_numbers = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
         center_x, center_y, radius = 696, 214, 161
+        result_number = None
+        if result is not None and str(result).isascii() and str(result).isdigit():
+            parsed_result = int(result)
+            if 0 <= parsed_result <= 36:
+                result_number = parsed_result
         draw.ellipse((center_x - radius - 8, center_y - radius - 8, center_x + radius + 8, center_y + radius + 8), fill=(24, 36, 33), outline=accent, width=4)
-        for number in range(37):
-            start = -90 + number * (360 / 37)
-            end = -90 + (number + 1) * (360 / 37)
-            fill = (35, 133, 87) if number == 0 else (168, 43, 52) if number in red_numbers else (21, 25, 32)
+        for slot_index, number in enumerate(_EUROPEAN_ROULETTE_ORDER):
+            start = -90 + slot_index * (360 / 37)
+            end = -90 + (slot_index + 1) * (360 / 37)
+            if number == result_number:
+                fill = (184, 133, 48)
+            elif number == 0:
+                fill = (35, 133, 87)
+            elif number in _EUROPEAN_ROULETTE_RED_NUMBERS:
+                fill = (168, 43, 52)
+            else:
+                fill = (21, 25, 32)
             draw.pieslice((center_x - radius, center_y - radius, center_x + radius, center_y + radius), start=start, end=end, fill=fill, outline=(227, 224, 210), width=1)
             angle = math.radians((start + end) / 2)
             label_x = center_x + int(math.cos(angle) * 132)
@@ -723,7 +741,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
     def _update_result_art(self, choice: str, result: str, outcome: str) -> None:
         if self._art_filename is None:
             return
-        won = outcome == "win"
+        won = None if outcome in {"refund", "balance_limit"} else outcome == "win"
         if self.game_type in {"plinko", "number_roulette"}:
             self._art_bytes = _render_advanced_instant_art(
                 self.game_type,
@@ -1020,8 +1038,9 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             else ""
         )
         outcome = result.get("outcome", "loss")
+        art_outcome = "refund" if result.get("status") == "refunded" else outcome
         try:
-            self._update_result_art(choice, result_side, outcome)
+            self._update_result_art(choice, result_side, art_outcome)
         except Exception:
             # The wallet has already been settled; artwork must never keep the
             # member's session locked or prevent the textual receipt from publishing.
