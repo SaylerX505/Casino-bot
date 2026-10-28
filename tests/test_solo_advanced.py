@@ -29,6 +29,15 @@ class SoloAdvancedGameTests(unittest.TestCase):
             self.assertLessEqual(point, solo_advanced.CRASH_MAX_MULTIPLIER)
             self.assertEqual(round(point, 2), point)
 
+    def test_crash_point_clamps_instant_crash_and_maximum(self):
+        with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=0):
+            self.assertEqual(solo_advanced._crash_point(), 1.0)
+        with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=999_999):
+            self.assertEqual(
+                solo_advanced._crash_point(),
+                solo_advanced.CRASH_MAX_MULTIPLIER,
+            )
+
     def test_plinko_extreme_bin_has_three_times_gross_return(self):
         with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=0):
             result, won, payout = solo_advanced._plinko_drop("drop", 100)
