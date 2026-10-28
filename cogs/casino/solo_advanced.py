@@ -408,8 +408,8 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             raise
 
         channel_id = getattr(getattr(self.context, "channel", None), "id", None)
-        try:
-            receipt = await asyncio.to_thread(
+        creation_task = asyncio.create_task(
+            asyncio.to_thread(
                 bank.create_casino_wager,
                 self.game_id,
                 self.requester.id,
@@ -422,22 +422,31 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
                 channel_id=int(channel_id) if channel_id else None,
                 message_id=int(self.message.id),
             )
+        )
+        try:
+            receipt = await asyncio.shield(creation_task)
         except asyncio.CancelledError:
-            self.resolving = True
-            self._pending_resolution = {"force_refund": True}
-            self._set_controls_enabled(False)
-            self._refresh()
-            await self._edit()
-            self._settlement_task = asyncio.create_task(self._settlement_worker(force_refund=True))
+            self._prepare_refund(
+                "تم إيقاف التأكيد أثناء إنشاء الرهان؛ بنتحقق من العملية ثم نرجع المبلغ لو اتحجز."
+            )
+            try:
+                await self._edit()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Could not publish wager-creation cancellation game_id=%s",
+                    self.game_id,
+                )
+            self._settlement_task = asyncio.create_task(
+                self._settle_after_creation(creation_task)
+            )
             raise
         except Exception:
             logger.exception("Could not confirm interactive wager creation game_id=%s", self.game_id)
-            self.resolving = True
-            self._pending_resolution = {"force_refund": True}
-            self._set_controls_enabled(False)
-            self._refresh()
-            await self._edit()
-            self._settlement_task = asyncio.create_task(self._settlement_worker(force_refund=True))
+            await self._queue_refund(
+                "تعذر تأكيد إنشاء الرهان؛ بنتحقق من تسجيله ونرجعه لو اتحجز."
+            )
             return False
 
         if not receipt.get("created"):
@@ -565,6 +574,27 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             logger.exception("Could not publish terminal wager state game_id=%s", self.game_id)
         finally:
             self._schedule_settlement_worker()
+
+    async def _settle_after_creation(self, creation_task):
+        """Wait for a cancelled database creation to finish before reconciling its stake."""
+        try:
+            try:
+                await asyncio.shield(creation_task)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Interactive wager creation failed after cancellation game_id=%s",
+                    self.game_id,
+                )
+            await self._settlement_worker(force_refund=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Could not reconcile cancelled wager creation game_id=%s",
+                self.game_id,
+            )
 
     async def _settlement_worker(
         self,
