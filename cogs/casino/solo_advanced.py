@@ -429,6 +429,9 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             self._prepare_refund(
                 "تم إيقاف التأكيد أثناء إنشاء الرهان؛ بنتحقق من العملية ثم نرجع المبلغ لو اتحجز."
             )
+            self._settlement_task = asyncio.create_task(
+                self._settle_after_creation(creation_task)
+            )
             try:
                 await self._edit()
             except asyncio.CancelledError:
@@ -438,9 +441,6 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
                     "Could not publish wager-creation cancellation game_id=%s",
                     self.game_id,
                 )
-            self._settlement_task = asyncio.create_task(
-                self._settle_after_creation(creation_task)
-            )
             raise
         except Exception:
             logger.exception("Could not confirm interactive wager creation game_id=%s", self.game_id)
