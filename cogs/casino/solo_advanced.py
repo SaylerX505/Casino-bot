@@ -725,7 +725,7 @@ class MinesView(InteractiveSoloWagerView):
     def _render_art(self):
         show_mines = (
             self.receipt is not None
-            and self.receipt.get("outcome") in {"loss", "win"}
+            and self.receipt.get("outcome") in {"loss", "win", "push"}
             and self.receipt.get("status") != "refunded"
         )
         actual_result = show_mines
@@ -754,7 +754,7 @@ class MinesView(InteractiveSoloWagerView):
 
     def _on_finished(self, receipt):
         reveal_board = (
-            receipt.get("outcome") in {"loss", "win"}
+            receipt.get("outcome") in {"loss", "win", "push"}
             and receipt.get("status") != "refunded"
         )
         for index, button in self.tile_buttons.items():
