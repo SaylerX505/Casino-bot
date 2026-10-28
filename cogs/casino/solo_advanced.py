@@ -176,7 +176,12 @@ def _render_live_art(
             y = bottom_y - int((bottom_y - top_y) * min(0.94, (x_ratio ** 1.7) * y_progress))
             line_points.append((x, y))
         line_points.append((left + int((right - left) * x_progress), bottom_y - int((bottom_y - top_y) * y_progress)))
-        draw.line(line_points, fill=accent if not final or won else (247, 100, 103), width=5, joint="curve")
+        draw.line(
+            line_points,
+            fill=accent if not final or won is not False else (247, 100, 103),
+            width=5,
+            joint="curve",
+        )
         dot_x = left + int((right - left) * x_progress)
         dot_y = bottom_y - int((bottom_y - top_y) * y_progress)
         draw.ellipse((dot_x - 8, dot_y - 8, dot_x + 8, dot_y + 8), fill=(255, 244, 221), outline=accent, width=3)
@@ -186,6 +191,10 @@ def _render_live_art(
         draw.line((951, 211, 1114, 211), fill=(68, 78, 86), width=2)
         if final and crash_point is not None:
             draw.text((1032, 251), f"CRASH {crash_point:.2f}x", font=_art_font(16, bold=True), fill=(249, 132, 117), anchor="mm")
+        elif final and won is True:
+            draw.text((1032, 251), "CASHED OUT", font=_art_font(15, bold=True), fill=accent, anchor="mm")
+        elif final:
+            draw.text((1032, 251), "ROUND CLOSED", font=_art_font(13, bold=True), fill=accent, anchor="mm")
         else:
             draw.text((1032, 251), "CASH OUT IN TIME", font=_art_font(12, bold=True), fill=accent, anchor="mm")
         draw.text((64, 192), "WATCH IT", font=_art_font(19, bold=True), fill=(237, 233, 224))
@@ -898,19 +907,20 @@ class CrashView(InteractiveSoloWagerView):
     def _render_art(self):
         current = self._current_multiplier()
         final = self.receipt is not None
-        actual_result = (
-            final
-            and self.receipt.get("status") != "refunded"
-            and self.receipt.get("outcome") in {"loss", "win", "push"}
+        outcome = (
+            self.receipt.get("outcome")
+            if final and self.receipt.get("status") != "refunded"
+            else None
         )
-        shown_crash = self.crash_point if actual_result else None
+        crashed = outcome == "loss"
+        shown_crash = self.crash_point if crashed else None
         return _render_live_art(
             "crash",
             multiplier=self.result_multiplier if final and self.result_multiplier is not None else current,
             elapsed=max(0.0, time.monotonic() - self.started_at) if self.started_at is not None else 0.0,
             crash_point=shown_crash,
             final=final,
-            won=self.receipt.get("outcome") == "win" if actual_result else None,
+            won=True if outcome == "win" else False if crashed else None,
         )
 
     def _content(self):
@@ -1079,10 +1089,10 @@ class HiLoView(InteractiveSoloWagerView):
         self._build([ActionRow(*self._controls)])
 
     def _render_art(self):
-        actual_result = (
-            self.receipt is not None
-            and self.receipt.get("status") != "refunded"
-            and self.receipt.get("outcome") in {"loss", "win", "push"}
+        outcome = (
+            self.receipt.get("outcome")
+            if self.receipt is not None and self.receipt.get("status") != "refunded"
+            else None
         )
         return _render_live_art(
             "hilo",
@@ -1090,7 +1100,7 @@ class HiLoView(InteractiveSoloWagerView):
             previous_rank=self.previous_rank if self.receipt is not None else None,
             multiplier=self.multiplier,
             final=self.receipt is not None,
-            won=self.receipt.get("outcome") == "win" if actual_result else None,
+            won=True if outcome == "win" else False if outcome == "loss" else None,
         )
 
     def _content(self):
