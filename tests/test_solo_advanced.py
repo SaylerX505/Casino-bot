@@ -168,6 +168,57 @@ class NumberRouletteConfirmationTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class FinalGameArtworkStateTests(unittest.TestCase):
+    def setUp(self):
+        context = SimpleNamespace(author=SimpleNamespace(id=778899))
+        self.crash = solo_advanced.CrashView(None, context, 100)
+        self.hilo = solo_advanced.HiLoView(None, context, 100)
+
+    def test_crash_cashout_does_not_render_a_false_crash_point(self):
+        self.crash.receipt = {
+            "status": "settled",
+            "outcome": "win",
+        }
+        self.crash.result_multiplier = 2.5
+        with patch(
+            "cogs.casino.solo_advanced._render_live_art",
+            return_value=b"png",
+        ) as render:
+            self.crash._render_art()
+
+        self.assertEqual(render.call_args.kwargs["crash_point"], None)
+        self.assertTrue(render.call_args.kwargs["final"])
+        self.assertIs(render.call_args.kwargs["won"], True)
+
+    def test_crash_refund_does_not_render_as_a_loss(self):
+        self.crash.receipt = {
+            "status": "refunded",
+            "outcome": "refund",
+        }
+        with patch(
+            "cogs.casino.solo_advanced._render_live_art",
+            return_value=b"png",
+        ) as render:
+            self.crash._render_art()
+
+        self.assertIsNone(render.call_args.kwargs["crash_point"])
+        self.assertIsNone(render.call_args.kwargs["won"])
+
+    def test_hilo_refund_does_not_render_as_a_loss(self):
+        self.hilo.receipt = {
+            "status": "refunded",
+            "outcome": "refund",
+        }
+        with patch(
+            "cogs.casino.solo_advanced._render_live_art",
+            return_value=b"png",
+        ) as render:
+            self.hilo._render_art()
+
+        self.assertTrue(render.call_args.kwargs["final"])
+        self.assertIsNone(render.call_args.kwargs["won"])
+
+
 class _TestInteractiveWagerView(solo_advanced.InteractiveSoloWagerView):
     def _render_art(self):
         return b"test-art"
