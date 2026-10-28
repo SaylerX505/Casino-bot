@@ -1,5 +1,7 @@
 """Regression tests for the new interactive and instant solo betting games."""
 
+import asyncio
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -255,6 +257,66 @@ class _TestInteractiveWagerView(solo_advanced.InteractiveSoloWagerView):
 
 
 class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cancelled_creation_waits_before_attempting_refund(self):
+        creation_started = threading.Event()
+        allow_creation_to_finish = threading.Event()
+
+        def slow_create(*args, **kwargs):
+            creation_started.set()
+            if not allow_creation_to_finish.wait(timeout=5):
+                raise TimeoutError("test creation was not released")
+            return {"created": True, "balance": 900}
+
+        message = SimpleNamespace(id=98765, edit=AsyncMock(return_value=None))
+        context = SimpleNamespace(
+            author=SimpleNamespace(id=12345),
+            channel=SimpleNamespace(id=54321),
+            send=AsyncMock(return_value=message),
+        )
+        view = _TestInteractiveWagerView(
+            None,
+            context,
+            100,
+            game_type="test",
+            game_title="Test",
+            accent=0x333333,
+        )
+        refund_receipt = {
+            "settled": True,
+            "already_settled": False,
+            "status": "refunded",
+            "outcome": "refund",
+            "payout": 0,
+            "balance_after": 1_000,
+            "result": "pending",
+        }
+
+        with (
+            patch.object(
+                solo_advanced.bank,
+                "create_casino_wager",
+                side_effect=slow_create,
+            ),
+            patch.object(
+                solo_advanced.bank,
+                "settle_casino_wager",
+                return_value=refund_receipt,
+            ) as settle,
+        ):
+            start_task = asyncio.create_task(view.start())
+            self.assertTrue(await asyncio.to_thread(creation_started.wait, 2))
+            start_task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await start_task
+
+            self.assertIsNotNone(view._settlement_task)
+            allow_creation_to_finish.set()
+            await asyncio.wait_for(view._settlement_task, timeout=3)
+
+        self.assertTrue(view.done)
+        settle.assert_called_once_with(view.game_id, force_refund=True)
+
+
     async def test_post_escrow_render_failure_requests_refund(self):
         message = SimpleNamespace(id=98765, edit=AsyncMock(return_value=None))
         context = SimpleNamespace(
