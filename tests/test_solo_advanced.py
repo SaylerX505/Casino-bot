@@ -1,7 +1,8 @@
 """Regression tests for the new interactive and instant solo betting games."""
 
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from cogs.casino import solo_advanced, solo_betting
 from cogs.casino.permissions import GAME_COMMAND_ALIASES, GAME_LABELS
@@ -97,6 +98,117 @@ class SoloAdvancedGameTests(unittest.TestCase):
             with self.subTest(game_type=game_type):
                 image = solo_betting._render_advanced_instant_art(game_type)
                 self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
+
+
+class NumberRouletteConfirmationTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.requester = SimpleNamespace(id=123456)
+        choices = {str(number): {"label": str(number), "emoji": None} for number in range(37)}
+        self.view = solo_betting.SoloWagerView(
+            None,
+            self.requester,
+            100,
+            game_type="number_roulette",
+            game_title="روليت الأرقام",
+            choices=choices,
+            payout_numerator=3600,
+            odds_description="1 من 37",
+            instructions="اختار رقمًا ثم أكّد.",
+            payout_description="36x إجمالي الصرف.",
+            context=None,
+        )
+        self.interaction = SimpleNamespace(
+            user=self.requester,
+            response=SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+
+    async def test_selecting_number_does_not_submit_wager_until_confirmed(self):
+        self.assertIsNone(self.view.selected_number)
+        self.assertTrue(self.view.confirm_button.disabled)
+
+        await self.view.select_roulette_number(self.interaction, "17")
+
+        self.assertEqual(self.view.selected_number, "17")
+        self.assertFalse(self.view.confirm_button.disabled)
+        self.interaction.response.edit_message.assert_awaited_once_with(view=self.view)
+
+        self.view.choose = AsyncMock()
+        await self.view.confirm_roulette_number(self.interaction)
+        self.view.choose.assert_awaited_once_with(self.interaction, side="17")
+
+    async def test_invalid_number_cannot_enable_confirmation(self):
+        await self.view.select_roulette_number(self.interaction, "37")
+
+        self.assertIsNone(self.view.selected_number)
+        self.assertTrue(self.view.confirm_button.disabled)
+        self.interaction.response.send_message.assert_awaited_once()
+
+
+class _TestInteractiveWagerView(solo_advanced.InteractiveSoloWagerView):
+    def _render_art(self):
+        return b"test-art"
+
+
+class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_post_escrow_render_failure_requests_refund(self):
+        message = SimpleNamespace(id=98765, edit=AsyncMock(return_value=None))
+        context = SimpleNamespace(
+            author=SimpleNamespace(id=12345),
+            channel=SimpleNamespace(id=54321),
+            send=AsyncMock(return_value=message),
+        )
+        view = _TestInteractiveWagerView(
+            None,
+            context,
+            100,
+            game_type="test",
+            game_title="Test",
+            accent=0x333333,
+        )
+        refresh = view._refresh
+        refresh_calls = 0
+
+        def fail_after_escrow_once():
+            nonlocal refresh_calls
+            refresh_calls += 1
+            if refresh_calls == 2:
+                raise RuntimeError("simulated artwork/render failure after escrow")
+            refresh()
+
+        view._refresh = fail_after_escrow_once
+        refund_receipt = {
+            "settled": True,
+            "already_settled": False,
+            "status": "refunded",
+            "outcome": "refund",
+            "payout": 0,
+            "balance_after": 1_000,
+            "result": "pending",
+        }
+
+        with (
+            patch.object(
+                solo_advanced.bank,
+                "create_casino_wager",
+                return_value={"created": True, "balance": 900},
+            ),
+            patch.object(
+                solo_advanced.bank,
+                "settle_casino_wager",
+                return_value=refund_receipt,
+            ) as settle,
+        ):
+            started = await view.start()
+            self.assertFalse(started)
+            self.assertIsNotNone(view._settlement_task)
+            await view._settlement_task
+
+        self.assertTrue(view.done)
+        settle.assert_called_once_with(view.game_id, force_refund=True)
+
 
 
 if __name__ == "__main__":
