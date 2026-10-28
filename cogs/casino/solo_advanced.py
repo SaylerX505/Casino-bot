@@ -449,17 +449,34 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             return False
 
         self._wager_created = True
-        self._set_controls_enabled(True)
-        self._refresh()
-        if not await self._edit():
-            self.resolving = True
-            self._pending_resolution = {"force_refund": True}
-            self._set_controls_enabled(False)
+        try:
+            self._set_controls_enabled(True)
             self._refresh()
-            self._settlement_task = asyncio.create_task(self._settlement_worker(force_refund=True))
+            if not await self._edit():
+                await self._queue_refund(
+                    "تعذر تحديث لوحة الجولة بعد حجز الرهان؛ جارٍ إرجاع المبلغ."
+                )
+                return False
+            await self._after_start()
+            return True
+        except asyncio.CancelledError:
+            if not self.done and not self.resolving:
+                self._prepare_refund(
+                    "تم إيقاف تشغيل الجولة أثناء البدء؛ جارٍ إرجاع الرهان."
+                )
+                self._schedule_settlement_worker()
+            raise
+        except Exception:
+            logger.exception(
+                "Interactive game startup failed after escrow game_id=%s game_type=%s",
+                self.game_id,
+                self.game_type,
+            )
+            if not self.done and not self.resolving:
+                await self._queue_refund(
+                    "حصل عطل أثناء تشغيل الجولة؛ تم طلب إرجاع الرهان بأمان."
+                )
             return False
-        await self._after_start()
-        return True
 
     async def _after_start(self):
         return None
@@ -627,7 +644,16 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             "قبل ما تبدأ جولة أخرى، ولو استمرت المشكلة ابعت للستاف."
         )
         self._set_controls_enabled(False)
-        self._refresh()
+        try:
+            self._refresh()
+        except Exception:
+            logger.exception(
+                "Could not render unrecorded wager closure game_id=%s",
+                self.game_id,
+            )
+            self._panel_text.content = (
+                f"# {self.game_title}\n{self.start_error_message}"
+            )
         try:
             await self._edit()
         finally:
@@ -765,7 +791,23 @@ class MinesView(InteractiveSoloWagerView):
             self._disable_tile(index)
             self.cashout_button.label = "سحب المكسب"
             self.cashout_button.emoji = "💰"
-            self._refresh()
+            try:
+                self._refresh()
+            except Exception:
+                logger.exception(
+                    "Could not render safe Mines reveal game_id=%s tile=%s",
+                    self.game_id,
+                    index + 1,
+                )
+                await self._begin_settlement(
+                    interaction,
+                    force_refund=True,
+                    display_result=(
+                        "حصل عطل في تحديث اللوحة؛ أوقفنا الجولة وهنرجع الرهان بدل "
+                        "ما نحتسب نتيجة غير مؤكدة."
+                    ),
+                )
+                return
             try:
                 await interaction.response.edit_message(view=self)
             except asyncio.CancelledError:
@@ -1115,7 +1157,22 @@ class HiLoView(InteractiveSoloWagerView):
                 return
 
             self._set_controls_enabled(True)
-            self._refresh()
+            try:
+                self._refresh()
+            except Exception:
+                logger.exception(
+                    "Could not render correct Hi-Lo guess game_id=%s",
+                    self.game_id,
+                )
+                await self._begin_settlement(
+                    interaction,
+                    force_refund=True,
+                    display_result=(
+                        "حصل عطل في تحديث الكارت؛ أوقفنا الجولة وهنرجع الرهان "
+                        "بدل ما نعرض نتيجة غير مؤكدة."
+                    ),
+                )
+                return
             try:
                 await interaction.response.edit_message(view=self)
             except asyncio.CancelledError:
