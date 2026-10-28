@@ -183,6 +183,27 @@ class FinalGameArtworkStateTests(unittest.TestCase):
         self.crash = solo_advanced.CrashView(None, context, 100)
         self.hilo = solo_advanced.HiLoView(None, context, 100)
 
+    def test_mines_push_still_reveals_terminal_board(self):
+        context = SimpleNamespace(author=SimpleNamespace(id=445566))
+        view = solo_advanced.MinesView(None, context, 100, 3)
+        view.receipt = {
+            "status": "settled",
+            "outcome": "push",
+        }
+
+        with patch(
+            "cogs.casino.solo_advanced._render_live_art",
+            return_value=b"png",
+        ) as render:
+            view._render_art()
+
+        self.assertTrue(render.call_args.kwargs["reveal_mines"])
+        view._on_finished(view.receipt)
+        mine_index = next(iter(view.mines))
+        self.assertEqual(str(view.tile_buttons[mine_index].emoji), "💣")
+        self.assertTrue(view.tile_buttons[mine_index].disabled)
+
+
     def test_crash_cashout_does_not_render_a_false_crash_point(self):
         self.crash.receipt = {
             "status": "settled",
