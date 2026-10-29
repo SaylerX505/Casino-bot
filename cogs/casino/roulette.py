@@ -29,6 +29,7 @@ from cogs.casino.game_registry import (
 from cogs.casino.roulette_art import generate_sniper_image
 from cogs.casino.roulette_views import KickView
 from cogs.utility.theme import (
+    add_developer_credit,
     private_status,
     THEME,
     StatusPanel,
@@ -257,7 +258,14 @@ class RouletteLobby(LayoutView):
     ) -> bool:
         """Send a separate receipt, falling back to the closed round board on failure."""
         try:
-            await self.ctx.send(view=StatusPanel(title, description, outcome))
+            await self.ctx.send(
+                view=StatusPanel(
+                    title,
+                    description,
+                    outcome,
+                    developer_credit=context.startswith("final_"),
+                )
+            )
             return True
         except Exception:
             logger.exception(
@@ -266,6 +274,8 @@ class RouletteLobby(LayoutView):
                 self.ctx.channel.id,
             )
             view._panel_text.content = f"# {title}\n{description}"
+            if context.startswith("final_"):
+                add_developer_credit(view)
             await try_edit_view(
                 message,
                 view,
