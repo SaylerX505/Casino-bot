@@ -1547,6 +1547,31 @@ class AdvancedSoloGames(commands.Cog):
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
+        try:
+            balance = await asyncio.to_thread(bank.get_balance, int(ctx.author.id))
+        except Exception:
+            logger.exception(
+                "Could not verify interactive solo balance user_id=%s game_type=%s",
+                ctx.author.id,
+                getattr(view_type, "__name__", "unknown"),
+            )
+            return await ctx.send(
+                view=StatusPanel(
+                    "تعذر التحقق من الرصيد",
+                    "حصل عطل أثناء قراءة رصيدك. مفيش رهان اتعمل؛ جرّب تاني بعد شوية.",
+                    "warning",
+                ),
+                **({"ephemeral": True} if ctx.interaction is not None else {}),
+            )
+        if balance < amount:
+            return await ctx.send(
+                view=StatusPanel(
+                    "رصيدك مش كفاية",
+                    f"رصيدك الحالي **{balance:,} {COIN}**، ومحتاج **{amount:,} {COIN}** لبدء الرهان. مفيش رصيد اتخصم.",
+                    "warning",
+                ),
+                **({"ephemeral": True} if ctx.interaction is not None else {}),
+            )
         view = view_type(solo, ctx, amount, *view_args)
         if not claim_solo_session(ctx.author.id, view):
             view.stop()
@@ -1573,7 +1598,7 @@ class AdvancedSoloGames(commands.Cog):
 
     @commands.hybrid_command(
         name="mines",
-        aliases=["الألغام", "الغام", "minesweeper"],
+        aliases=["الألغام", "الغام", "minesweeper", "mine"],
         description="ابدأ Mines، اكشف خانات آمنة واسحب قبل العثور على لغم",
     )
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -1600,7 +1625,7 @@ class AdvancedSoloGames(commands.Cog):
 
     @commands.hybrid_command(
         name="hilo",
-        aliases=["hi-lo", "highlow", "هاي_لو"],
+        aliases=["hi-lo", "highlow", "hilow", "هاي_لو"],
         description="خمّن الكارت التالي أعلى أم أقل واسحب مضاعفك في أي وقت",
     )
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -1636,7 +1661,7 @@ class AdvancedSoloGames(commands.Cog):
 
     @commands.hybrid_command(
         name="numberroulette",
-        aliases=["number-roulette", "روليت_الأرقام", "روليت_ارقام", "روليت_الارقام"],
+        aliases=["number-roulette", "nr", "روليت_الأرقام", "روليت_ارقام", "روليت_الارقام"],
         description="راهن على رقم من 0 إلى 36 في الروليت الأوروبية",
     )
     @commands.cooldown(1, 4, commands.BucketType.user)
