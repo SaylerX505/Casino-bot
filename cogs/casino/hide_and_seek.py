@@ -621,7 +621,7 @@ class HideAndSeek(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name='غميضه', description='بدء لعبة الغميضة')
+    @commands.hybrid_command(name="غميضه", aliases=["غميضة", "hide", "hide-and-seek"], description="بدء لعبة الغميضة")
     async def start_hide_seek(self, ctx):
         """يبدأ لعبة الغميضة في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
