@@ -11,6 +11,15 @@ class BetAmountValidationTests(unittest.TestCase):
         self.assertEqual(parse_bet_amount("1,000", max_bet=5000), 1000)
         self.assertEqual(parse_bet_amount("000100", max_bet=5000), 100)
 
+    def test_compact_k_m_and_b_suffixes_are_supported_safely(self):
+        self.assertEqual(parse_bet_amount("1k", max_bet=5000), 1000)
+        self.assertEqual(parse_bet_amount("2K", max_bet=5000), 2000)
+        self.assertEqual(parse_bet_amount("5,000", max_bet=5000), 5000)
+        self.assertEqual(parse_bet_amount("1m", max_bet=5000), 5001)
+        self.assertEqual(parse_bet_amount("1b", max_bet=5000), 5001)
+        self.assertEqual(parse_bet_amount("1.5k", max_bet=5000), 0)
+        self.assertEqual(parse_bet_amount("k", max_bet=5000), 0)
+
     def test_invalid_and_non_ascii_amounts_are_rejected(self):
         for value in ("", None, "abc", "-10", "1.5", "١٠٠", "10 coins"):
             with self.subTest(value=value):
