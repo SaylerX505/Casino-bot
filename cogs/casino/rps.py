@@ -19,6 +19,7 @@ from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
+    developer_credit_row,
     base_embed,
     embed_to_v2,
     get_currency,
@@ -234,6 +235,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         self.deadline = None
         self._deadline_task = None
         self.result_published = False
+        self._show_developer_credit = False
         self._panel_text = TextDisplay(self._embed_content(self.make_embed()))
         self._buttons = []
         self._render_view()
@@ -352,6 +354,8 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         components = [self._panel_text, Separator()]
         if self._buttons:
             components.append(ActionRow(*self._buttons))
+        if self._show_developer_credit:
+            components.extend([Separator(), developer_credit_row()])
         self.add_item(
             Container(
                 *components,
@@ -372,7 +376,8 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             parts.append(f"-# {embed.footer.text}")
         return "\n\n".join(parts)[:4000]
 
-    def _refresh_panel(self, embed=None):
+    def _refresh_panel(self, embed=None, *, developer_credit=False):
+        self._show_developer_credit = developer_credit
         embed = embed or self.make_embed()
         self._panel_text.content = self._embed_content(embed)
         color = getattr(embed, "color", None)
@@ -801,7 +806,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         deferred_private_ack = interaction is not None and interaction.response.is_done()
         # Build the complete result first. It stays available as a fallback until
         # Discord confirms the separate receipt was actually sent.
-        self._refresh_panel(embed)
+        self._refresh_panel(embed, developer_credit=True)
 
         board_already_updated = False
         try:
@@ -833,7 +838,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             if not self.result_published:
                 try:
                     await self.ctx.send(
-                        view=embed_to_v2(embed),
+                        view=embed_to_v2(embed, developer_credit=True),
                         allowed_mentions=discord.AllowedMentions.none(),
                     )
                     self.result_published = True
@@ -854,6 +859,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 color = getattr(embed, "color", None)
                 if color is not None:
                     self._panel_accent = color.value
+                self._show_developer_credit = False
                 self._render_view()
 
             # On a failed receipt send, keep/render the full result on the board;
