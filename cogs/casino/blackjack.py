@@ -894,7 +894,7 @@ class Blackjack(commands.Cog):
 
     @commands.hybrid_command(
         name="blackjack",
-        aliases=["bj", "بلجاك", "بلاكجاك"],
+        aliases=["bj", "black-jack", "بلجاك", "بلاكجاك"],
         description="العب Blackjack برهان من العملة الافتراضية",
     )
     @commands.cooldown(1, 4, commands.BucketType.user)
@@ -915,6 +915,30 @@ class Blackjack(commands.Cog):
                 view=StatusPanel(
                     "قيمة الرهان مش مناسبة",
                     f"استخدم {usage}. أقل رهان **{MIN_BET:,}** وأقصى رهان **{MAX_BET:,}** {COIN}.",
+                    "warning",
+                ),
+                **({"ephemeral": True} if ctx.interaction is not None else {}),
+            )
+        try:
+            balance = await asyncio.to_thread(bank.get_balance, int(ctx.author.id))
+        except Exception:
+            logger.exception(
+                "Could not verify blackjack balance requester_id=%s",
+                ctx.author.id,
+            )
+            return await ctx.send(
+                view=StatusPanel(
+                    "تعذر التحقق من الرصيد",
+                    "حصل عطل أثناء قراءة رصيدك. مفيش رهان اتعمل؛ جرّب تاني بعد شوية.",
+                    "warning",
+                ),
+                **({"ephemeral": True} if ctx.interaction is not None else {}),
+            )
+        if balance < amount:
+            return await ctx.send(
+                view=StatusPanel(
+                    "رصيدك مش كفاية",
+                    f"رصيدك الحالي **{balance:,} {COIN}**، ومحتاج **{amount:,} {COIN}** لبدء Blackjack. مفيش رصيد اتخصم.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
