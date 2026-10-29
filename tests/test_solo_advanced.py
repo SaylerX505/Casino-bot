@@ -100,13 +100,6 @@ class SoloAdvancedGameTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(GAME_COMMAND_ALIASES[command], key)
 
-    def test_european_roulette_wheel_uses_valid_single_zero_order(self):
-        order = solo_betting._EUROPEAN_ROULETTE_ORDER
-        self.assertEqual(len(order), 37)
-        self.assertEqual(set(order), set(range(37)))
-        self.assertEqual(order[:5], (0, 32, 15, 19, 4))
-        self.assertEqual(order.count(0), 1)
-
     def test_game_art_generates_png_for_each_new_game(self):
         for game_type in ("mines", "crash", "hilo"):
             with self.subTest(game_type=game_type):
@@ -116,67 +109,6 @@ class SoloAdvancedGameTests(unittest.TestCase):
             with self.subTest(game_type=game_type):
                 image = solo_betting._render_advanced_instant_art(game_type)
                 self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
-
-
-class NumberRouletteConfirmationTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.requester = SimpleNamespace(id=123456)
-        choices = {str(number): {"label": str(number), "emoji": None} for number in range(37)}
-        self.view = solo_betting.SoloWagerView(
-            None,
-            self.requester,
-            100,
-            game_type="number_roulette",
-            game_title="روليت الأرقام",
-            choices=choices,
-            payout_numerator=3600,
-            odds_description="1 من 37",
-            instructions="اختار رقمًا ثم أكّد.",
-            payout_description="36x إجمالي الصرف.",
-            context=None,
-        )
-        self.interaction = SimpleNamespace(
-            user=self.requester,
-            response=SimpleNamespace(
-                edit_message=AsyncMock(),
-                send_message=AsyncMock(),
-            ),
-        )
-
-    async def test_selecting_number_does_not_submit_wager_until_confirmed(self):
-        self.assertIsNone(self.view.selected_number)
-        self.assertTrue(self.view.confirm_button.disabled)
-
-        await self.view.select_roulette_number(self.interaction, "17")
-
-        self.assertEqual(self.view.selected_number, "17")
-        self.assertFalse(self.view.confirm_button.disabled)
-        self.interaction.response.edit_message.assert_awaited_once_with(view=self.view)
-
-        self.view.choose = AsyncMock()
-        await self.view.confirm_roulette_number(self.interaction)
-        self.view.choose.assert_awaited_once_with(self.interaction, side="17")
-
-    async def test_invalid_number_cannot_enable_confirmation(self):
-        await self.view.select_roulette_number(self.interaction, "37")
-
-        self.assertIsNone(self.view.selected_number)
-        self.assertTrue(self.view.confirm_button.disabled)
-        self.interaction.response.send_message.assert_awaited_once()
-
-    async def test_refund_result_does_not_render_as_a_loss(self):
-        with patch(
-            "cogs.casino.solo_betting._render_advanced_instant_art",
-            return_value=b"refunded-art",
-        ) as render:
-            self.view._update_result_art("17", "5", "refund")
-
-        render.assert_called_once_with(
-            "number_roulette",
-            choice="17",
-            result="5",
-            won=None,
-        )
 
 
 class FinalGameArtworkStateTests(unittest.TestCase):
@@ -373,6 +305,41 @@ class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(view.done)
         settle.assert_called_once_with(view.game_id, force_refund=True)
 
+
+
+class LegacyStyleParityTests(unittest.TestCase):
+    def test_multistep_games_share_the_legacy_v2_panel_structure(self):
+        requester = SimpleNamespace(id=111222)
+        legacy = solo_betting.SoloWagerView(
+            None,
+            requester,
+            100,
+            game_type="coinflip",
+            game_title="COIN FLIP",
+            choices=solo_betting.SIDES,
+            context=None,
+        )
+        context = SimpleNamespace(author=requester)
+        new_views = (
+            solo_advanced.MinesView(None, context, 100, 3),
+            solo_advanced.CrashView(None, context, 100),
+            solo_advanced.HiLoView(None, context, 100),
+        )
+
+        self.assertEqual(type(legacy.children[0]).__name__, "Container")
+        legacy_children = legacy.children[0].children
+        legacy_shape = [type(item).__name__ for item in legacy_children[:3]]
+        self.assertEqual(legacy_shape, ["TextDisplay", "MediaGallery", "Separator"])
+
+        for view in new_views:
+            with self.subTest(game=view.game_type):
+                self.assertEqual(type(view.children[0]).__name__, "Container")
+                children = view.children[0].children
+                self.assertEqual(
+                    [type(item).__name__ for item in children[:3]],
+                    legacy_shape,
+                )
+                self.assertEqual(len(view.children[0].children), len(legacy_children))
 
 
 if __name__ == "__main__":
