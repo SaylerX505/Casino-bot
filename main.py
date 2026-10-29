@@ -68,7 +68,7 @@ class HomeGuildCommandTree(app_commands.CommandTree):
 
 
 bot = commands.Bot(
-    command_prefix=config.PREFIX,
+    command_prefix=commands.when_mentioned_or(config.PREFIX),
     intents=intents,
     case_insensitive=True,
     owner_ids=config.OWNER_IDS,
