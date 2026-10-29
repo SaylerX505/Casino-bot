@@ -27,7 +27,7 @@ from cogs.casino.permissions import (
     configured_ai_role_ids,
     configured_log_channel_id,
     configured_manager_role_ids,
-    game_channel_setting_key,
+    games_channel_setting_key,
     has_admin_access,
     log_channel_setting_key,
     manager_role_setting_key,
@@ -101,21 +101,24 @@ def _can_manage_wizard(interaction: discord.Interaction) -> bool:
     return bool(role_ids.intersection(configured_manager_role_ids(guild_id)))
 
 
-def _channel_policy(guild_id: int, game_key: str) -> tuple[bool, list[int]]:
+def _games_channel_policy(guild_id: int) -> tuple[bool, int | None]:
+    """Read the one optional channel shared by every game in this guild."""
     try:
-        raw = bank.get_setting(game_channel_setting_key(guild_id, game_key), "all")
+        raw = bank.get_setting(games_channel_setting_key(guild_id), "all")
     except Exception:
-        logger.exception(
-            "Wizard failed to read channel policy guild=%s game=%s",
-            guild_id,
-            game_key,
-        )
-        return False, []
+        logger.exception("Wizard failed to read global game-channel policy guild=%s", guild_id)
+        return False, None
     if raw is None or str(raw).strip().lower() == "all":
-        return True, []
-    values = _parse_id_list(raw)
-    return (False, values or []) if values is not None else (False, [])
-
+        return True, None
+    try:
+        channel_id = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.error("Wizard found malformed global game-channel policy guild=%s", guild_id)
+        return False, None
+    if channel_id <= 0:
+        logger.error("Wizard found invalid global game-channel policy guild=%s", guild_id)
+        return False, None
+    return False, channel_id
 
 LOG_TYPE_LABELS = {
     "economy": "سجلات الاقتصاد",
@@ -222,22 +225,19 @@ class WizardHomeView(WizardLayout):
         super().__init__(guild, owner, notice=notice)
         roles = _configured_roles(guild.id)
         manager_roles = _configured_manager_roles(guild.id)
-        restricted = []
-        for key in GAME_ORDER:
-            unrestricted, allowed_channel_ids = _channel_policy(guild.id, key)
-            if unrestricted:
-                continue
-            if not allowed_channel_ids:
-                restricted.append(f"{GAME_LABELS[key]} (متوقفة)")
-            else:
-                restricted.append(GAME_LABELS[key])
+        unrestricted, games_channel_id = _games_channel_policy(guild.id)
         role_summary = ", ".join(f"<@&{role_id}>" for role_id in roles) or (
             "لا توجد رولات ستاف مخصصة؛ Administrator يقدر يشغل الألعاب."
         )
         manager_summary = ", ".join(f"<@&{role_id}>" for role_id in manager_roles) or (
             "المالك وAdministrator فقط."
         )
-        channel_summary = ", ".join(restricted) or "كل الألعاب مسموح بها في كل القنوات."
+        if unrestricted:
+            channel_summary = "كل الألعاب مسموح بها في كل القنوات."
+        elif games_channel_id is not None:
+            channel_summary = f"كل الألعاب مقيدة بالقناة <#{games_channel_id}>."
+        else:
+            channel_summary = "تعذر قراءة إعداد القنوات أو الإعداد غير صالح."
         text = (
             "# Çukur • إعداد البوت\n"
             "معالج إعداد خاص ومتدرج. كل تغيير بيتحفظ في قاعدة البيانات فور تأكيده، "
@@ -574,60 +574,42 @@ class StaffRoleWizardView(WizardLayout):
 
 
 class GameChannelWizardView(WizardLayout):
-    def __init__(self, guild, owner, *, selected_game="mafia", notice=None):
+    """Configure one optional channel shared by every game in the guild."""
+
+    def __init__(self, guild, owner, *, notice=None):
         super().__init__(guild, owner, notice=notice)
-        self.selected_game = selected_game if selected_game in GAME_LABELS else "mafia"
-        unrestricted, channel_ids = _channel_policy(guild.id, self.selected_game)
-        current = "كل القنوات" if unrestricted else (
-            ", ".join(f"<#{channel_id}>" for channel_id in channel_ids) or "لا توجد قنوات مسموحة"
-        )
-        options = [
-            discord.SelectOption(
-                label=GAME_LABELS[key],
-                value=key,
-                default=key == self.selected_game,
-            )
-            for key in GAME_ORDER
-        ]
-        self.game_select = Select(
-            placeholder="اختار اللعبة اللي هتظبط قنواتها",
-            options=options,
+        unrestricted, channel_id = _games_channel_policy(guild.id)
+        if unrestricted:
+            current = "كل القنوات (بدون تقييد)"
+        elif channel_id is not None:
+            current = f"<#{channel_id}>"
+        else:
+            current = "تعذر قراءة الإعداد الحالي"
+
+        self.channel_select = ChannelSelect(
+            placeholder="اختار القناة الوحيدة المسموح فيها بكل الألعاب",
+            channel_types=[discord.ChannelType.text, discord.ChannelType.news],
             min_values=1,
             max_values=1,
         )
-        self.game_select.callback = self.choose_game
-        self.channel_select = ChannelSelect(
-            placeholder="اختار القنوات المسموح فيها اللعبة دي",
-            channel_types=[discord.ChannelType.text, discord.ChannelType.news],
-            min_values=1,
-            max_values=25,
-        )
-        self.channel_select.callback = self.save_channels
+        self.channel_select.callback = self.save_channel
         self.add_item(
             Container(
                 TextDisplay(
-                    "# قنوات الألعاب\n"
-                    "حدد لعبة من القائمة، وبعدها اختار القنوات اللي مسموح تشغيلها فيها. "
-                    "إعداد كل لعبة مستقل عن الباقي.\n\n"
-                    f"**اللعبة الحالية:** {GAME_LABELS[self.selected_game]}\n"
-                    f"**السماح الحالي:** {current}\n\n"
-                    "حفظ اختيار قنوات جديد يقفل اللعبة على القنوات المختارة فقط. "
-                    "زر «كل القنوات» يلغي القيد للعبة المحددة."
+                    "# قناة الألعاب العامة\n"
+                    "الإعداد ده بيطبق على **كل الألعاب**، الفردية والجماعية. "
+                    "اختار قناة واحدة لو عايز تجمع الألعاب فيها، أو اختار «كل القنوات» لإلغاء التقييد.\n\n"
+                    f"**الإعداد الحالي:** {current}\n\n"
+                    "تغيير الإعداد بيتحفظ فورًا، ومش محتاج إعادة تشغيل."
                     + self._notice_text()
                 ),
                 Separator(),
-                ActionRow(self.game_select),
                 ActionRow(self.channel_select),
                 ActionRow(
                     self._button(
                         "كل القنوات",
-                        f"wizard_channels_all_{self.selected_game}",
+                        "wizard_channels_all",
                         self.allow_all_channels,
-                    ),
-                    self._button(
-                        "تعطيل اللعبة",
-                        f"wizard_channels_disable_{self.selected_game}",
-                        self.disable_game,
                     ),
                     self._button("رجوع", "wizard_channels_back", self.go_home),
                 ),
@@ -635,130 +617,94 @@ class GameChannelWizardView(WizardLayout):
             )
         )
 
-    async def choose_game(self, interaction: discord.Interaction):
+    async def save_channel(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        selected_game = self.game_select.values[0]
-        await self._edit_message(interaction,
-            view=GameChannelWizardView(
-                interaction.guild,
-                interaction.user,
-                selected_game=selected_game,
-            )
+        selected = next(
+            (
+                channel for channel in self.channel_select.values
+                if getattr(channel, "guild", None) is not None
+                and channel.guild.id == self.guild_id
+            ),
+            None,
         )
-
-    async def save_channels(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
-            return
-        channel_ids = sorted({
-            channel.id
-            for channel in self.channel_select.values
-            if getattr(channel, "guild", None) is not None
-            and channel.guild.id == self.guild_id
-        })
-        if not channel_ids:
+        if selected is None:
             return await interaction.response.send_message(
-                "اختار قناة واحدة على الأقل.",
+                "اختار قناة نصية من نفس السيرفر.",
                 ephemeral=True,
             )
+
+        bot_member = getattr(interaction.guild, "me", None)
+        if bot_member is not None:
+            permissions = selected.permissions_for(bot_member)
+            if not permissions.view_channel or not permissions.send_messages:
+                return await interaction.response.send_message(
+                    "البوت محتاج صلاحية عرض القناة وإرسال الرسائل فيها عشان الألعاب تشتغل.",
+                    ephemeral=True,
+                )
+
         try:
-            bank.set_setting(
-                game_channel_setting_key(self.guild_id, self.selected_game),
-                json.dumps(channel_ids),
-            )
+            bank.set_setting(games_channel_setting_key(self.guild_id), str(selected.id))
         except Exception:
             logger.exception(
-                "Failed to persist game channel policy guild=%s game=%s",
+                "Failed to persist global game channel guild=%s",
                 self.guild_id,
-                self.selected_game,
             )
             return await interaction.response.send_message(
-                "تعذر حفظ القنوات. مفيش تغيير اتأكد حفظه.",
+                "تعذر حفظ قناة الألعاب. مفيش تغيير اتأكد حفظه.",
                 ephemeral=True,
             )
+
         logger.info(
-            "Wizard updated game channels guild=%s game=%s actor=%s channel_count=%s",
+            "Wizard updated global game channel guild=%s actor=%s channel_id=%s",
             self.guild_id,
-            self.selected_game,
             interaction.user.id,
-            len(channel_ids),
+            selected.id,
         )
-        await self._edit_message(interaction,
+        await self._edit_message(
+            interaction,
             view=GameChannelWizardView(
                 interaction.guild,
                 interaction.user,
-                selected_game=self.selected_game,
-                notice=f"اتحفظت {len(channel_ids)} قناة للعبة {GAME_LABELS[self.selected_game]}.",
-            )
+                notice=f"اتحفظت قناة الألعاب: <#{selected.id}>. كل الألعاب هتشتغل فيها بس.",
+            ),
         )
 
     async def allow_all_channels(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
         try:
-            bank.set_setting(game_channel_setting_key(self.guild_id, self.selected_game), "all")
+            bank.set_setting(games_channel_setting_key(self.guild_id), "all")
         except Exception:
             logger.exception(
-                "Failed to reset game channel policy guild=%s game=%s",
+                "Failed to reset global game-channel policy guild=%s",
                 self.guild_id,
-                self.selected_game,
             )
             return await interaction.response.send_message(
                 "تعذر حفظ إعداد القنوات. جرّب تاني.",
                 ephemeral=True,
             )
         logger.info(
-            "Wizard set all-channel policy guild=%s game=%s actor=%s",
+            "Wizard allowed all game channels guild=%s actor=%s",
             self.guild_id,
-            self.selected_game,
             interaction.user.id,
         )
-        await self._edit_message(interaction,
+        await self._edit_message(
+            interaction,
             view=GameChannelWizardView(
                 interaction.guild,
                 interaction.user,
-                selected_game=self.selected_game,
-                notice=f"اللعبة {GAME_LABELS[self.selected_game]} بقت متاحة في كل القنوات.",
-            )
-        )
-
-    async def disable_game(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
-            return
-        try:
-            bank.set_setting(
-                game_channel_setting_key(self.guild_id, self.selected_game),
-                "[]",
-            )
-        except Exception:
-            logger.exception(
-                "Failed to disable game guild=%s game=%s",
-                self.guild_id,
-                self.selected_game,
-            )
-            return await interaction.response.send_message(
-                "تعذر حفظ إعداد تعطيل اللعبة. مفيش تغيير اتأكد حفظه.",
-                ephemeral=True,
-            )
-        logger.info(
-            "Wizard disabled game guild=%s game=%s actor=%s",
-            self.guild_id,
-            self.selected_game,
-            interaction.user.id,
-        )
-        await self._edit_message(interaction,
-            view=GameChannelWizardView(
-                interaction.guild,
-                interaction.user,
-                selected_game=self.selected_game,
-                notice=f"تم تعطيل {GAME_LABELS[self.selected_game]}. تقدر تعيد تفعيلها من زر كل القنوات أو بتحديد قنوات.",
-            )
+                notice="كل الألعاب بقت متاحة في كل القنوات.",
+            ),
         )
 
     async def go_home(self, interaction: discord.Interaction):
         if not await _guard_interaction(interaction, self.owner_id):
             return
-        await self._edit_message(interaction,view=WizardHomeView(interaction.guild, interaction.user))
+        await self._edit_message(
+            interaction,
+            view=WizardHomeView(interaction.guild, interaction.user),
+        )
 
 
 class LogChannelWizardView(WizardLayout):
@@ -1125,14 +1071,13 @@ class WizardReviewView(WizardLayout):
             "",
             "**قنوات الألعاب:**",
         ]
-        for key in GAME_ORDER:
-            unrestricted, channel_ids = _channel_policy(guild.id, key)
-            channels = (
-                "كل القنوات"
-                if unrestricted
-                else (", ".join(f"<#{channel_id}>" for channel_id in channel_ids) or "اللعبة متوقفة")
-            )
-            lines.append(f"• **{GAME_LABELS[key]}:** {channels}")
+        unrestricted, games_channel_id = _games_channel_policy(guild.id)
+        channels = (
+            "كل القنوات"
+            if unrestricted
+            else (f"<#{games_channel_id}>" if games_channel_id is not None else "تعذر قراءة الإعداد")
+        )
+        lines.append(f"• **جميع الألعاب:** {channels}")
         economy_log = _configured_log_channel(guild.id, "economy")
         error_log = _configured_log_channel(guild.id, "command_errors")
         ai_roles = sorted(configured_ai_role_ids(guild.id))
@@ -1153,7 +1098,7 @@ class WizardReviewView(WizardLayout):
                 TextDisplay(
                     "# مراجعة الإعدادات\n"
                     "التغييرات في المعالج تُحفظ مباشرة داخل SQLite. "
-                    "إعدادات القنوات مستقلة لكل لعبة.\n\n"
+                    "إعداد القنوات عام وبيطبق على كل الألعاب.\n\n"
                     + "\n".join(lines)
                     + self._notice_text()
                 ),
@@ -1221,7 +1166,7 @@ class SetupWizard(commands.Cog):
 
     @app_commands.command(
         name="wizard",
-        description="إعداد رولات الستاف وقنوات كل لعبة خطوة بخطوة",
+        description="إعداد رولات الستاف وقناة عامة لكل الألعاب خطوة بخطوة",
     )
     @app_commands.guild_only()
     async def wizard(self, interaction: discord.Interaction):
