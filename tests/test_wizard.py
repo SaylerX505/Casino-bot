@@ -188,6 +188,64 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         interaction.response.edit_message.assert_awaited_once()
         interaction.response.send_message.assert_not_awaited()
 
+    async def test_global_channel_save_persists_one_channel_for_all_games(self):
+        channel = SimpleNamespace(
+            id=555,
+            guild=self.guild,
+            permissions_for=lambda _member: SimpleNamespace(view_channel=True, send_messages=True),
+        )
+        interaction = SimpleNamespace(
+            user=self.owner,
+            guild=self.guild,
+            guild_id=self.guild.id,
+            message=SimpleNamespace(id=777),
+            response=SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard.bank.get_setting", return_value="all"),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+        ):
+            view = GameChannelWizardView(self.guild, self.owner)
+            view.channel_select.values = [channel]
+            await view.save_channel(interaction)
+
+        save_setting.assert_called_once_with(
+            "guild:123456:games_channel",
+            "555",
+        )
+        interaction.response.edit_message.assert_awaited_once()
+        interaction.response.send_message.assert_not_awaited()
+
+    async def test_global_channel_clear_restores_all_channels(self):
+        interaction = SimpleNamespace(
+            user=self.owner,
+            guild=self.guild,
+            guild_id=self.guild.id,
+            message=SimpleNamespace(id=778),
+            response=SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard.bank.get_setting", return_value="555"),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+        ):
+            view = GameChannelWizardView(self.guild, self.owner)
+            await view.allow_all_channels(interaction)
+
+        save_setting.assert_called_once_with(
+            "guild:123456:games_channel",
+            "all",
+        )
+        interaction.response.edit_message.assert_awaited_once()
+        interaction.response.send_message.assert_not_awaited()
+
     def test_log_wizard_has_per_type_channel_select_and_disable_action(self):
         with patch("cogs.utility.wizard._configured_log_channel", return_value=0):
             view = LogChannelWizardView(self.guild, self.owner, selected_type="economy")
