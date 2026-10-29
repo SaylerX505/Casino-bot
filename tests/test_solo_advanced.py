@@ -183,12 +183,42 @@ class FinalGameArtworkStateTests(unittest.TestCase):
         self.assertIsNone(render.call_args.kwargs["won"])
 
 
-class _TestInteractiveWagerView(solo_advanced.InteractiveSoloWagerView):
-    def _render_art(self):
-        return b"test-art"
-
-
 class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    def _make_context(self, user_id=12345):
+        author = SimpleNamespace(id=user_id)
+        message = SimpleNamespace(id=98765, edit=AsyncMock(return_value=None))
+        context = SimpleNamespace(
+            author=author,
+            channel=SimpleNamespace(id=54321),
+            send=AsyncMock(return_value=message),
+        )
+        interaction = SimpleNamespace(
+            user=author,
+            message=message,
+            response=SimpleNamespace(
+                edit_message=AsyncMock(return_value=None),
+                send_message=AsyncMock(return_value=None),
+                is_done=lambda: False,
+            ),
+        )
+        return context, interaction, message
+
+    async def test_opening_panel_does_not_debit_before_player_starts(self):
+        context, interaction, _ = self._make_context()
+        view = solo_advanced.MinesView(None, context, 100, 3)
+
+        with patch.object(solo_advanced.bank, "create_casino_wager") as create:
+            self.assertTrue(await view.start())
+            self.assertFalse(view._wager_created)
+            create.assert_not_called()
+
+            await view.cancel_before_start(interaction)
+
+            create.assert_not_called()
+
+        self.assertTrue(view.done)
+        self.assertFalse(view._wager_created)
+
     async def test_cancelled_creation_waits_before_attempting_refund(self):
         creation_started = threading.Event()
         allow_creation_to_finish = threading.Event()
@@ -199,20 +229,8 @@ class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 raise TimeoutError("test creation was not released")
             return {"created": True, "balance": 900}
 
-        message = SimpleNamespace(id=98765, edit=AsyncMock(return_value=None))
-        context = SimpleNamespace(
-            author=SimpleNamespace(id=12345),
-            channel=SimpleNamespace(id=54321),
-            send=AsyncMock(return_value=message),
-        )
-        view = _TestInteractiveWagerView(
-            None,
-            context,
-            100,
-            game_type="test",
-            game_title="Test",
-            accent=0x333333,
-        )
+        context, interaction, _ = self._make_context()
+        view = solo_advanced.MinesView(None, context, 100, 3)
         refund_receipt = {
             "settled": True,
             "already_settled": False,
@@ -235,7 +253,8 @@ class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return_value=refund_receipt,
             ) as settle,
         ):
-            start_task = asyncio.create_task(view.start())
+            await view.start()
+            start_task = asyncio.create_task(view.begin_game(interaction))
             self.assertTrue(await asyncio.to_thread(creation_started.wait, 2))
             start_task.cancel()
             with self.assertRaises(asyncio.CancelledError):
@@ -248,33 +267,9 @@ class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(view.done)
         settle.assert_called_once_with(view.game_id, force_refund=True)
 
-
-    async def test_post_escrow_render_failure_requests_refund(self):
-        message = SimpleNamespace(id=98765, edit=AsyncMock(return_value=None))
-        context = SimpleNamespace(
-            author=SimpleNamespace(id=12345),
-            channel=SimpleNamespace(id=54321),
-            send=AsyncMock(return_value=message),
-        )
-        view = _TestInteractiveWagerView(
-            None,
-            context,
-            100,
-            game_type="test",
-            game_title="Test",
-            accent=0x333333,
-        )
-        refresh = view._refresh
-        refresh_calls = 0
-
-        def fail_after_escrow_once():
-            nonlocal refresh_calls
-            refresh_calls += 1
-            if refresh_calls == 2:
-                raise RuntimeError("simulated artwork/render failure after escrow")
-            refresh()
-
-        view._refresh = fail_after_escrow_once
+    async def test_post_escrow_panel_failure_requests_refund(self):
+        context, interaction, _ = self._make_context()
+        view = solo_advanced.MinesView(None, context, 100, 3)
         refund_receipt = {
             "settled": True,
             "already_settled": False,
@@ -284,6 +279,9 @@ class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
             "balance_after": 1_000,
             "result": "pending",
         }
+
+        def fail_active_panel(rows):
+            raise RuntimeError("simulated active-panel render failure after escrow")
 
         with (
             patch.object(
@@ -297,14 +295,14 @@ class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return_value=refund_receipt,
             ) as settle,
         ):
-            started = await view.start()
-            self.assertFalse(started)
+            await view.start()
+            view._render_panel = fail_active_panel
+            await view.begin_game(interaction)
             self.assertIsNotNone(view._settlement_task)
             await view._settlement_task
 
         self.assertTrue(view.done)
         settle.assert_called_once_with(view.game_id, force_refund=True)
-
 
 
 class LegacyStyleParityTests(unittest.TestCase):
