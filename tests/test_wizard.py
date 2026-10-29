@@ -209,7 +209,7 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
             patch("cogs.utility.wizard.bank.set_setting") as save_setting,
         ):
             view = GameChannelWizardView(self.guild, self.owner)
-            view.channel_select.values = [channel]
+            view.channel_select = SimpleNamespace(values=[channel])
             await view.save_channel(interaction)
 
         save_setting.assert_called_once_with(
