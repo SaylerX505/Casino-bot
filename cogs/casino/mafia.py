@@ -430,7 +430,7 @@ async def town_wins(ctx, mafias):
         outcome="win",
     )
     embed.set_image(url="attachment://reveal.jpg")
-    await ctx.send(view=embed_to_v2(embed), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
+    await ctx.send(view=embed_to_v2(embed, developer_credit=True), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
 async def mafia_wins(ctx, mafias):
     reveal_bytes = await generate_mafia_reveal(mafias)
@@ -440,7 +440,7 @@ async def mafia_wins(ctx, mafias):
         outcome="loss",
     )
     embed.set_image(url="attachment://reveal.jpg")
-    await ctx.send(view=embed_to_v2(embed), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
+    await ctx.send(view=embed_to_v2(embed, developer_credit=True), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
 # --- COG COMMANDS ---
 class Mafia(commands.Cog):
