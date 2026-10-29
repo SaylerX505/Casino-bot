@@ -90,7 +90,7 @@ class SoloBetPreflightTests(unittest.IsolatedAsyncioTestCase):
             patch("cogs.casino.blackjack.BlackjackView") as view_constructor,
             patch("cogs.casino.blackjack.claim_solo_session") as claim_session,
         ):
-            await cog.blackjack(ctx, "100")
+            await cog.blackjack.callback(cog, ctx, "100")
 
         ctx.send.assert_awaited_once()
         result_view = ctx.send.await_args.kwargs["view"]
