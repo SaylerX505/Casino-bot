@@ -8,55 +8,44 @@ from cogs.casino import permissions
 
 
 class GameChannelPolicyTests(unittest.TestCase):
-    def test_missing_policy_defaults_to_all_channels(self):
+    def test_missing_global_policy_defaults_to_all_channels(self):
         with patch("cogs.casino.permissions.bank.get_setting", return_value="all"):
             self.assertTrue(permissions.is_game_channel_allowed(100, 200, "mafia"))
-            self.assertTrue(permissions.is_game_channel_allowed(100, 201, "mafia"))
+            self.assertTrue(permissions.is_game_channel_allowed(100, 201, "mines"))
 
-    def test_configured_channel_allowlist_is_enforced(self):
+    def test_one_selected_channel_applies_to_solo_and_group_games(self):
         with patch(
             "cogs.casino.permissions.bank.get_setting",
-            return_value=json.dumps([200, 201]),
+            return_value="200",
         ):
-            self.assertTrue(permissions.is_game_channel_allowed(100, 200, "mafia"))
-            self.assertTrue(permissions.is_game_channel_allowed(100, 201, "mafia"))
-            self.assertFalse(permissions.is_game_channel_allowed(100, 202, "mafia"))
+            for game_key in ("mafia", "roulette", "mines", "crash", "plinko", "number_roulette", "hilo"):
+                with self.subTest(game_key=game_key):
+                    self.assertTrue(permissions.is_game_channel_allowed(100, 200, game_key))
+                    self.assertFalse(permissions.is_game_channel_allowed(100, 201, game_key))
 
-    def test_empty_channel_allowlist_disables_a_game(self):
-        with patch("cogs.casino.permissions.bank.get_setting", return_value="[]"):
-            self.assertFalse(permissions.is_game_channel_allowed(100, 200, "mafia"))
-            self.assertFalse(permissions.is_game_channel_allowed(100, 999, "mafia"))
-
-    def test_malformed_policy_fails_closed(self):
-        with patch("cogs.casino.permissions.bank.get_setting", return_value="not-json"):
-            self.assertFalse(permissions.is_game_channel_allowed(100, 200, "mafia"))
-
-    def test_channel_policies_are_scoped_per_game_and_guild(self):
+    def test_global_channel_setting_is_scoped_per_guild(self):
         def setting(key, default=None):
-            values = {
-                "guild:100:game_channels:mafia": json.dumps([200]),
-                "guild:101:game_channels:mafia": json.dumps([300]),
-                "guild:100:game_channels:roulette": "all",
-            }
-            return values.get(key, default)
+            return {
+                "guild:100:games_channel": "200",
+                "guild:101:games_channel": "300",
+            }.get(key, default)
 
         with patch("cogs.casino.permissions.bank.get_setting", side_effect=setting):
             self.assertTrue(permissions.is_game_channel_allowed(100, 200, "mafia"))
             self.assertFalse(permissions.is_game_channel_allowed(100, 300, "mafia"))
-            self.assertTrue(permissions.is_game_channel_allowed(101, 300, "mafia"))
-            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "roulette"))
-            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "coinflip"))
-            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "dice"))
-            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "slots"))
-            self.assertTrue(permissions.is_game_channel_allowed(100, 999, "blackjack"))
+            self.assertTrue(permissions.is_game_channel_allowed(101, 300, "mines"))
+            self.assertFalse(permissions.is_game_channel_allowed(101, 200, "mines"))
 
-    def test_blackjack_channel_allowlist_is_enforced(self):
+    def test_malformed_global_channel_setting_fails_closed(self):
+        with patch("cogs.casino.permissions.bank.get_setting", return_value="not-a-channel"):
+            self.assertFalse(permissions.is_game_channel_allowed(100, 200, "mafia"))
+
+    def test_database_failure_fails_closed_for_global_channel_policy(self):
         with patch(
             "cogs.casino.permissions.bank.get_setting",
-            return_value=json.dumps([200]),
+            side_effect=RuntimeError("database unavailable"),
         ):
-            self.assertTrue(permissions.is_game_channel_allowed(100, 200, "blackjack"))
-            self.assertFalse(permissions.is_game_channel_allowed(100, 201, "blackjack"))
+            self.assertFalse(permissions.is_game_channel_allowed(100, 200, "mines"))
 
     def test_game_name_aliases_resolve_to_one_persisted_key(self):
         cases = {
