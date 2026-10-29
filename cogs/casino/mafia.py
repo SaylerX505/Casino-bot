@@ -447,7 +447,7 @@ class Mafia(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name='مافيا', description='بدء لعبة المافيا')
+    @commands.hybrid_command(name="مافيا", aliases=["mafia"], description="بدء لعبة المافيا")
     async def start_mafia(self, ctx):
         """يبدأ لعبة المافيا في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
