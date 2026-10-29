@@ -414,7 +414,11 @@ class HelpCommand(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="help", aliases=["مساعدة", "h"], description="عرض المساعدة والأوامر المتاحة")
+    @commands.hybrid_command(
+        name="help",
+        aliases=["مساعدة", "h", "commands", "cmds", "اوامر", "أوامر", "menu"],
+        description="عرض المساعدة والأوامر المتاحة",
+    )
     async def custom_help(self, ctx):
         latency = round(self.bot.latency * 1000)
         if ctx.interaction is not None:
