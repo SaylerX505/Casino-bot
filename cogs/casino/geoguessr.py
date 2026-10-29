@@ -360,6 +360,7 @@ async def run_game_loop(ctx, players):
                 description,
                 outcome=outcome,
                 image_url=winner_image,
+                developer_credit=True,
             ),
             allowed_mentions=discord.AllowedMentions.none(),
         )
