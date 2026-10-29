@@ -532,7 +532,7 @@ class Chairs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name='كراسي', description='بدء لعبة الكراسي الموسيقية')
+    @commands.hybrid_command(name="كراسي", aliases=["chairs", "musical-chairs"], description="بدء لعبة الكراسي الموسيقية")
     async def start_chairs(self, ctx):
         """يبدأ لعبة الكراسي الموسيقية"""
         if is_active_game(self.bot, ctx.channel.id):
