@@ -20,6 +20,7 @@ from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.game_registry import register_game_task
 from cogs.utility.theme import (
     THEME,
+    developer_credit_row,
     StatusPanel,
     lobby_embed,
     private_status,
@@ -253,6 +254,7 @@ class GeoGuessrResultPanel(LayoutView):
         *,
         image_names=None,
         image_url=None,
+        developer_credit=False,
     ):
         super().__init__(timeout=120)
         accents = {
@@ -282,6 +284,8 @@ class GeoGuessrResultPanel(LayoutView):
             )
         if gallery_items:
             children.extend([Separator(), MediaGallery(*gallery_items)])
+        if developer_credit:
+            children.extend([Separator(), developer_credit_row()])
         self.add_item(Container(*children, accent_color=accents.get(outcome, THEME["grey"])))
 
 
