@@ -596,14 +596,14 @@ async def run_game_loop(ctx, players):
                 outcome="win",
                 thumbnail_url=winner.display_avatar.url,
             )
-            await ctx.send(view=embed_to_v2(win_embed))
+            await ctx.send(view=embed_to_v2(win_embed, developer_credit=True))
         else:
             embed = result_embed(
                 title="انتهت الغميضة",
                 description="💀 الكل اتكشف! مفيش فايز النهاردة.",
                 outcome="loss",
             )
-            await ctx.send(view=embed_to_v2(embed))
+            await ctx.send(view=embed_to_v2(embed, developer_credit=True))
 
     except asyncio.CancelledError:
         raise
