@@ -19,7 +19,6 @@ from discord.ui import (
 import config
 from cogs.casino import bank
 from cogs.casino.permissions import (
-    GAME_LABELS,
     _parse_id_list,
     ai_enabled_setting_key,
     ai_role_setting_key,
@@ -36,26 +35,6 @@ from cogs.casino.permissions import (
 from cogs.utility.theme import StatusPanel
 
 logger = logging.getLogger(__name__)
-
-GAME_ORDER = (
-    "mafia",
-    "roulette",
-    "hide_and_seek",
-    "geoguessr",
-    "chairs",
-    "wheel",
-    "rps",
-    "riddle",
-    "coinflip",
-    "dice",
-    "slots",
-    "blackjack",
-    "mines",
-    "crash",
-    "plinko",
-    "number_roulette",
-    "hilo",
-)
 
 
 def _configured_roles(guild_id: int) -> list[int]:
