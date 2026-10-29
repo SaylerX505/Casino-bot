@@ -438,9 +438,11 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         return False
 
     async def start(self):
-        """Publish a disabled board, escrow the stake with its panel reference, then enable it."""
+        """Show the legacy-style game panel before taking any coins."""
         self._set_controls_enabled(False)
+        self._set_prestart_controls_enabled(True)
         self._refresh()
+        self._render_panel([ActionRow(self.start_button, self.cancel_button)])
         try:
             self.message = await self.context.send(
                 view=self,
@@ -452,97 +454,212 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             raise
         except Exception:
             release_solo_session(self.requester.id, self)
-            logger.exception("Could not publish interactive wager game_type=%s user_id=%s", self.game_type, self.requester.id)
-            raise
-
-        channel_id = getattr(getattr(self.context, "channel", None), "id", None)
-        creation_task = asyncio.create_task(
-            asyncio.to_thread(
-                bank.create_casino_wager,
-                self.game_id,
-                self.requester.id,
+            logger.exception(
+                "Could not publish interactive wager game_type=%s user_id=%s",
                 self.game_type,
-                self.amount,
-                "interactive",
-                "pending",
-                False,
-                0,
-                channel_id=int(channel_id) if channel_id else None,
-                message_id=int(self.message.id),
+                self.requester.id,
             )
-        )
-        try:
-            receipt = await asyncio.shield(creation_task)
-        except asyncio.CancelledError:
-            self._prepare_refund(
-                "تم إيقاف التأكيد أثناء إنشاء الرهان؛ بنتحقق من العملية ثم نرجع المبلغ لو اتحجز."
-            )
-            self._settlement_task = asyncio.create_task(
-                self._settle_after_creation(creation_task)
+            raise
+        return True
+
+    async def begin_game(self, interaction):
+        """Take the stake only after the player explicitly starts the round."""
+        async with self._state_lock:
+            if self.done or self.resolving or self.started:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        view=StatusPanel(
+                            "الجولة اتقفلت",
+                            "الجولة بدأت بالفعل أو انتهت.",
+                            "warning",
+                        ),
+                        ephemeral=True,
+                    )
+                return
+
+            self.resolving = True
+            self._set_prestart_controls_enabled(False)
+            self._refresh()
+            try:
+                await interaction.response.edit_message(
+                    view=self,
+                    attachments=[self._art_file()],
+                )
+            except asyncio.CancelledError:
+                raise
+            except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+                logger.warning(
+                    "Could not acknowledge game start before escrow game_id=%s",
+                    self.game_id,
+                    exc_info=True,
+                )
+                self.done = True
+                self.resolving = False
+                self.start_error_message = (
+                    "تعذر تحديث لوحة اللعبة؛ لم يتم خصم أي رهان. ابدأ محاولة جديدة."
+                )
+                self._set_controls_enabled(False)
+                self._set_prestart_controls_enabled(False)
+                try:
+                    self._refresh()
+                    await self._edit()
+                except Exception:
+                    logger.exception(
+                        "Could not close unstarted panel game_id=%s",
+                        self.game_id,
+                    )
+                finally:
+                    release_solo_session(self.requester.id, self)
+                    self.stop()
+                return
+
+            channel_id = getattr(getattr(self.context, "channel", None), "id", None)
+            creation_task = asyncio.create_task(
+                asyncio.to_thread(
+                    bank.create_casino_wager,
+                    self.game_id,
+                    self.requester.id,
+                    self.game_type,
+                    self.amount,
+                    "interactive",
+                    "pending",
+                    False,
+                    0,
+                    channel_id=int(channel_id) if channel_id else None,
+                    message_id=int(self.message.id),
+                )
             )
             try:
-                await self._edit()
+                receipt = await asyncio.shield(creation_task)
             except asyncio.CancelledError:
+                self._prepare_refund(
+                    "اتوقف تأكيد بداية الجولة؛ بنتحقق من العملية ونرجع المبلغ لو اتحجز."
+                )
+                self._settlement_task = asyncio.create_task(
+                    self._settle_after_creation(creation_task)
+                )
+                try:
+                    await self._edit()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception(
+                        "Could not publish wager-start cancellation game_id=%s",
+                        self.game_id,
+                    )
                 raise
             except Exception:
                 logger.exception(
-                    "Could not publish wager-creation cancellation game_id=%s",
+                    "Could not confirm interactive wager creation game_id=%s",
                     self.game_id,
                 )
-            raise
-        except Exception:
-            logger.exception("Could not confirm interactive wager creation game_id=%s", self.game_id)
-            await self._queue_refund(
-                "تعذر تأكيد إنشاء الرهان؛ بنتحقق من تسجيله ونرجعه لو اتحجز."
-            )
-            return False
-
-        if not receipt.get("created"):
-            balance = int(receipt.get("balance", 0))
-            reason = receipt.get("reason")
-            if reason == "insufficient_funds":
-                self.start_error_message = f"رصيدك **{balance:,} {COIN}** ومش كفاية لرهان **{self.amount:,} {COIN}**."
-            elif reason == "duplicate_game":
-                self.start_error_message = "معرّف الجولة موجود بالفعل؛ لم يتم خصم رهان جديد."
-            else:
-                self.start_error_message = "تعذر قبول الرهان؛ لم يتم تسجيل خصم جديد."
-            self.done = True
-            self._set_controls_enabled(False)
-            self._refresh()
-            await self._edit()
-            release_solo_session(self.requester.id, self)
-            self.stop()
-            return False
-
-        self._wager_created = True
-        try:
-            self._set_controls_enabled(True)
-            self._refresh()
-            if not await self._edit():
                 await self._queue_refund(
-                    "تعذر تحديث لوحة الجولة بعد حجز الرهان؛ جارٍ إرجاع المبلغ."
+                    "تعذر تأكيد إنشاء الرهان؛ بنتحقق من تسجيله ونرجعه لو اتحجز."
                 )
-                return False
-            await self._after_start()
-            return True
-        except asyncio.CancelledError:
-            if not self.done and not self.resolving:
-                self._prepare_refund(
-                    "تم إيقاف تشغيل الجولة أثناء البدء؛ جارٍ إرجاع الرهان."
+                return
+
+            if not receipt.get("created"):
+                balance = int(receipt.get("balance", 0))
+                reason = receipt.get("reason")
+                if reason == "insufficient_funds":
+                    self.start_error_message = (
+                        f"رصيدك **{balance:,} {COIN}** ومش كفاية "
+                        f"لرهان **{self.amount:,} {COIN}**."
+                    )
+                elif reason == "duplicate_game":
+                    self.start_error_message = (
+                        "معرّف الجولة موجود بالفعل؛ لم يتم خصم رهان جديد."
+                    )
+                else:
+                    self.start_error_message = (
+                        "تعذر قبول الرهان؛ لم يتم تسجيل خصم جديد."
+                    )
+                self.done = True
+                self.resolving = False
+                self._set_controls_enabled(False)
+                self._set_prestart_controls_enabled(False)
+                try:
+                    self._refresh()
+                    await self._edit()
+                except Exception:
+                    logger.exception(
+                        "Could not show rejected wager game_id=%s",
+                        self.game_id,
+                    )
+                finally:
+                    release_solo_session(self.requester.id, self)
+                    self.stop()
+                return
+
+            self._wager_created = True
+            self.started = True
+            self.resolving = False
+            try:
+                self._set_controls_enabled(True)
+                self._set_prestart_controls_enabled(False)
+                self._refresh()
+                self._render_panel(self._game_rows)
+                if not await self._edit():
+                    await self._queue_refund(
+                        "تعذر تحديث لوحة الجولة بعد حجز الرهان؛ جارٍ إرجاع المبلغ."
+                    )
+                    return
+                await self._after_start()
+            except asyncio.CancelledError:
+                if not self.done and not self.resolving:
+                    self._prepare_refund(
+                        "تم إيقاف تشغيل الجولة أثناء البدء؛ جارٍ إرجاع الرهان."
+                    )
+                    self._schedule_settlement_worker()
+                raise
+            except Exception:
+                logger.exception(
+                    "Interactive game startup failed after escrow game_id=%s game_type=%s",
+                    self.game_id,
+                    self.game_type,
                 )
-                self._schedule_settlement_worker()
-            raise
+                if not self.done and not self.resolving:
+                    await self._queue_refund(
+                        "حصل عطل أثناء تشغيل الجولة؛ تم طلب إرجاع الرهان بأمان."
+                    )
+
+    async def cancel_before_start(self, interaction):
+        if self.done or self.resolving or self.started or self._wager_created:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    view=StatusPanel(
+                        "الجولة اتقفلت",
+                        "مينفعش تلغي الجولة بعد بدايتها.",
+                        "warning",
+                    ),
+                    ephemeral=True,
+                )
+            return
+
+        self.message = interaction.message or self.message
+        self.done = True
+        self.start_error_message = (
+            "اتلغت الجولة قبل بدايتها؛ لم يتم خصم أي رهان."
+        )
+        self._set_controls_enabled(False)
+        self._set_prestart_controls_enabled(False)
+        try:
+            self._refresh()
+            try:
+                await interaction.response.edit_message(
+                    view=self,
+                    attachments=[self._art_file()],
+                )
+            except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
+                await self._edit()
         except Exception:
             logger.exception(
-                "Interactive game startup failed after escrow game_id=%s game_type=%s",
+                "Could not publish pre-start cancellation game_id=%s",
                 self.game_id,
-                self.game_type,
             )
-            if not self.done and not self.resolving:
-                await self._queue_refund(
-                    "حصل عطل أثناء تشغيل الجولة؛ تم طلب إرجاع الرهان بأمان."
-                )
-            return False
+        finally:
+            release_solo_session(self.requester.id, self)
+            self.stop()
 
     async def _after_start(self):
         return None
@@ -751,8 +868,28 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         await self._begin_settlement(force_refund=True, display_result="انتهى الوقت؛ اترد الرهان بأمان.")
 
     async def on_timeout(self):
-        if not self.done and not self.resolving:
-            await self._on_timeout()
+        if self.done or self.resolving:
+            return
+        if not self._wager_created:
+            self.done = True
+            self.start_error_message = (
+                "انتهى وقت بدء الجولة؛ لم يتم خصم أي رهان."
+            )
+            self._set_controls_enabled(False)
+            self._set_prestart_controls_enabled(False)
+            try:
+                self._refresh()
+                await self._edit()
+            except Exception:
+                logger.exception(
+                    "Could not close unstarted game on timeout game_id=%s",
+                    self.game_id,
+                )
+            finally:
+                release_solo_session(self.requester.id, self)
+                self.stop()
+            return
+        await self._on_timeout()
 
 
 class MinesView(InteractiveSoloWagerView):
@@ -819,7 +956,7 @@ class MinesView(InteractiveSoloWagerView):
         )
 
     def _content(self):
-        if self.start_error_message or self.receipt is not None or self.resolving:
+        if self.start_error_message or self.receipt is not None or self.resolving or not self.started:
             return super()._content()
         multiplier = _mines_multiplier(self.mines_count, len(self.revealed)) if self.revealed else 1.0
         cashout = int(self.amount * multiplier) if self.revealed else self.amount
@@ -1002,7 +1139,7 @@ class CrashView(InteractiveSoloWagerView):
         )
 
     def _content(self):
-        if self.start_error_message or self.receipt is not None or self.resolving:
+        if self.start_error_message or self.receipt is not None or self.resolving or not self.started:
             return super()._content()
         current = self._current_multiplier()
         payout = int(self.amount * current)
@@ -1182,7 +1319,7 @@ class HiLoView(InteractiveSoloWagerView):
         )
 
     def _content(self):
-        if self.start_error_message or self.receipt is not None or self.resolving:
+        if self.start_error_message or self.receipt is not None or self.resolving or not self.started:
             return super()._content()
         higher_count = 14 - self.current_rank
         lower_count = self.current_rank - 2
