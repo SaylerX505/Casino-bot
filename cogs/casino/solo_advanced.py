@@ -251,10 +251,14 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self.message = None
         self.done = False
         self.resolving = False
+        self.started = False
         self.receipt = None
         self.start_error_message = None
         self._wager_created = False
         self._controls = []
+        self._game_rows = []
+        self.start_button = None
+        self.cancel_button = None
         self._state_lock = asyncio.Lock()
         self._settlement_task = None
         self._pending_display_result = None
@@ -264,7 +268,30 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self._art_bytes = b""
 
     def _build(self, rows):
+        """Use the same V2 panel structure as the legacy solo games."""
+        self._game_rows = rows
+        self.start_button = discord.ui.Button(
+            label="ابدأ الجولة",
+            emoji="▶️",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"{self.game_type}_start",
+        )
+        self.start_button.callback = self.begin_game
+        self.cancel_button = discord.ui.Button(
+            label="إلغاء",
+            emoji="✕",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"{self.game_type}_cancel_start",
+        )
+        self.cancel_button.callback = self.cancel_before_start
+        self._set_controls_enabled(False)
         self._refresh()
+        self._render_panel([ActionRow(self.start_button, self.cancel_button)])
+
+    def _render_panel(self, rows):
+        """Replace the panel body while keeping the legacy V2 container anatomy."""
+        self.clear_items()
+        self._panel_text = TextDisplay(self._content())
         self.add_item(
             Container(
                 self._panel_text,
@@ -290,6 +317,14 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
     def _render_art(self):
         raise NotImplementedError
 
+    def _initial_content(self):
+        return (
+            f"# {self.game_title}\n"
+            f"**الرهان:** {self.amount:,} {COIN}\n"
+            "اضغط **ابدأ الجولة** لتأكيد الرهان وفتح أدوات اللعب. "
+            "لسه ما اتخصمش أي مبلغ من رصيدك."
+        )
+
     def _content(self):
         if self.start_error_message:
             return f"# {self.game_title}\n{self.start_error_message}"
@@ -301,6 +336,8 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
                 "قفلنا الاختيارات وبنثبت الرهان والرصيد في قاعدة البيانات. "
                 "مش هيتكرر الخصم أو الصرف لو حصل تأخير."
             )
+        if not self.started:
+            return self._initial_content()
         return f"# {self.game_title}\n**الرهان:** {self.amount:,} {COIN}"
 
     def _final_content(self):
@@ -339,7 +376,18 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
 
     def _set_controls_enabled(self, enabled: bool):
         for control in self._controls:
-            control.disabled = not enabled
+            if isinstance(control, discord.ui.Button) and control in getattr(self, "tile_buttons", {}).values():
+                control.disabled = not enabled or any(
+                    control is self.tile_buttons[index] and index in self.revealed
+                    for index in self.tile_buttons
+                )
+            else:
+                control.disabled = not enabled
+
+    def _set_prestart_controls_enabled(self, enabled: bool):
+        for control in (self.start_button, self.cancel_button):
+            if control is not None:
+                control.disabled = not enabled
 
     def _prepare_refund(self, display_result: str):
         """Disable the panel and preserve a refund path even if artwork rendering fails."""
