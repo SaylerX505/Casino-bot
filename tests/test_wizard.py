@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, patch
 import discord
 from discord.ui import LayoutView
 
-from cogs.casino.permissions import GAME_LABELS
 from cogs.utility.wizard import (
     AdminRoleWizardView,
     AISettingsWizardView,
