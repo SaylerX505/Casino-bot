@@ -73,6 +73,7 @@ GAME_COMMAND_ALIASES = {
     "سلوت": "slots",
     "ماكينة": "slots",
     "blackjack": "blackjack",
+    "black-jack": "blackjack",
     "bj": "blackjack",
     "بلجاك": "blackjack",
     "بلاكجاك": "blackjack",
