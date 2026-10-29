@@ -47,18 +47,27 @@ GAME_COMMAND_ALIASES = {
     "wheel": "wheel",
     "عجلة": "wheel",
     "rps": "rps",
+    "rock-paper-scissors": "rps",
+    "حجرة": "rps",
+    "مقص": "rps",
     "حومص": "rps",
     "riddle": "riddle",
     "فزورة": "riddle",
     "coinflip": "coinflip",
+    "coin-flip": "coinflip",
+    "coin": "coinflip",
+    "cf": "coinflip",
     "flip": "coinflip",
     "عملة": "coinflip",
     "رمي_العملة": "coinflip",
     "dice": "dice",
+    "roll": "dice",
+    "die": "dice",
     "نرد": "dice",
     "زهر": "dice",
     "slots": "slots",
     "slot": "slots",
+    "spin": "slots",
     "سلوت": "slots",
     "ماكينة": "slots",
     "blackjack": "blackjack",
@@ -66,6 +75,7 @@ GAME_COMMAND_ALIASES = {
     "بلجاك": "blackjack",
     "بلاكجاك": "blackjack",
     "mines": "mines",
+    "mine": "mines",
     "الألغام": "mines",
     "الغام": "mines",
     "minesweeper": "mines",
@@ -75,10 +85,12 @@ GAME_COMMAND_ALIASES = {
     "بلينكو": "plinko",
     "numberroulette": "number_roulette",
     "number-roulette": "number_roulette",
+    "nr": "number_roulette",
     "روليت_الأرقام": "number_roulette",
     "روليت_ارقام": "number_roulette",
     "روليت_الارقام": "number_roulette",
     "hilo": "hilo",
+    "hilow": "hilo",
     "hi-lo": "hilo",
     "highlow": "hilo",
     "هاي_لو": "hilo",
@@ -98,7 +110,13 @@ def manager_role_setting_key(guild_id: int) -> str:
 
 
 def game_channel_setting_key(guild_id: int, game_key: str) -> str:
+    """Legacy per-game key retained for migration and diagnostics."""
     return f"guild:{int(guild_id)}:game_channels:{game_key}"
+
+
+def games_channel_setting_key(guild_id: int) -> str:
+    """Persist the optional single channel shared by every game in a guild."""
+    return f"guild:{int(guild_id)}:games_channel"
 
 
 def log_channel_setting_key(guild_id: int, log_type: str) -> str:
@@ -281,26 +299,30 @@ def game_key_from_interaction(interaction: discord.Interaction) -> str | None:
 
 
 def is_game_channel_allowed(guild_id: int | None, channel_id: int | None, game_key: str) -> bool:
-    """Missing/'all' policy means unrestricted; a configured list is an allowlist."""
+    """Apply the single optional channel shared by all games in a guild.
+
+    Legacy per-game settings are intentionally ignored so older saved choices
+    cannot silently keep individual games locked after the wizard is simplified.
+    """
     if guild_id is None or channel_id is None or game_key not in GAME_LABELS:
         return True
     try:
-        raw = bank.get_setting(game_channel_setting_key(guild_id, game_key), "all")
+        raw = bank.get_setting(games_channel_setting_key(guild_id), "all")
     except Exception:
-        logger.exception(
-            "Could not read channel policy guild=%s game=%s",
-            guild_id,
-            game_key,
-        )
+        logger.exception("Could not read global game-channel policy guild=%s", guild_id)
         return False
 
     if raw is None or str(raw).strip().lower() == "all":
         return True
-    channel_ids = _parse_id_list(raw)
-    if channel_ids is None:
-        logger.error("Malformed channel policy guild=%s game=%s", guild_id, game_key)
+    try:
+        allowed_channel_id = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.error("Malformed global game-channel policy guild=%s", guild_id)
         return False
-    return int(channel_id) in set(channel_ids)
+    if allowed_channel_id <= 0:
+        logger.error("Invalid global game-channel policy guild=%s", guild_id)
+        return False
+    return int(channel_id) == allowed_channel_id
 
 
 def is_staff_or_admin():
