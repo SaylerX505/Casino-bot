@@ -16,7 +16,15 @@ def parse_bet_amount(value: object, *, max_bet: int) -> int:
         return 0
 
     raw = value.strip().replace(",", "")
-    if not raw or not raw.isascii() or not raw.isdigit():
+    if not raw or not raw.isascii():
+        return 0
+
+    multiplier = 1
+    suffix = raw[-1].lower()
+    if suffix in {"k", "m", "b"}:
+        multiplier = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}[suffix]
+        raw = raw[:-1]
+    if not raw or not raw.isdigit():
         return 0
 
     significant = raw.lstrip("0") or "0"
@@ -24,5 +32,5 @@ def parse_bet_amount(value: object, *, max_bet: int) -> int:
     if len(significant) > len(max_digits):
         return max_bet + 1
 
-    amount = int(significant)
+    amount = int(significant) * multiplier
     return amount if amount <= max_bet else max_bet + 1
