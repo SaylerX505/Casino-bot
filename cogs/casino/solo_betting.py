@@ -1203,6 +1203,32 @@ class SoloBetting(commands.Cog):
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
 
+        try:
+            balance = await asyncio.to_thread(bank.get_balance, int(ctx.author.id))
+        except Exception:
+            logger.exception(
+                "Could not verify solo wager balance requester_id=%s game_type=%s",
+                ctx.author.id,
+                game_type,
+            )
+            return await ctx.send(
+                view=StatusPanel(
+                    "تعذر التحقق من الرصيد",
+                    "حصل عطل أثناء قراءة رصيدك. مفيش رهان اتعمل؛ جرّب تاني بعد شوية.",
+                    "warning",
+                ),
+                **({"ephemeral": True} if ctx.interaction is not None else {}),
+            )
+        if balance < amount:
+            return await ctx.send(
+                view=StatusPanel(
+                    "رصيدك مش كفاية",
+                    f"رصيدك الحالي **{balance:,} {COIN}**، ومحتاج **{amount:,} {COIN}** لبدء الرهان. مفيش رصيد اتخصم.",
+                    "warning",
+                ),
+                **({"ephemeral": True} if ctx.interaction is not None else {}),
+            )
+
         view = SoloWagerView(
             self,
             ctx.author,
@@ -1247,7 +1273,7 @@ class SoloBetting(commands.Cog):
 
     @commands.hybrid_command(
         name="coinflip",
-        aliases=["flip", "عملة", "رمي_العملة"],
+        aliases=["flip", "cf", "coin", "coin-flip", "عملة", "رمي_العملة"],
         description="راهن بعملة افتراضية على نتيجة رمي العملة",
     )
     @commands.cooldown(1, 4, commands.BucketType.user)
@@ -1266,7 +1292,7 @@ class SoloBetting(commands.Cog):
 
     @commands.hybrid_command(
         name="dice",
-        aliases=["نرد", "زهر"],
+        aliases=["نرد", "زهر", "roll", "die"],
         description="راهن بعملة افتراضية على رقم النرد",
     )
     @commands.cooldown(1, 4, commands.BucketType.user)
@@ -1285,7 +1311,7 @@ class SoloBetting(commands.Cog):
 
     @commands.hybrid_command(
         name="slots",
-        aliases=["slot", "سلوت", "ماكينة"],
+        aliases=["slot", "سلوت", "ماكينة", "spin"],
         description="لف ماكينة الحظ مقابل رهان بعملة افتراضية",
     )
     @commands.cooldown(1, 4, commands.BucketType.user)
