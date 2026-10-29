@@ -456,7 +456,7 @@ class Roulette(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name='روليت', description='بدء لعبة الروليت الروسي')
+    @commands.hybrid_command(name="روليت", aliases=["roulette"], description="بدء لعبة الروليت الروسي")
     async def start_roulette(self, ctx):
         """يبدأ لعبة الروليت"""
         if is_active_game(self.bot, ctx.channel.id):
