@@ -20,6 +20,7 @@ from cogs.casino.game_registry import (
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
+    developer_credit_row,
     get_currency,
     lobby_embed,
     private_status,
@@ -235,7 +236,15 @@ def render_wheel(highlight=None):
 
 # --- LOBBY VIEW ---
 class WheelResultPanel(LayoutView):
-    def __init__(self, title, description, outcome="neutral", image_name=None):
+    def __init__(
+        self,
+        title,
+        description,
+        outcome="neutral",
+        image_name=None,
+        *,
+        developer_credit=False,
+    ):
         super().__init__(timeout=120)
         accents = {
             "success": THEME["green"],
@@ -258,6 +267,8 @@ class WheelResultPanel(LayoutView):
                     )
                 ),
             ])
+        if developer_credit:
+            content.extend([Separator(), developer_credit_row()])
         self.add_item(Container(*content, accent_color=accents.get(outcome, THEME["grey"])))
 
 
@@ -507,6 +518,7 @@ class WheelLobby(LayoutView):
                     "🏁 خلصت جولات العجلة",
                     format_wheel_summary(results),
                     outcome="success",
+                    developer_credit=True,
                 )
             )
         except asyncio.CancelledError:
