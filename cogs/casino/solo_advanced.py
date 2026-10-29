@@ -279,7 +279,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self.start_button.callback = self.begin_game
         self.cancel_button = discord.ui.Button(
             label="إلغاء",
-            emoji="✕",
+            emoji="❌",
             style=discord.ButtonStyle.secondary,
             custom_id=f"{self.game_type}_cancel_start",
         )
