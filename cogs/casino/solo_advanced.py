@@ -376,13 +376,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
 
     def _set_controls_enabled(self, enabled: bool):
         for control in self._controls:
-            if isinstance(control, discord.ui.Button) and control in getattr(self, "tile_buttons", {}).values():
-                control.disabled = not enabled or any(
-                    control is self.tile_buttons[index] and index in self.revealed
-                    for index in self.tile_buttons
-                )
-            else:
-                control.disabled = not enabled
+            control.disabled = not enabled
 
     def _set_prestart_controls_enabled(self, enabled: bool):
         for control in (self.start_button, self.cancel_button):
@@ -395,6 +389,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self._pending_display_result = display_result
         self._pending_resolution = {"force_refund": True}
         self._set_controls_enabled(False)
+        self._set_prestart_controls_enabled(False)
         try:
             self._refresh()
         except Exception:
@@ -442,7 +437,6 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self._set_controls_enabled(False)
         self._set_prestart_controls_enabled(True)
         self._refresh()
-        self._render_panel([ActionRow(self.start_button, self.cancel_button)])
         try:
             self.message = await self.context.send(
                 view=self,
@@ -818,6 +812,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self.resolving = False
         try:
             self._set_controls_enabled(False)
+            self._set_prestart_controls_enabled(False)
             try:
                 self._on_finished(receipt)
                 self._refresh()
@@ -848,6 +843,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             "قبل ما تبدأ جولة أخرى، ولو استمرت المشكلة ابعت للستاف."
         )
         self._set_controls_enabled(False)
+        self._set_prestart_controls_enabled(False)
         try:
             self._refresh()
         except Exception:
@@ -936,6 +932,14 @@ class MinesView(InteractiveSoloWagerView):
         async def callback(interaction):
             await self.reveal(interaction, index)
         return callback
+
+    def _initial_content(self):
+        return (
+            f"# Mines · {self.mines_count} ألغام من 20\n"
+            f"**الرهان:** {self.amount:,} {COIN}\n"
+            "اكشف خانات آمنة لرفع المضاعف، واسحب قبل ظهور اللغم. "
+            "اضغط **ابدأ الجولة** لتأكيد الرهان؛ لم يتم الخصم بعد."
+        )
 
     def _render_art(self):
         show_mines = (
@@ -1118,6 +1122,14 @@ class CrashView(InteractiveSoloWagerView):
             return 1.0
         elapsed = max(0.0, time.monotonic() - self.started_at)
         return min(CRASH_MAX_MULTIPLIER, math.exp(math.log(CRASH_GROWTH_PER_SECOND) * elapsed))
+
+    def _initial_content(self):
+        return (
+            "# Crash · اسحب قبل الانهيار\n"
+            f"**الرهان:** {self.amount:,} {COIN}\n"
+            "المضاعف هيزيد تلقائيًا بعد بداية الجولة؛ اسحب قبل نقطة الانهيار. "
+            "اضغط **ابدأ الجولة** لتأكيد الرهان؛ لم يتم الخصم بعد."
+        )
 
     def _render_art(self):
         current = self._current_multiplier()
@@ -1302,6 +1314,14 @@ class HiLoView(InteractiveSoloWagerView):
         self.cashout_button.callback = self.cashout
         self._controls = [self.higher_button, self.lower_button, self.cashout_button]
         self._build([ActionRow(*self._controls)])
+
+    def _initial_content(self):
+        return (
+            f"# Hi-Lo · الكارت الحالي **{_hilo_rank_label(self.current_rank)}**\n"
+            f"**الرهان:** {self.amount:,} {COIN}\n"
+            "خمّن الكارت التالي أعلى أو أقل، وزوّد المضاعف بالتخمينات الصحيحة. "
+            "اضغط **ابدأ الجولة** لتأكيد الرهان؛ لم يتم الخصم بعد."
+        )
 
     def _render_art(self):
         outcome = (
