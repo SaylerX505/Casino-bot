@@ -18,6 +18,7 @@ from cogs.casino.game_registry import (
     set_game_view,
 )
 from cogs.utility.theme import (
+    add_developer_credit,
     private_status,
     embed_to_v2,
     THEME,
@@ -370,7 +371,14 @@ class ChairsLobby(LayoutView):
     ) -> bool:
         """Post a final event separately, preserving it on the last round if sending fails."""
         try:
-            await self.ctx.send(view=StatusPanel(title, description, outcome))
+            await self.ctx.send(
+                view=StatusPanel(
+                    title,
+                    description,
+                    outcome,
+                    developer_credit=context in {"no_winner", "winner"},
+                )
+            )
             return True
         except Exception:
             logger.exception(
@@ -382,6 +390,8 @@ class ChairsLobby(LayoutView):
                 view._panel_text.content = (
                     f"{view._panel_text.content}\n\n# {title}\n{description}"
                 )[:4000]
+                if context in {"no_winner", "winner"}:
+                    add_developer_credit(view)
                 await try_edit_view(
                     message,
                     view,
