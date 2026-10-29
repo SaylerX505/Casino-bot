@@ -3,7 +3,7 @@
 import asyncio
 import discord
 import logging
-from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
+from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 import config
 
 THEME = {
@@ -31,7 +31,27 @@ def base_embed(title: str = None, description: str = None, color: int = None) ->
     return e
 
 
-def embed_to_v2(embed: discord.Embed) -> LayoutView:
+def developer_credit_row() -> ActionRow:
+    """Return the disabled, non-interactive developer credit used on final game results."""
+    return ActionRow(
+        discord.ui.Button(
+            label="Developed by Sayler & Neglawy",
+            style=discord.ButtonStyle.secondary,
+            disabled=True,
+        )
+    )
+
+
+def add_developer_credit(view: LayoutView) -> LayoutView:
+    """Attach the standard credit to a completed game view, safely and at most once."""
+    if not isinstance(view, LayoutView) or getattr(view, "_developer_credit_added", False):
+        return view
+    view.add_item(Container(developer_credit_row(), accent_color=THEME["grey"]))
+    view._developer_credit_added = True
+    return view
+
+
+def embed_to_v2(embed: discord.Embed, *, developer_credit: bool = False) -> LayoutView:
     """Convert a legacy informational embed into a Components V2 panel.
 
     This preserves the title, body, fields, footer, accent color, and meaningful
@@ -82,6 +102,8 @@ def embed_to_v2(embed: discord.Embed) -> LayoutView:
                 ),
             ]
         )
+    if developer_credit:
+        children.extend([Separator(), developer_credit_row()])
 
     view = LayoutView(timeout=180)
     view.add_item(Container(*children, accent_color=accent))
@@ -89,7 +111,14 @@ def embed_to_v2(embed: discord.Embed) -> LayoutView:
 
 
 class StatusPanel(LayoutView):
-    def __init__(self, title: str, description: str, outcome: str = "neutral"):
+    def __init__(
+        self,
+        title: str,
+        description: str,
+        outcome: str = "neutral",
+        *,
+        developer_credit: bool = False,
+    ):
         super().__init__(timeout=120)
         colors = {
             "win": THEME["gold"],
@@ -100,11 +129,12 @@ class StatusPanel(LayoutView):
         }
         body = f"# {title}\n{description}" if description else f"# {title}"
         footer = f"-# كازينو الحفرة • {BRAND}"
+        children = [TextDisplay(body[:3850]), Separator(), TextDisplay(footer)]
+        if developer_credit:
+            children.extend([Separator(), developer_credit_row()])
         self.add_item(
             Container(
-                TextDisplay(body[:3850]),
-                Separator(),
-                TextDisplay(footer),
+                *children,
                 accent_color=colors.get(outcome, THEME["grey"]),
             )
         )
