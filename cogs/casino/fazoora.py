@@ -17,6 +17,7 @@ from cogs.casino.game_registry import (
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
+    add_developer_credit,
     base_embed,
     embed_to_v2,
     get_currency,
@@ -53,6 +54,7 @@ async def publish_riddle_result(
     original_message=None,
 ) -> bool:
     """Publish a separate V2 outcome and safely close/fallback the original question."""
+    add_developer_credit(panel)
     try:
         await ctx.send(
             view=panel,
