@@ -422,7 +422,14 @@ class RouletteLobby(LayoutView):
                         context="final_winner",
                     )
                 else:
-                    await self.ctx.send(view=StatusPanel("🏆 بطل الروليت!", final_description, "success"))
+                    await self.ctx.send(
+                        view=StatusPanel(
+                            "🏆 بطل الروليت!",
+                            final_description,
+                            "success",
+                            developer_credit=True,
+                        )
+                    )
             else:
                 final_description = "الكل خرج من اللعبة؛ مفيش فائز في الجولة دي."
                 if last_round_message is not None and last_round_view is not None:
@@ -435,7 +442,14 @@ class RouletteLobby(LayoutView):
                         context="final_no_winner",
                     )
                 else:
-                    await self.ctx.send(view=StatusPanel("انتهت الروليت", final_description, "warning"))
+                    await self.ctx.send(
+                        view=StatusPanel(
+                            "انتهت الروليت",
+                            final_description,
+                            "warning",
+                            developer_credit=True,
+                        )
+                    )
 
         except asyncio.CancelledError:
             raise
