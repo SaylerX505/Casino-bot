@@ -1241,7 +1241,7 @@ class RPS(commands.Cog):
 
     @commands.hybrid_command(
         name="حومص",
-        aliases=["rps", "حجرة", "مقص"],
+        aliases=["rps", "rock-paper-scissors", "rockpaperscissors", "حجرة", "مقص"],
         description="تحدَّ عضوًا في حجرة ورقة مقص برهان",
     )
     async def rps(self, ctx, bet: str | None = None, opponent: discord.Member | None = None):
