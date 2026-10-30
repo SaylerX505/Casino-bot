@@ -106,6 +106,14 @@ class RPSPanelReliabilityTests(unittest.IsolatedAsyncioTestCase):
             if isinstance(item, discord.ui.TextDisplay)
         )
         self.assertIn("صافي الربح", result_text)
+        credit_buttons = [
+            item for item in result_view.walk_children()
+            if isinstance(item, discord.ui.Button)
+            and item.label == "Developed by Sayler & Neglawy"
+        ]
+        self.assertEqual(len(credit_buttons), 1)
+        self.assertTrue(credit_buttons[0].disabled)
+        self.assertNotIn("Developed by Sayler & Neglawy", view._panel_text.content)
         view.stop()
 
     async def test_failed_result_receipt_keeps_full_result_on_closed_board(self):
@@ -126,6 +134,13 @@ class RPSPanelReliabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("صافي الربح", view._panel_text.content)
         self.assertIn("1,090", view._panel_text.content)
         self.assertNotIn("إيصال العام التالي", view._panel_text.content)
+        credit_buttons = [
+            item for item in view.walk_children()
+            if isinstance(item, discord.ui.Button)
+            and item.label == "Developed by Sayler & Neglawy"
+        ]
+        self.assertEqual(len(credit_buttons), 1)
+        self.assertTrue(credit_buttons[0].disabled)
         self.assertEqual(view._buttons, [])
         view.stop()
 
