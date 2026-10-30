@@ -244,7 +244,7 @@ def render_blackjack_table(player_cards, dealer_cards, *, phase: str, amount: in
     draw_row(player_row, 370, "PLAYER")
 
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG", optimize=True)
+    image.save(buffer, format="PNG", optimize=False, compress_level=1)
     return buffer.getvalue()
 
 
@@ -276,6 +276,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.notice = None
         self._replay_button = None
         self._replay_expired = False
+        self._art_cache_key = None
+        self._art_cache_bytes = None
         self._buttons = {}
         self._render_view()
 
@@ -459,14 +461,26 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         )
 
     async def _art_file(self):
-        image_bytes = await asyncio.to_thread(
-            render_blackjack_table,
-            list(self.player_cards),
-            list(self.dealer_cards),
-            phase=self.phase,
-            amount=self.amount,
+        cache_key = (
+            tuple(self.player_cards),
+            tuple(self.dealer_cards),
+            self.phase,
+            int(self.amount),
         )
-        return discord.File(fp=io.BytesIO(image_bytes), filename=BLACKJACK_ART_FILENAME)
+        if cache_key != self._art_cache_key or self._art_cache_bytes is None:
+            image_bytes = await asyncio.to_thread(
+                render_blackjack_table,
+                list(self.player_cards),
+                list(self.dealer_cards),
+                phase=self.phase,
+                amount=self.amount,
+            )
+            self._art_cache_key = cache_key
+            self._art_cache_bytes = image_bytes
+        return discord.File(
+            fp=io.BytesIO(self._art_cache_bytes),
+            filename=BLACKJACK_ART_FILENAME,
+        )
 
     async def _edit(self):
         if self.message is None:
