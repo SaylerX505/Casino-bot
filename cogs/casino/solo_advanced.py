@@ -10,7 +10,6 @@ solo-betting startup recovery.
 import asyncio
 import io
 import logging
-import math
 import secrets
 import uuid
 
