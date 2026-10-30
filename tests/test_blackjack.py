@@ -141,6 +141,21 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({button.label for button in buttons}, {"Hit", "Stand"})
 
 
+    async def test_table_art_is_cached_until_cards_or_phase_change(self):
+        rendered = b"\\x89PNG\\r\\n\\x1a\\n" + b"table"
+        with patch("cogs.casino.blackjack.render_blackjack_table", return_value=rendered) as render:
+            first = await self.view._art_file()
+            second = await self.view._art_file()
+            self.assertEqual(first.filename, second.filename)
+            self.assertEqual(render.call_count, 1)
+            first.close()
+            second.close()
+
+            self.view.phase = "playing"
+            third = await self.view._art_file()
+            self.assertEqual(render.call_count, 2)
+            third.close()
+
     async def test_double_down_adds_one_card_and_stands_automatically(self):
         self.view.phase = "playing"
         self.view.game_id = "blackjack-double-down-ui"
