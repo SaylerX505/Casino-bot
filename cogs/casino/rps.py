@@ -19,8 +19,8 @@ from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
-    developer_credit_row,
     base_embed,
+    developer_credit_row,
     embed_to_v2,
     get_currency,
     send_status,
