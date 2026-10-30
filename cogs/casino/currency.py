@@ -322,7 +322,7 @@ class Currency(commands.Cog):
         except discord.HTTPException as exc:
             logger.warning("Could not send economy audit log (%s)", type(exc).__name__)
 
-    @commands.hybrid_command(name='bal', aliases=['balance', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك الحالي')
+    @commands.hybrid_command(name='bal', aliases=['balance', 'cash', 'wallet', 'money', 'رصيد', 'فلوسي', 'محفظتي'], description='عرض رصيدك الحالي')
     async def balance(self, ctx):
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         try:
@@ -339,7 +339,7 @@ class Currency(commands.Cog):
             **send_kwargs,
         )
 
-    @commands.hybrid_command(name="daily", aliases=["يومية"], description="استلام المكافأة اليومية")
+    @commands.hybrid_command(name="daily", aliases=["claim", "يومية"], description="استلام المكافأة اليومية")
     async def daily(self, ctx):
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         try:
@@ -380,7 +380,7 @@ class Currency(commands.Cog):
 
     @commands.hybrid_command(
         name="تحويل",
-        aliases=["ckrc", "transfer"],
+        aliases=["ckrc", "transfer", "pay", "send"],
         description="تحويل عملات لعضو بعد التأكيد",
     )
     async def transfer(self, ctx, target: discord.Member, amount: int):
@@ -414,7 +414,7 @@ class Currency(commands.Cog):
             )
             raise
 
-    @commands.hybrid_command(name='inv', aliases=['inventory', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
+    @commands.hybrid_command(name='inv', aliases=['inventory', 'bag', 'backpack', 'شنطتي', 'حقيبتي'], description='عرض أغراضك في الشنطة')
     async def inventory(self, ctx):
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         try:
@@ -427,7 +427,7 @@ class Currency(commands.Cog):
             )
         view.message = await ctx.send(view=view, **send_kwargs)
 
-    @commands.hybrid_command(name='بروفايل', aliases=['profile', 'me', 'انا'], description='عرض بروفايلك أو بروفايل عضو')
+    @commands.hybrid_command(name='بروفايل', aliases=['profile', 'me', 'انا', 'whois'], description='عرض بروفايلك أو بروفايل عضو')
     async def profile(self, ctx, target: discord.Member = None):
         """عرض بطاقة البروفايل المشتركة من الأمر ومركز الاقتصاد."""
         user = target or ctx.author
@@ -442,7 +442,7 @@ class Currency(commands.Cog):
             )
         await ctx.send(view=panel, **send_kwargs)
 
-    @commands.hybrid_command(name='استخدم', aliases=['use', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
+    @commands.hybrid_command(name='استخدم', aliases=['use', 'open', 'افتح'], description='استخدام صندوق أو تذكرة حظ')
     async def use_item(self, ctx, item: str | None = None):
         private = ctx.interaction is not None
         if not item:
