@@ -72,7 +72,7 @@ class AdminSafetyTests(unittest.IsolatedAsyncioTestCase):
         bot_admin_check.assert_not_called()
         interaction.response.send_message.assert_awaited_once()
         view = interaction.response.send_message.await_args.kwargs["view"]
-        self.assertEqual(view.children[0].children[0].content.split("\\n", 1)[0], "# تمت إضافة العملات")
+        self.assertEqual(view.children[0].children[0].content.split("\n", 1)[0], "# تمت إضافة العملات")
 
     async def test_economy_debit_allows_a_wizard_admin_role_without_discord_admin(self):
         interaction = fake_interaction(administrator=False, roles=(56,))
@@ -89,7 +89,7 @@ class AdminSafetyTests(unittest.IsolatedAsyncioTestCase):
         bot_admin_check.assert_not_called()
         interaction.response.send_message.assert_awaited_once()
         view = interaction.response.send_message.await_args.kwargs["view"]
-        self.assertEqual(view.children[0].children[0].content.split("\\n", 1)[0], "# تم خصم العملات")
+        self.assertEqual(view.children[0].children[0].content.split("\n", 1)[0], "# تم خصم العملات")
 
     async def test_economy_management_rejects_roles_not_configured_in_the_wizard(self):
         interaction = fake_interaction(administrator=False, roles=(77,))
@@ -104,7 +104,7 @@ class AdminSafetyTests(unittest.IsolatedAsyncioTestCase):
         credit.assert_not_called()
         interaction.response.send_message.assert_awaited_once()
         view = interaction.response.send_message.await_args.kwargs["view"]
-        self.assertEqual(view.children[0].children[0].content.split("\\n", 1)[0], "# غير مسموح")
+        self.assertEqual(view.children[0].children[0].content.split("\n", 1)[0], "# غير مسموح")
 
     async def test_economy_commands_are_not_hidden_by_discord_administrator_default(self):
         self.assertIsNone(AdminCommands.admin.default_permissions)
