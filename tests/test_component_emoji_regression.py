@@ -75,10 +75,52 @@ class ComponentEmojiRegressionTests(unittest.TestCase):
                     isinstance(node.func, ast.Attribute)
                     and node.func.attr == "Button"
                 )
-                if is_button and any(keyword.arg == "emoji" for keyword in node.keywords):
+                if not is_button:
+                    continue
+                if any(keyword.arg == "emoji" for keyword in node.keywords):
                     self.fail(
                         f"{path.relative_to(ROOT)}:{node.lineno} assigns an emoji to a button"
                     )
+                style = next(
+                    (keyword.value for keyword in node.keywords if keyword.arg == "style"),
+                    None,
+                )
+                if not (
+                    isinstance(style, ast.Attribute)
+                    and style.attr == "secondary"
+                    and isinstance(style.value, ast.Attribute)
+                    and style.value.attr == "ButtonStyle"
+                ):
+                    self.fail(
+                        f"{path.relative_to(ROOT)}:{node.lineno} must use ButtonStyle.secondary"
+                    )
+
+            for node in ast.walk(tree):
+                targets = []
+                if isinstance(node, ast.Assign):
+                    targets.extend(node.targets)
+                elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+                    targets.append(node.target)
+                for target in targets:
+                    if isinstance(target, ast.Attribute) and target.attr == "emoji":
+                        self.fail(
+                            f"{path.relative_to(ROOT)}:{node.lineno} assigns an emoji after button creation"
+                        )
+                    if (
+                        isinstance(target, ast.Attribute)
+                        and target.attr == "style"
+                        and isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+                    ):
+                        value = node.value
+                        if not (
+                            isinstance(value, ast.Attribute)
+                            and value.attr == "secondary"
+                            and isinstance(value.value, ast.Attribute)
+                            and value.value.attr == "ButtonStyle"
+                        ):
+                            self.fail(
+                                f"{path.relative_to(ROOT)}:{node.lineno} changes a button away from secondary"
+                            )
 
 
 if __name__ == "__main__":

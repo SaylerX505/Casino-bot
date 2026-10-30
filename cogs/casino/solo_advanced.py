@@ -989,7 +989,6 @@ class MinesView(InteractiveSoloWagerView):
             self.revealed.add(index)
             self._disable_tile(index)
             self.cashout_button.label = "Cash Out"
-            self.cashout_button.emoji = "💰"
             try:
                 self._refresh()
             except Exception:
