@@ -132,7 +132,11 @@ class Fazoora(commands.Cog):
         self.bot = bot
         self.bank = load_bank()
 
-    @commands.hybrid_command(name="فزورة", aliases=["فزوره", "fazoora", "احزر"], description="ابدأ فزورة جماعية")
+    @commands.hybrid_command(
+        name="فزورة",
+        aliases=["فزوره", "fazoora", "riddle", "quiz", "احزر"],
+        description="ابدأ فزورة جماعية",
+    )
     async def fazoora(self, ctx):
         if is_active_game(self.bot, ctx.channel.id):
             return await send_status(
