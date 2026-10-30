@@ -198,6 +198,7 @@ class InteractiveWagerRecoveryTests(unittest.IsolatedAsyncioTestCase):
             user=author,
             message=message,
             response=SimpleNamespace(
+                defer=AsyncMock(return_value=None),
                 edit_message=AsyncMock(return_value=None),
                 send_message=AsyncMock(return_value=None),
                 is_done=lambda: False,
