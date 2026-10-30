@@ -4,7 +4,6 @@ import asyncio
 import logging
 from collections.abc import Callable
 
-import discord
 from discord.ext import commands
 
 from cogs.casino import bank

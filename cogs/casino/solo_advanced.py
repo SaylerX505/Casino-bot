@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-import secrets
+import secrets as secrets
 
 from discord.ext import commands
 

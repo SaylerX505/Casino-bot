@@ -109,7 +109,6 @@ def build_final_result(scores):
     )
 
 
-# --- CORE GAME LOOP ---
 async def run_game_loop(ctx, players):
     try:
         scores = {player: 0 for player in players}
@@ -351,8 +350,7 @@ async def run_game_loop(ctx, players):
             # guessing board and keeping earlier maps/scores readable in chat.
             await asyncio.sleep(4)
 
-        # --- FINAL WINNER ANNOUNCEMENT ---
-        description, winner_image, outcome = build_final_result(scores)
+                description, winner_image, outcome = build_final_result(scores)
 
         await ctx.send(
             view=GeoGuessrResultPanel(
@@ -378,7 +376,6 @@ async def run_game_loop(ctx, players):
         release_game_task(ctx.bot, ctx.channel.id, asyncio.current_task())
 
 
-# --- COG COMMANDS ---
 class GeoGuessr(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

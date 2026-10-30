@@ -30,7 +30,7 @@ from cogs.casino.blackjack_core import (
 )
 from cogs.casino.blackjack_view import BlackjackView
 from cogs.casino.solo_betting import (
-    COIN,
+    COIN as COIN,
     MAX_BET,
     MIN_BET,
     claim_solo_session,

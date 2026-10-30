@@ -1,12 +1,10 @@
 import asyncio
 import logging
-import time
 import uuid
 from functools import partial
 
 import discord
 from discord.ext import commands
-from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
@@ -15,12 +13,10 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
-from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
     base_embed,
-    developer_credit_row,
     embed_to_v2,
     get_currency,
     send_status,

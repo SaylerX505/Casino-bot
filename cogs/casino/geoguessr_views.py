@@ -30,7 +30,6 @@ from cogs.utility.theme import (
 logger = logging.getLogger(__name__)
 
 
-# --- MENUS AND VIEWS ---
 class GuessGameMenu(LayoutView):
     MAX_TIME_EXTENSIONS = 3
 

@@ -985,4 +985,3 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         await self.choose(interaction, "✂️")
 
 
-# --- COG COMMANDS ---

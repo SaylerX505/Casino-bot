@@ -18,7 +18,6 @@ from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, pri
 logger = logging.getLogger(__name__)
 
 
-# --- LOCATION COORDINATES ---
 LOCATIONS = {
     1: {"name": "الحفره", "pos": (0.85, 0.20)},
     2: {"name": "محطة الوقود", "pos": (0.65, 0.25)},
@@ -424,7 +423,6 @@ class LobbyView(LayoutView):
         await interaction.response.edit_message(view=self)
 
 
-# --- GAME LOOP ---
 async def run_game_loop(ctx, players):
     try:
         map_bytes = await generate_map_with_x([])
@@ -586,8 +584,7 @@ async def run_game_loop(ctx, players):
             )
             await asyncio.sleep(3)
 
-        # --- WINNER ANNOUNCEMENT ---
-        if len(alive) == 1:
+                if len(alive) == 1:
             winner = alive[0]
             win_embed = result_embed(
                 title="🏆 بطل الغميضة!",

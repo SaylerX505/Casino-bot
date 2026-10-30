@@ -1,4 +1,3 @@
-# --- EMBED THEME ---
 """موحد شكل البوت - الوان الحفرة + helpers"""
 import asyncio
 import discord

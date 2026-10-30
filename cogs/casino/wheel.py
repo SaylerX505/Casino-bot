@@ -187,7 +187,6 @@ def format_wheel_breakdown(payout, target_loss=None, refund=0):
     )
 
 
-# --- WHEEL ART ---
 def render_wheel(highlight=None):
     size = 600
     center = size // 2
@@ -234,7 +233,6 @@ def render_wheel(highlight=None):
     return buffer
 
 
-# --- LOBBY VIEW ---
 class WheelResultPanel(LayoutView):
     def __init__(
         self,
@@ -549,7 +547,6 @@ class WheelLobby(LayoutView):
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
 
-# --- COG COMMANDS ---
 class Wheel(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

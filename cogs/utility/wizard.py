@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from cogs.utility.wizard_common import _can_manage_wizard, WizardLayout
+from cogs.utility.wizard_common import WizardLayout, _can_manage_wizard
 from cogs.utility.wizard_views import (
     AdminRoleWizardView,
     AISettingsWizardView,
@@ -41,8 +41,8 @@ async def setup(bot):
     await bot.add_cog(SetupWizard(bot))
 
 __all__ = [
-    "AdminRoleWizardView",
     "AISettingsWizardView",
+    "AdminRoleWizardView",
     "GameChannelWizardView",
     "LogChannelWizardView",
     "SetupWizard",

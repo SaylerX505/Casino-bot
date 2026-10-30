@@ -34,7 +34,6 @@ from cogs.utility.theme import (
 logger = logging.getLogger(__name__)
 
 
-# --- UI VIEWS ---
 
 class ChairPrepView(LayoutView):
     def __init__(self, round_num, num_chairs):
@@ -398,8 +397,7 @@ class ChairsLobby(LayoutView):
                 )
             return False
 
-    # --- MUSICAL CHAIRS LOOP ---
-    async def run_game_loop(self):
+        async def run_game_loop(self):
         try:
             active_players = self.players.copy()
             round_num = 1
@@ -500,8 +498,7 @@ class ChairsLobby(LayoutView):
                 round_num += 1
                 await asyncio.sleep(3) 
 
-            # --- WINNER ANNOUNCEMENT ---
-            if len(active_players) == 1:
+                        if len(active_players) == 1:
                 winner = active_players[0]
                 await self._publish_end_receipt(
                     last_round_message,
@@ -526,7 +523,6 @@ class ChairsLobby(LayoutView):
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
 
-# --- COG COMMANDS ---
 class Chairs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

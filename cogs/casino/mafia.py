@@ -39,7 +39,6 @@ async def poke_reminder(user, role_name, view):
         except discord.HTTPException:
             pass
 
-# --- CORE GAME LOOP ---
 
 class MafiaGameState:
     """Shared live state so shop items (scan/veto) can interact with a running game."""
@@ -77,8 +76,7 @@ async def run_mafia_game(ctx, players):
             
         alive = players.copy()
 
-        # --- LIVE GAME STATE ---
-        try:
+                try:
             _state = MafiaGameState()
             _state.alive = alive
             _state.mafias = mafias
@@ -363,8 +361,7 @@ async def run_mafia_game(ctx, players):
                 else:
                     hanged_player = next((p for p in alive if p.id == top_target_id), None)
                     if hanged_player:
-                        # --- VETO RESOLUTION ---
-                        try:
+                                                try:
                             cur_cog = ctx.bot.get_cog('Currency')
                         except Exception:
                             logger.exception("Could not resolve the Currency cog for the Mafia item action")
@@ -442,7 +439,6 @@ async def mafia_wins(ctx, mafias):
     embed.set_image(url="attachment://reveal.jpg")
     await ctx.send(view=embed_to_v2(embed, developer_credit=True), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
-# --- COG COMMANDS ---
 class Mafia(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

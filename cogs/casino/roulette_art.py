@@ -22,35 +22,28 @@ async def fetch_avatar(session, user, size=(80, 80)):
 
 async def generate_sniper_image(player):
     width, height = 800, 500
-    # --- SCENE BACKGROUND ---
-    base = Image.new('RGBA', (width, height), (15, 15, 15, 255))
+        base = Image.new('RGBA', (width, height), (15, 15, 15, 255))
     draw = ImageDraw.Draw(base)
     
     cx, cy = width//2, height//2
-    # --- SCOPE GEOMETRY ---
-    radius = 180
+        radius = 180
     
-    # --- SCOPE LOGO ---
-    logo_path = os.path.join(os.getcwd(), "server_logo.png")
+        logo_path = os.path.join(os.getcwd(), "server_logo.png")
     if os.path.exists(logo_path):
         try:
             logo = Image.open(logo_path).convert("RGBA")
-            # --- LOGO SCALING ---
-            logo = logo.resize((int(radius * 1.5), int(radius * 1.5)))
+                        logo = logo.resize((int(radius * 1.5), int(radius * 1.5)))
             logo = logo.filter(ImageFilter.GaussianBlur(5))
-            # --- LOGO POSITIONING ---
-            base.paste(logo, (cx - logo.width//2, cy - logo.height//2), logo)
+                        base.paste(logo, (cx - logo.width//2, cy - logo.height//2), logo)
         except (OSError, ValueError):
             logger.debug("Optional roulette scene logo could not be loaded", exc_info=True)
             
-    # --- SCOPE DETAILS ---
-    draw.ellipse((cx-radius, cy-radius, cx+radius, cy+radius), outline=(255, 50, 50, 200), width=4)
+        draw.ellipse((cx-radius, cy-radius, cx+radius, cy+radius), outline=(255, 50, 50, 200), width=4)
     draw.line((cx, cy-radius, cx, cy+radius), fill=(255, 50, 50, 150), width=2)
     draw.line((cx-radius, cy, cx+radius, cy), fill=(255, 50, 50, 150), width=2)
     draw.ellipse((cx-4, cy-4, cx+4, cy+4), fill=(255, 0, 0, 255))
     
-    # --- HUNTER AVATAR ---
-    try:
+        try:
         async with aiohttp.ClientSession() as session:
             avatar = await fetch_avatar(session, player, (80, 80))
         base.paste(avatar, (40, height - 120), avatar)
