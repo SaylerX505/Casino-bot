@@ -20,8 +20,8 @@ from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.game_registry import register_game_task
 from cogs.utility.theme import (
     THEME,
-    developer_credit_row,
     StatusPanel,
+    developer_credit_row,
     lobby_embed,
     private_status,
     try_edit_view,
