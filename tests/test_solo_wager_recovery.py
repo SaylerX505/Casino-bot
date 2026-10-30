@@ -46,7 +46,7 @@ class InterruptedWagerPanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("# ROUND REFUNDED", text)
         self.assertIn("Bet returned:", text)
         self.assertIn("100", text)
-        self.assertIn("رمي العملة", text)
+        self.assertIn("COIN FLIP", text)
 
     async def test_unsettled_or_winning_receipt_does_not_mark_a_game_refunded(self):
         message = SimpleNamespace(edit=AsyncMock())

@@ -25,7 +25,14 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.requester = SimpleNamespace(id=101, mention="<@101>")
         self.cog = SimpleNamespace()
-        self.view = SoloWagerView(self.cog, self.requester, 100)
+        self.view = SoloWagerView(
+            self.cog,
+            self.requester,
+            100,
+            odds_description="50%",
+            instructions="Choose heads or tails.",
+            payout_description="Bonus: +0.9x.",
+        )
 
     async def asyncTearDown(self):
         self.view.stop()
