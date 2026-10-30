@@ -8,6 +8,7 @@ import discord
 
 from cogs.casino import solo_advanced, solo_betting
 from cogs.casino.blackjack import Blackjack
+from cogs.casino.rps import RPS
 from cogs.utility.theme import StatusPanel
 
 
@@ -79,6 +80,32 @@ class SoloBetPreflightTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("رصيدك مش كفاية", panel_text(result_view))
         view_constructor.assert_not_called()
         claim_session.assert_not_called()
+
+    async def test_rps_rejects_insufficient_balance_before_posting_challenge(self):
+        cog = RPS(
+            SimpleNamespace(
+                active_games={},
+                get_cog=lambda name: object() if name == "Currency" else None,
+            )
+        )
+        cog._escrow_ready = True
+        ctx = make_context()
+        ctx.guild = SimpleNamespace(id=202)
+        ctx.channel = SimpleNamespace(id=303)
+        opponent = SimpleNamespace(id=404, mention="<@404>", bot=False)
+
+        with (
+            patch("cogs.casino.rps.bank.get_balance", return_value=50),
+            patch("cogs.casino.rps.register_game_task") as register_game,
+        ):
+            await cog.rps.callback(cog, ctx, "100", opponent)
+
+        ctx.send.assert_awaited_once()
+        result_view = ctx.send.await_args.kwargs["view"]
+        self.assertIsInstance(result_view, StatusPanel)
+        self.assertIn("رصيدك مش كفاية", panel_text(result_view))
+        self.assertIn("100", panel_text(result_view))
+        register_game.assert_not_called()
 
     async def test_blackjack_rejects_before_table_is_constructed(self):
         cog = Blackjack(SimpleNamespace())
