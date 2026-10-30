@@ -94,7 +94,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.view.stop()
 
-    def test_blackjack_waiting_panel_uses_v2_and_primary_deal_control(self):
+    def test_blackjack_waiting_panel_uses_v2_and_secondary_controls(self):
         self.assertIsInstance(self.view, LayoutView)
         text = "\n".join(
             item.content for item in self.view.walk_children()
@@ -108,8 +108,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual({button.label for button in buttons}, {"Deal", "Cancel"})
         styles = {button.label: button.style for button in buttons}
-        self.assertIs(styles["Deal"], discord.ButtonStyle.primary)
-        self.assertIs(styles["Cancel"], discord.ButtonStyle.danger)
+        self.assertTrue(all(style is discord.ButtonStyle.secondary for style in styles.values()))
 
     def test_blackjack_panel_uses_gold_accent(self):
         container = next(

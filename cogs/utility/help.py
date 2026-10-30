@@ -114,7 +114,6 @@ class HelpSelect(Select):
             discord.SelectOption(
                 label="أوامر الأعضاء",
                 value="member",
-                emoji="👤",
                 description="الاقتصاد والألعاب المتاحة للجميع",
             ),
         ]
@@ -122,7 +121,6 @@ class HelpSelect(Select):
             options.append(discord.SelectOption(
                 label="أوامر الستاف",
                 value="staff",
-                emoji="🛡️",
                 description="إدارة الصلاحيات وقنوات الألعاب والتحكم",
             ))
         super().__init__(
@@ -210,7 +208,6 @@ class HelpPageView(LayoutView):
         row = ActionRow()
         back = discord.ui.Button(
             label="رجوع للأقسام",
-            emoji="↩️",
             style=discord.ButtonStyle.secondary,
         )
 
@@ -258,7 +255,6 @@ class HelpEntryView(LayoutView):
         row = ActionRow()
         button = discord.ui.Button(
             label="افتح المساعدة الخاصة",
-            emoji="📚",
             style=discord.ButtonStyle.secondary,
         )
         button.callback = self.open_help

@@ -259,9 +259,7 @@ class AdminCommands(commands.Cog):
     @admin.command(name="ai-toggle", description="تشغيل أو إيقاف محسن")
     @app_commands.describe(enabled="فعّل محسن أو أوقفه")
     async def ai_toggle(self, interaction: discord.Interaction, enabled: bool):
-        if not await self._require_admin(interaction, require_bot_admin=True):
-            return
-        if not await self._require_global_owner(interaction, "محسن"):
+        if not await self._require_economy_admin(interaction):
             return
         cog = self.bot.get_cog("AI")
         if cog is None:
@@ -292,9 +290,7 @@ class AdminCommands(commands.Cog):
 
     @admin.command(name="status", description="عرض حالة البوت وأدمنز البوت")
     async def admin_status(self, interaction: discord.Interaction):
-        if not await self._require_admin(interaction, require_bot_admin=True):
-            return
-        if not await self._require_global_owner(interaction, "حالة البوت"):
+        if not await self._require_economy_admin(interaction):
             return
         admins = bank.list_guild_admins(interaction.guild_id)
         ai_cog = self.bot.get_cog("AI")

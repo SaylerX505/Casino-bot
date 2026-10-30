@@ -343,7 +343,6 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 )
             for emoji, label, callback_name in actions:
                 button = discord.ui.Button(
-                    emoji=emoji,
                     label=label,
                     style=discord.ButtonStyle.secondary,
                     custom_id=f"rps_{callback_name}",

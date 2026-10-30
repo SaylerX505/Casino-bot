@@ -222,15 +222,13 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self._game_rows = rows
         self.start_button = discord.ui.Button(
             label="Start Round",
-            emoji="▶️",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"{self.game_type}_start",
         )
         self.start_button.callback = self.begin_game
         self.cancel_button = discord.ui.Button(
             label="Cancel",
-            emoji="❌",
-            style=discord.ButtonStyle.danger,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"{self.game_type}_cancel_start",
         )
         self.cancel_button.callback = self.cancel_before_start
@@ -276,7 +274,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         if self.receipt is not None:
             return self._final_content()
         if self.resolving:
-            return f"# {self.game_title}\nConfirming result..."
+            return f"# {self.game_title}\nProcessing..."
         if not self.started:
             return self._initial_content()
         return f"# {self.game_title}\n**Bet:** {self.amount:,} {COIN}"
@@ -473,12 +471,8 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
 
             self.resolving = True
             self._set_prestart_controls_enabled(False)
-            self._refresh()
             try:
-                await interaction.response.edit_message(
-                    view=self,
-                    attachments=[self._art_file()],
-                )
+                await interaction.response.defer()
             except asyncio.CancelledError:
                 raise
             except (discord.HTTPException, discord.InteractionResponded, discord.NotFound):
@@ -489,19 +483,14 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
                 )
                 self.done = True
                 self.resolving = False
-                self.start_error_message = (
-                    "Could not update the game. No bet was placed."
-                )
+                self.start_error_message = "Could not start. No bet was placed."
                 self._set_controls_enabled(False)
                 self._set_prestart_controls_enabled(False)
                 try:
                     self._refresh()
                     await self._edit()
                 except Exception:
-                    logger.exception(
-                        "Could not close unstarted panel game_id=%s",
-                        self.game_id,
-                    )
+                    logger.exception("Could not close unstarted panel game_id=%s", self.game_id)
                 finally:
                     release_solo_session(self.requester.id, self)
                     self.stop()
@@ -705,34 +694,16 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             "outcome": outcome,
         }
         self._set_controls_enabled(False)
-        try:
+        if interaction is not None:
             try:
-                self._refresh()
-            except Exception:
-                logger.exception("Could not render terminal game state game_id=%s", self.game_id)
-                self._prepare_refund(
-                    "Could not prepare the result. Bet returned."
+                await interaction.response.defer()
+            except (discord.HTTPException, discord.InteractionResponded):
+                logger.debug(
+                    "Could not defer terminal wager update game_id=%s",
+                    self.game_id,
+                    exc_info=True,
                 )
-            if interaction is not None:
-                try:
-                    await interaction.response.edit_message(view=self)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.warning(
-                        "Could not acknowledge interactive wager settlement game_id=%s",
-                        self.game_id,
-                        exc_info=True,
-                    )
-                    await self._edit()
-            else:
-                await self._edit()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Could not publish terminal wager state game_id=%s", self.game_id)
-        finally:
-            self._schedule_settlement_worker()
+        self._schedule_settlement_worker()
 
     async def _settle_after_creation(self, creation_task):
         """Wait for a cancelled database creation to finish before reconciling its stake."""
@@ -821,8 +792,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
                 self._panel_text.content = self._final_content()
             self._replay_button = discord.ui.Button(
                 label="Play Again",
-                emoji="↻",
-                style=discord.ButtonStyle.primary,
+                style=discord.ButtonStyle.secondary,
                 custom_id=f"{self.game_type}_replay",
             )
             self._replay_button.callback = self.replay
@@ -930,8 +900,7 @@ class MinesView(InteractiveSoloWagerView):
             self.tile_buttons[index] = button
         self.cashout_button = discord.ui.Button(
             label="Cash Out",
-            emoji="💰",
-            style=discord.ButtonStyle.success,
+            style=discord.ButtonStyle.secondary,
             custom_id="mines_cashout",
             disabled=True,
         )
@@ -993,11 +962,9 @@ class MinesView(InteractiveSoloWagerView):
         for index, button in self.tile_buttons.items():
             button.disabled = True
             if reveal_board and index in self.mines:
-                button.emoji = "💣"
-                button.style = discord.ButtonStyle.danger
+                button.style = discord.ButtonStyle.secondary
             elif index in self.revealed:
-                button.emoji = "💎"
-                button.style = discord.ButtonStyle.success
+                button.style = discord.ButtonStyle.secondary
 
     def _set_controls_enabled(self, enabled: bool):
         for index, button in self.tile_buttons.items():
@@ -1008,11 +975,9 @@ class MinesView(InteractiveSoloWagerView):
         button = self.tile_buttons[index]
         button.disabled = True
         if mine:
-            button.emoji = "💣"
-            button.style = discord.ButtonStyle.danger
+            button.style = discord.ButtonStyle.secondary
         else:
-            button.emoji = "💎"
-            button.style = discord.ButtonStyle.success
+            button.style = discord.ButtonStyle.secondary
 
     async def reveal(self, interaction, index: int):
         async with self._state_lock:
@@ -1124,24 +1089,21 @@ class HiLoView(InteractiveSoloWagerView):
         )
         self.higher_button = discord.ui.Button(
             label="Higher",
-            emoji="⬆️",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id="hilo_higher",
             disabled=True,
         )
         self.higher_button.callback = self.guess_higher
         self.lower_button = discord.ui.Button(
             label="Lower",
-            emoji="⬇️",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id="hilo_lower",
             disabled=True,
         )
         self.lower_button.callback = self.guess_lower
         self.cashout_button = discord.ui.Button(
             label="Cash Out",
-            emoji="💰",
-            style=discord.ButtonStyle.success,
+            style=discord.ButtonStyle.secondary,
             custom_id="hilo_cashout",
             disabled=True,
         )

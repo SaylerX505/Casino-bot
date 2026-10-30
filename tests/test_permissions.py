@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import config
 from cogs.casino import bank
+from cogs.casino.currency import Currency
 from cogs.casino.permissions import (
     ai_enabled_setting_key,
     configured_ai_enabled_for_guild,
@@ -55,8 +56,19 @@ class PermissionTierTests(unittest.TestCase):
         manager = FakeUser(user_id=20, roles=[55], administrator=False)
         with patch("cogs.casino.permissions.configured_manager_role_ids", return_value={55}):
             self.assertTrue(has_manager_access(manager))
+            self.assertTrue(has_staff_access(manager))
         with patch("cogs.casino.permissions.configured_manager_role_ids", return_value=set()):
             self.assertFalse(has_manager_access(manager))
+
+    def test_wizard_admin_role_passes_the_legacy_currency_whitelist(self):
+        manager = FakeUser(user_id=22, roles=[55], administrator=False)
+        currency = Currency(SimpleNamespace())
+        with (
+            patch("cogs.casino.permissions.configured_manager_role_ids", return_value={55}),
+            patch("cogs.casino.currency.bank.is_guild_admin", return_value=False),
+            patch("cogs.casino.currency.bank.get_whitelist", return_value={"users": set(), "roles": set()}),
+        ):
+            self.assertTrue(currency.check_whitelist(manager))
 
     def test_staff_roles_do_not_grant_global_economy_management_access(self):
         staff = FakeUser(user_id=21, roles=[99], administrator=False)

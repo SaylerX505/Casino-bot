@@ -69,7 +69,6 @@ class RouletteLobby(LayoutView):
                 label=label,
                 custom_id=custom_id,
                 style=discord.ButtonStyle.secondary,
-                emoji=emoji,
             )
             button.callback = partial(getattr(self, callback_name), button=button)
             self._buttons.append(button)

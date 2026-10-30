@@ -37,7 +37,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.view.stop()
 
-    def test_coinflip_uses_v2_layout_and_clear_primary_actions(self):
+    def test_coinflip_uses_v2_layout_and_secondary_actions(self):
         self.assertIsInstance(self.view, LayoutView)
         buttons = [
             item for item in self.view.walk_children()
@@ -47,7 +47,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({button.label for button in buttons}, {"Heads", "Tails", "Cancel"})
         self.assertEqual(
             {button.style for button in buttons},
-            {discord.ButtonStyle.primary, discord.ButtonStyle.danger},
+            {discord.ButtonStyle.secondary},
         )
         self.assertEqual(len({button.custom_id for button in buttons}), 3)
         self.assertIn("# COIN FLIP", self.view._panel_text.content)
@@ -55,7 +55,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("**Chance:** 50%", self.view._panel_text.content)
         self.assertIn("Bonus: +0.9x", self.view._panel_text.content)
 
-    def test_instant_solo_games_render_one_shot_result_animations(self):
+    def test_instant_solo_games_render_static_result_art(self):
         cases = (
             ("coinflip", "heads", "tails"),
             ("dice", "3", "5"),
@@ -78,8 +78,8 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             )
             try:
                 view._update_result_art(choice, result, "win")
-                self.assertEqual(view._art_filename, f"{game_type}-result.gif")
-                self.assertTrue(view._art_bytes.startswith(b"GIF89a"))
+                self.assertEqual(view._art_filename, f"{game_type}.png")
+                self.assertTrue(view._art_bytes.startswith(b"\x89PNG\r\n\x1a\n"))
             finally:
                 view.stop()
 
@@ -116,8 +116,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
                 {button.label for button in buttons},
                 {"1", "2", "3", "4", "5", "6", "Cancel"},
             )
-            self.assertEqual(sum(button.style is discord.ButtonStyle.primary for button in buttons), 6)
-            self.assertEqual(sum(button.style is discord.ButtonStyle.danger for button in buttons), 1)
+            self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
             self.assertEqual(len({button.custom_id for button in buttons}), 7)
             rows = [
                 item for item in view.walk_children()
@@ -154,7 +153,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(len(buttons), 2)
             self.assertEqual({button.label for button in buttons}, {"Spin", "Cancel"})
-            self.assertEqual({button.style for button in buttons}, {discord.ButtonStyle.primary, discord.ButtonStyle.danger})
+            self.assertEqual({button.style for button in buttons}, {discord.ButtonStyle.secondary})
             self.assertIn("slots_spin", {button.custom_id for button in buttons})
         finally:
             view.stop()
@@ -220,8 +219,8 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             view.message.edit.assert_awaited_once()
             edit_kwargs = view.message.edit.await_args.kwargs
             self.assertIs(edit_kwargs["view"], view)
-            self.assertEqual(edit_kwargs["attachments"][0].filename, "dice-result.gif")
-            self.assertTrue(view._art_bytes.startswith(b"GIF89a"))
+            self.assertEqual(edit_kwargs["attachments"][0].filename, "dice.png")
+            self.assertTrue(view._art_bytes.startswith(b"\x89PNG\r\n\x1a\n"))
             context.send.assert_not_awaited()
             self.assertTrue(view.result_published)
         finally:
@@ -236,7 +235,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             user=self.requester,
             channel_id=999,
             message=message,
-            response=SimpleNamespace(edit_message=AsyncMock(), send_message=AsyncMock()),
+            response=SimpleNamespace(defer=AsyncMock(), edit_message=AsyncMock(), send_message=AsyncMock()),
         )
         receipt = {
             "created": True,
@@ -272,12 +271,13 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             channel_id=999,
             message_id=555,
         )
-        interaction.response.edit_message.assert_awaited_once_with(view=self.view)
+        interaction.response.defer.assert_awaited_once()
+        interaction.response.edit_message.assert_not_awaited()
         message.edit.assert_awaited_once()
         edit_kwargs = message.edit.await_args.kwargs
         self.assertIs(edit_kwargs["view"], self.view)
-        self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip-result.gif")
-        self.assertTrue(self.view._art_bytes.startswith(b"GIF89a"))
+        self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip.png")
+        self.assertTrue(self.view._art_bytes.startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertTrue(self.view.done)
         self.assertIn("# WIN · COIN FLIP", self.view._panel_text.content)
         self.assertIn("**Balance:** 1,090", self.view._panel_text.content)
@@ -317,12 +317,13 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             channel_id=999,
             message=self.view.message,
             response=SimpleNamespace(
-                edit_message=AsyncMock(
+                defer=AsyncMock(
                     side_effect=discord.HTTPException(
                         SimpleNamespace(status=500, reason="simulated failure"),
                         "simulated failure",
                     )
                 ),
+                edit_message=AsyncMock(),
                 send_message=AsyncMock(),
             ),
         )

@@ -165,7 +165,8 @@ class FinalGameArtworkStateTests(unittest.TestCase):
         self.assertTrue(render.call_args.kwargs["reveal_mines"])
         view._on_finished(view.receipt)
         mine_index = next(iter(view.mines))
-        self.assertEqual(str(view.tile_buttons[mine_index].emoji), "💣")
+        self.assertIsNone(view.tile_buttons[mine_index].emoji)
+        self.assertIs(view.tile_buttons[mine_index].style, discord.ButtonStyle.secondary)
         self.assertTrue(view.tile_buttons[mine_index].disabled)
 
 

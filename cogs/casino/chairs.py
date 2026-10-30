@@ -45,7 +45,7 @@ class ChairPrepView(LayoutView):
         disabled_buttons = [
             discord.ui.Button(
                 style=discord.ButtonStyle.secondary,
-                label="🪑",
+                label=f"{index + 1:02d}",
                 custom_id=f"chairs_prep_{round_num}_{index}",
                 disabled=True,
             )
@@ -89,7 +89,7 @@ class ChairActionView(LayoutView):
         for index in range(num_chairs):
             button = discord.ui.Button(
                 style=discord.ButtonStyle.secondary,
-                label="💥" if round_type == "forbidden" else "🪑",
+                label="Closed" if round_type == "forbidden" else f"Seat {index + 1}",
                 custom_id=f"chair_{round_num}_{index}",
             )
             button.callback = self.make_callback(button)
@@ -180,17 +180,16 @@ class ChairsLobby(LayoutView):
         self.logo_url = SERVER_LOGO_URL
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
-        for label, custom_id, callback_name, emoji in (
-            ("انضمام", "chairs_join", "join_btn", None),
-            ("مغادرة", "chairs_leave", "leave_btn", None),
-            ("ابدأ الآن", "chairs_start", "start_btn", None),
-            ("+10 ثواني", "chairs_add_time", "add_time_btn", "⏱️"),
+        for label, custom_id, callback_name in (
+            ("انضمام", "chairs_join", "join_btn"),
+            ("مغادرة", "chairs_leave", "leave_btn"),
+            ("ابدأ الآن", "chairs_start", "start_btn"),
+            ("+10 ثواني", "chairs_add_time", "add_time_btn"),
         ):
             button = discord.ui.Button(
                 label=label,
                 custom_id=custom_id,
                 style=discord.ButtonStyle.secondary,
-                emoji=emoji,
             )
             button.callback = partial(getattr(self, callback_name), button=button)
             self._buttons.append(button)

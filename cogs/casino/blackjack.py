@@ -292,16 +292,10 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             return False
         return True
 
-    def _button(self, key, label, callback, emoji=None):
-        style = (
-            discord.ButtonStyle.danger if key == "cancel"
-            else discord.ButtonStyle.primary if key in {"deal", "hit", "double", "replay"}
-            else discord.ButtonStyle.secondary
-        )
+    def _button(self, key, label, callback):
         button = discord.ui.Button(
             label=label,
-            emoji=emoji,
-            style=style,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"blackjack_{key}",
         )
         button.callback = callback
@@ -324,21 +318,21 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         ]
         if self.phase == "waiting":
             elements.append(ActionRow(
-                self._button("deal", "Deal", self.start_game, "🃏"),
-                self._button("cancel", "Cancel", self.cancel, "❌"),
+                self._button("deal", "Deal", self.start_game),
+                self._button("cancel", "Cancel", self.cancel),
             ))
         elif self.phase == "playing":
             controls = [
-                self._button("hit", "Hit", self.hit, "🎴"),
-                self._button("stand", "Stand", self.stand, "🛑"),
+                self._button("hit", "Hit", self.hit),
+                self._button("stand", "Stand", self.stand),
             ]
             if len(self.player_cards) == 2 and not self.doubled_down:
                 controls.append(
-                    self._button("double", "Double", self.double_down, "2️⃣")
+                    self._button("double", "Double", self.double_down)
                 )
             elements.append(ActionRow(*controls))
         elif self.phase == "finished" and self.receipt is not None:
-            self._replay_button = self._button("replay", "Play Again", self.replay, "↻")
+            self._replay_button = self._button("replay", "Play Again", self.replay)
             self._replay_button.disabled = self._replay_expired
             elements.append(ActionRow(self._replay_button))
         self.add_item(Container(*elements, accent_color=THEME["gold"]))
@@ -509,7 +503,6 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             self.phase = "waiting"
             self._render_view()
             return
-        await self._edit()
         try:
             wager_args = (
                 self.game_id,
@@ -655,7 +648,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
 
         self.resolving = True
         self.message = interaction.message or self.message
-        self.notice = "Confirming the extra bet..."
+        self.notice = None
         try:
             await interaction.response.defer()
         except discord.HTTPException:
@@ -663,7 +656,6 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             self.notice = None
             return
 
-        await self._edit()
         try:
             receipt = await self._double_down_wager()
         except asyncio.CancelledError:
@@ -756,8 +748,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.resolving = True
         self.phase = "settling"
         self.result_kind = kind
-        self.notice = "Saving the result..."
-        await self._edit()
+        self.notice = None
         won = kind in ("natural", "win")
         payout = (
             self.amount * NATURAL_PAYOUT // PAYOUT_DENOMINATOR if kind == "natural"

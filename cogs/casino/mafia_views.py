@@ -396,7 +396,7 @@ class MafiaLobbyView(LayoutView):
             ("ابدأ الآن", "mafia_start", "start_button", None),
             ("+10 ثواني", "mafia_add_time", "add_time", "⏱️"),
         ):
-            button = discord.ui.Button(label=label, custom_id=custom_id, style=discord.ButtonStyle.secondary, emoji=emoji)
+            button = discord.ui.Button(label=label, custom_id=custom_id, style=discord.ButtonStyle.secondary)
             button.callback = partial(getattr(self, callback_name), button=button)
             self._buttons.append(button)
         self.add_item(Container(
@@ -587,7 +587,6 @@ class RoleRevealView(LayoutView):
         )
         self.button = discord.ui.Button(
             label="اعرف دورك السري",
-            emoji="👀",
             style=discord.ButtonStyle.secondary,
             custom_id="mafia_reveal_role",
         )

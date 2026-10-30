@@ -4,6 +4,13 @@ from cogs.casino import bank
 
 COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
 
+DAILY_REWARD_MIN = 40
+DAILY_REWARD_MAX = 60
+CONSUMABLE_REWARDS = {
+    "luck_ticket": (50, 70, 90, 110, 140),
+    "loot_box": (60, 90, 120, 180, 250, 320, 400),
+}
+
 INVENTORY_ITEMS = (
     ("double_shot", "طلقة مزدوجة", "tools", 100, "تسمح باستهداف لاعب إضافي في الروليت.", "🔫"),
     ("shield", "درع الحفرة", "tools", 275, "يصد الاستهداف في الروليت ويردّه على المهاجم.", "🛡️"),

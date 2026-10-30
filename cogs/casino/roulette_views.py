@@ -115,7 +115,6 @@ class KickView(DiagnosticViewMixin, LayoutView):
             self.weapon_btn = discord.ui.Button(
                 label="سلاح الحفرة",
                 style=discord.ButtonStyle.secondary,
-                emoji="🔫",
                 custom_id="roulette_use_weapon",
             )
             self.weapon_btn.callback = self.weapon_callback

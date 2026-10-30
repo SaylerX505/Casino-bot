@@ -45,7 +45,7 @@ The bot uses the configured prefix `+`; you can also mention the bot directly be
 
 ## Setup wizard
 
-Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set **one shared game channel for every solo and group game** or allow games in all channels, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.
+Run `/wizard` as the server owner, a Discord Administrator, or a member with a configured **Admin Role** to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set **one shared game channel for every solo and group game** or allow games in all channels, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Admin Roles grant bot-management access, while Staff Roles grant game-staff actions; neither grants Discord permissions. Only the server owner or a Discord Administrator can add, remove, or change Admin Roles. Staff Roles cannot manage the wizard.
 
 ## Single-server configuration
 

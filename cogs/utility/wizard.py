@@ -185,12 +185,11 @@ class WizardLayout(LayoutView):
             except discord.HTTPException:
                 logger.debug("Could not close expired wizard view", exc_info=True)
 
-    def _button(self, label, custom_id, callback, *, emoji=None):
+    def _button(self, label, custom_id, callback):
         button = discord.ui.Button(
             label=label,
             custom_id=custom_id,
             style=discord.ButtonStyle.secondary,
-            emoji=emoji,
         )
         button.callback = callback
         return button
@@ -237,19 +236,16 @@ class WizardHomeView(WizardLayout):
                         "رولات الإدارة",
                         "wizard_manager_roles",
                         self.open_manager_roles,
-                        emoji="🔐",
                     ),
                     self._button(
                         "رولات الستاف",
                         "wizard_staff_roles",
                         self.open_roles,
-                        emoji="🛡️",
                     ),
                     self._button(
                         "قنوات الألعاب",
                         "wizard_game_channels",
                         self.open_channels,
-                        emoji="🎮",
                     ),
                 ),
                 ActionRow(
@@ -257,25 +253,21 @@ class WizardHomeView(WizardLayout):
                         "السجلات",
                         "wizard_logs",
                         self.open_logs,
-                        emoji="📋",
                     ),
                     self._button(
                         "الذكاء الاصطناعي",
                         "wizard_ai_settings",
                         self.open_ai_settings,
-                        emoji="🤖",
                     ),
                     self._button(
                         "مراجعة الإعدادات",
                         "wizard_review",
                         self.open_review,
-                        emoji="⚙️",
                     ),
                     self._button(
                         "إغلاق المعالج",
                         "wizard_close",
                         self.close_wizard,
-                        emoji="❌",
                     ),
                 ),
                 accent_color=0x393A41,

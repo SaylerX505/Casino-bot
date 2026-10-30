@@ -87,6 +87,27 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertIn("wizard_clear_manager_roles", {button.custom_id for button in buttons})
 
+    async def test_admin_role_assignment_is_locked_to_discord_administrators(self):
+        view = AdminRoleWizardView(self.guild, self.owner)
+        interaction = SimpleNamespace(
+            guild=self.guild,
+            user=SimpleNamespace(
+                id=202,
+                guild_permissions=SimpleNamespace(administrator=False),
+            ),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard._is_discord_admin", return_value=False),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+        ):
+            await view.save_roles(interaction)
+
+        save_setting.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+        view.stop()
+
     def test_channel_wizard_has_one_global_channel_selector(self):
         with patch("cogs.utility.wizard.bank.get_setting", side_effect=self._get_setting):
             view = GameChannelWizardView(self.guild, self.owner)

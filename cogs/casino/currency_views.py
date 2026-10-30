@@ -10,7 +10,13 @@ from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 import config
 from cogs.casino import bank
-from cogs.casino.currency_catalog import COIN_EMOJI, INVENTORY_ITEMS, fmt
+from cogs.casino.currency_catalog import (
+    COIN_EMOJI,
+    DAILY_REWARD_MAX,
+    DAILY_REWARD_MIN,
+    INVENTORY_ITEMS,
+    fmt,
+)
 from cogs.utility.theme import StatusPanel, private_status
 
 logger = logging.getLogger(__name__)
@@ -270,7 +276,6 @@ class InventoryView(LayoutView):
         use_row = ActionRow()
         self.box_button = discord.ui.Button(
             label="استخدم صندوق",
-            emoji="🎁",
             style=discord.ButtonStyle.secondary,
             custom_id="inventory_use_box",
             disabled=self.inventory.get("loot_box", 0) < 1,
@@ -279,7 +284,6 @@ class InventoryView(LayoutView):
         use_row.add_item(self.box_button)
         self.ticket_button = discord.ui.Button(
             label="استخدم تذكرة",
-            emoji="🎟️",
             style=discord.ButtonStyle.secondary,
             custom_id="inventory_use_ticket",
             disabled=self.inventory.get("luck_ticket", 0) < 1,
@@ -616,24 +620,23 @@ class CurrencyHubLayout(LayoutView):
         )
 
         first_row = ActionRow()
-        self._add_button(first_row, "اليومية", "🎁", discord.ButtonStyle.secondary, "hubv2_daily", self.daily_btn)
-        self._add_button(first_row, "الأغنى", "🏆", discord.ButtonStyle.secondary, "hubv2_top", self.top_btn)
-        self._add_button(first_row, "المتجر", "🛒", discord.ButtonStyle.secondary, "hubv2_shop", self.shop_btn)
+        self._add_button(first_row, "اليومية", "hubv2_daily", self.daily_btn)
+        self._add_button(first_row, "الأغنى", "hubv2_top", self.top_btn)
+        self._add_button(first_row, "المتجر", "hubv2_shop", self.shop_btn)
         container.add_item(first_row)
 
         second_row = ActionRow()
-        self._add_button(second_row, "تحويل", "💸", discord.ButtonStyle.secondary, "hubv2_transfer", self.transfer_btn)
-        self._add_button(second_row, "الشنطة", "🎒", discord.ButtonStyle.secondary, "hubv2_inventory", self.inventory_btn)
-        self._add_button(second_row, "بروفايل", "🪪", discord.ButtonStyle.secondary, "hubv2_profile", self.profile_btn)
+        self._add_button(second_row, "تحويل", "hubv2_transfer", self.transfer_btn)
+        self._add_button(second_row, "الشنطة", "hubv2_inventory", self.inventory_btn)
+        self._add_button(second_row, "بروفايل", "hubv2_profile", self.profile_btn)
         container.add_item(second_row)
         self.add_item(container)
 
     @staticmethod
-    def _add_button(row, label, emoji, style, custom_id, callback):
+    def _add_button(row, label, custom_id, callback):
         button = discord.ui.Button(
             label=label,
-            emoji=emoji,
-            style=style,
+            style=discord.ButtonStyle.secondary,
             custom_id=custom_id,
         )
         button.callback = callback
@@ -650,7 +653,7 @@ class CurrencyHubLayout(LayoutView):
                 bank.claim_daily,
                 interaction.user.id,
                 bank.now(),
-                random.randint(20, 45),
+                random.randint(DAILY_REWARD_MIN, DAILY_REWARD_MAX),
             )
         except Exception:
             logger.exception("Daily reward transaction failed user_id=%s", interaction.user.id)

@@ -45,13 +45,13 @@ class GuessGameMenu(LayoutView):
         self.message = None
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
-        for label, custom_id, callback_name, emoji in (
-            ("انضمام", "geoguessr_join", "join_button", None),
-            ("مغادرة", "geoguessr_leave", "leave_button", None),
-            ("ابدأ الآن", "geoguessr_start", "start_button", None),
-            ("+10 ثواني", "geoguessr_add_time", "add_time", "⏱️"),
+        for label, custom_id, callback_name in (
+            ("انضمام", "geoguessr_join", "join_button"),
+            ("مغادرة", "geoguessr_leave", "leave_button"),
+            ("ابدأ الآن", "geoguessr_start", "start_button"),
+            ("+10 ثواني", "geoguessr_add_time", "add_time"),
         ):
-            button = discord.ui.Button(label=label, custom_id=custom_id, style=discord.ButtonStyle.secondary, emoji=emoji)
+            button = discord.ui.Button(label=label, custom_id=custom_id, style=discord.ButtonStyle.secondary)
             button.callback = partial(getattr(self, callback_name), button=button)
             self._buttons.append(button)
         self.add_item(Container(self._panel_text, Separator(), ActionRow(*self._buttons), accent_color=THEME["gold"]))
@@ -305,7 +305,6 @@ class ActiveGameView(LayoutView):
         self.button = discord.ui.Button(
             label="+10 ثواني للحل",
             style=discord.ButtonStyle.secondary,
-            emoji="⏱️",
             custom_id=f"geoguessr_add_time_{round_num}",
         )
         self.button.callback = self.add_time

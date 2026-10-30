@@ -109,35 +109,36 @@ class AdminSafetyTests(unittest.IsolatedAsyncioTestCase):
     async def test_economy_commands_are_not_hidden_by_discord_administrator_default(self):
         self.assertIsNone(AdminCommands.admin.default_permissions)
 
-    async def test_ai_toggle_is_owner_only_while_setting_is_global(self):
-        interaction = fake_interaction()
-        self.cog.bot.is_owner = AsyncMock(return_value=False)
+    async def test_ai_toggle_allows_wizard_admin_roles(self):
+        interaction = fake_interaction(administrator=False, roles=(55,))
+        ai_cog = SimpleNamespace(data={"ai_enabled": True})
+        self.cog.bot.get_cog.return_value = ai_cog
 
         with (
-            patch.object(self.cog, "_require_admin", new=AsyncMock(return_value=True)),
+            patch("cogs.casino.permissions.configured_manager_role_ids", return_value={55}),
+            patch.object(bank, "set_setting") as save_setting,
         ):
             await self.cog.ai_toggle.callback(self.cog, interaction, False)
 
-        self.cog.bot.get_cog.assert_not_called()
+        self.assertFalse(ai_cog.data["ai_enabled"])
+        save_setting.assert_called_once_with("ai_enabled", "false")
         interaction.response.send_message.assert_awaited_once()
 
-    async def test_global_status_is_not_visible_to_server_admins(self):
-        interaction = fake_interaction()
-        self.cog.bot.is_owner = AsyncMock(return_value=False)
+    async def test_admin_status_allows_wizard_admin_roles(self):
+        interaction = fake_interaction(administrator=False, roles=(55,))
+        self.cog.bot.active_games = {}
+        self.cog.bot.get_cog.return_value = None
 
         with (
-            patch.object(self.cog, "_require_admin", new=AsyncMock(return_value=True)),
-            patch.object(bank, "list_guild_admins") as list_admins,
+            patch("cogs.casino.permissions.configured_manager_role_ids", return_value={55}),
+            patch.object(bank, "list_guild_admins", return_value=[20]) as list_admins,
         ):
             await self.cog.admin_status.callback(self.cog, interaction)
 
-        list_admins.assert_not_called()
+        list_admins.assert_called_once_with(123)
         interaction.response.send_message.assert_awaited_once()
         view = interaction.response.send_message.await_args.kwargs["view"]
-        self.assertEqual(
-            view.children[0].children[0].content.split("\n", 1)[0],
-            "# الإعداد ده مش متاح لأدمن السيرفر",
-        )
+        self.assertIn("1", view.children[0].children[0].content)
 
     async def test_bank_reset_is_blocked_without_deleting_shared_economy(self):
         interaction = fake_interaction()

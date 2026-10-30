@@ -405,28 +405,6 @@ def _render_advanced_instant_art(
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
 
-def _encode_game_animation(frames: list[bytes]) -> bytes:
-    """Encode a short, one-shot reveal animation for a final game panel."""
-    if not frames:
-        raise ValueError("game animation requires at least one frame")
-    images = []
-    for frame_data in frames:
-        with Image.open(io.BytesIO(frame_data)) as frame:
-            images.append(frame.convert("RGB"))
-    output = io.BytesIO()
-    durations = [85] * (len(images) - 1) + [520]
-    images[0].save(
-        output,
-        format="GIF",
-        save_all=True,
-        append_images=images[1:],
-        duration=durations,
-        disposal=2,
-        optimize=True,
-    )
-    return output.getvalue()
-
-
 def has_active_solo_session(user_id: int) -> bool:
     """Whether this member already has an open solo-game session."""
     current = _ACTIVE_SESSIONS.get(int(user_id))
@@ -639,8 +617,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 continue
             button = discord.ui.Button(
                 label=metadata["label"],
-                emoji=metadata.get("emoji"),
-                style=discord.ButtonStyle.primary,
+                style=discord.ButtonStyle.secondary,
                 custom_id=f"{self.game_type}_{choice}",
             )
             button.callback = partial(self.choose, side=choice)
@@ -677,7 +654,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
 
             self._confirm_button = discord.ui.Button(
                 label="Confirm",
-                style=discord.ButtonStyle.success,
+                style=discord.ButtonStyle.secondary,
                 custom_id="number_roulette_confirm",
                 disabled=True,
             )
@@ -686,8 +663,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
 
         cancel = discord.ui.Button(
             label="Cancel",
-            emoji="❌",
-            style=discord.ButtonStyle.danger,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"{self.game_type}_cancel",
         )
         cancel.callback = self.cancel
@@ -743,127 +719,20 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if self._art_filename is None:
             return
         won = True if outcome == "win" else False if outcome == "loss" else None
-        try:
-            frames = []
-            if self.game_type == "coinflip":
-                faces = ("heads", "tails", "heads")
-                frames.extend(
-                    _render_solo_game_art(
-                        self.game_type,
-                        choice=choice,
-                        result=face,
-                    )
-                    for face in faces
-                )
-                final_frame = _render_solo_game_art(
-                    self.game_type,
-                    choice=choice,
-                    result=result,
-                    won=won,
-                )
-            elif self.game_type == "dice":
-                for _ in range(3):
-                    rolling_value = str(secrets.randbelow(6) + 1)
-                    frames.append(
-                        _render_solo_game_art(
-                            self.game_type,
-                            choice=choice,
-                            result=rolling_value,
-                        )
-                    )
-                final_frame = _render_solo_game_art(
-                    self.game_type,
-                    choice=choice,
-                    result=result,
-                    won=won,
-                )
-            elif self.game_type == "slots":
-                for _ in range(3):
-                    rolling_reels = " · ".join(
-                        secrets.choice(SLOT_SYMBOLS) for _ in range(3)
-                    )
-                    frames.append(
-                        _render_solo_game_art(
-                            self.game_type,
-                            result=rolling_reels,
-                        )
-                    )
-                final_frame = _render_solo_game_art(
-                    self.game_type,
-                    result=result,
-                    won=won,
-                )
-            elif self.game_type == "plinko":
-                parts = dict(
-                    part.split("=", 1)
-                    for part in result.split(";")
-                    if "=" in part
-                )
-                path = parts.get("path")
-                if path is not None and len(path) == 8 and all(step in "LR" for step in path):
-                    frames.extend(
-                        _render_advanced_instant_art(
-                            self.game_type,
-                            choice=choice,
-                            result=result,
-                            path_progress=progress,
-                        )
-                        for progress in (1, 3, 5, 8)
-                    )
-                final_frame = _render_advanced_instant_art(
-                    self.game_type,
-                    choice=choice,
-                    result=result,
-                    won=won,
-                )
-            elif self.game_type == "number_roulette":
-                frames.extend(
-                    _render_advanced_instant_art(
-                        self.game_type,
-                        choice=choice,
-                        result=result,
-                        spin_offset=offset,
-                        rolling=True,
-                    )
-                    for offset in (405, 315, 225, 135, 45)
-                )
-                final_frame = _render_advanced_instant_art(
-                    self.game_type,
-                    choice=choice,
-                    result=result,
-                    won=won,
-                )
-            else:
-                final_frame = _render_solo_game_art(
-                    self.game_type,
-                    choice=choice,
-                    result=result,
-                    won=won,
-                )
-            frames.append(final_frame)
-            self._art_bytes = _encode_game_animation(frames)
-            self._art_filename = f"{self.game_type}-result.gif"
-        except Exception:
-            logger.exception(
-                "Could not render animated solo result game_type=%s game_id=%s",
+        if self.game_type in {"plinko", "number_roulette"}:
+            self._art_bytes = _render_advanced_instant_art(
                 self.game_type,
-                self.game_id,
+                choice=choice,
+                result=result,
+                won=won,
             )
-            self._art_filename = f"{self.game_type}.png"
-            if self.game_type in {"plinko", "number_roulette"}:
-                self._art_bytes = _render_advanced_instant_art(
-                    self.game_type,
-                    choice=choice,
-                    result=result,
-                    won=won,
-                )
-            else:
-                self._art_bytes = _render_solo_game_art(
-                    self.game_type,
-                    choice=choice if self.game_type in {"coinflip", "dice"} else None,
-                    result=result,
-                    won=won,
-                )
+        else:
+            self._art_bytes = _render_solo_game_art(
+                self.game_type,
+                choice=choice if self.game_type in {"coinflip", "dice"} else None,
+                result=result,
+                won=won,
+            )
 
     def _disable_buttons(self) -> None:
         for button in self._buttons.values():
@@ -874,8 +743,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         self._panel_text = TextDisplay(self._panel_text.content)
         self._replay_button = discord.ui.Button(
             label="Play Again",
-            emoji="↻",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"{self.game_type}_replay",
         )
         self._replay_button.callback = self.replay
@@ -1021,14 +889,9 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         self.resolving = True
         self.message = interaction.message or self.message
         self._disable_buttons()
-        self._panel_text.content = (
-            f"# {self.game_title}\n"
-            "Confirming result..."
-        )
         try:
-            await interaction.response.edit_message(view=self)
+            await interaction.response.defer()
         except asyncio.CancelledError:
-            # No wager has been written yet; release the member's session claim.
             self.done = True
             self.resolving = False
             self._disable_buttons()
@@ -1042,8 +905,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 self.requester.id,
             )
             await self._finish_without_bet(
-                "# Could not start\n"
-                "No bet was placed. Try again."
+                "# Could not start\nNo bet was placed. Try again."
             )
             return
 
@@ -1101,8 +963,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         except Exception:
             logger.exception("Could not confirm atomic solo wager game_id=%s", game_id)
             self._panel_text.content = (
-                "# Checking bet\n"
-                "Verifying the transaction. Do not place another bet yet."
+                "# PROCESSING\n"
+                "Finalizing this transaction..."
             )
             await self._edit_message()
             self.cog._schedule_recovery(
@@ -1124,8 +986,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if not receipt.get("settled"):
             # Defensive fail-closed guard: an instant bet must return a terminal receipt.
             self._panel_text.content = (
-                "# Verifying result\n"
-                "The transaction is still being checked."
+                "# PROCESSING\n"
+                "Finalizing this transaction..."
             )
             await self._edit_message()
             self.cog._schedule_recovery(

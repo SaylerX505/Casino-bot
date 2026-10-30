@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
+from cogs.casino.currency_catalog import DAILY_REWARD_MAX, DAILY_REWARD_MIN
 from cogs.casino.currency_views import (
     BuyForm,
     CurrencyHubLayout,
@@ -60,8 +61,11 @@ class EconomyCallbackThreadingTests(unittest.IsolatedAsyncioTestCase):
         main_thread = threading.get_ident()
         transaction_threads = []
 
-        def claim(*_args):
+        claim_arguments = []
+
+        def claim(*args):
             transaction_threads.append(threading.get_ident())
+            claim_arguments.append(args)
             return {"claimed": True, "amount": 30, "streak": 4}
 
         interaction = fake_interaction()
@@ -71,6 +75,8 @@ class EconomyCallbackThreadingTests(unittest.IsolatedAsyncioTestCase):
         interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
         interaction.followup.send.assert_awaited_once()
         mocked.assert_called_once()
+        self.assertGreaterEqual(claim_arguments[0][2], DAILY_REWARD_MIN)
+        self.assertLessEqual(claim_arguments[0][2], DAILY_REWARD_MAX)
         self.assertEqual(len(transaction_threads), 1)
         self.assertNotEqual(transaction_threads[0], main_thread)
 

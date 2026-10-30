@@ -8,13 +8,20 @@ from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 import config
 from cogs.casino import bank
-from cogs.casino.currency_catalog import COIN_EMOJI, fmt
+from cogs.casino.currency_catalog import (
+    COIN_EMOJI,
+    CONSUMABLE_REWARDS,
+    DAILY_REWARD_MAX,
+    DAILY_REWARD_MIN,
+    fmt,
+)
 from cogs.casino.currency_views import (
     CurrencyHubLayout,
     build_inventory_view,
     build_profile_panel,
 )
 from cogs.casino.game_assets import SERVER_LOGO_URL
+from cogs.casino import permissions
 from cogs.casino.permissions import configured_log_channel_id
 from cogs.utility.theme import StatusPanel, embed_to_v2
 
@@ -214,11 +221,9 @@ class Currency(commands.Cog):
         self._persistent_hub_view = None
 
     def check_whitelist(self, user: discord.Member) -> bool:
-        permissions = getattr(user, "guild_permissions", None)
-        if getattr(permissions, "administrator", False):
-            return True
-
         guild = getattr(user, "guild", None)
+        if guild is not None and permissions.has_manager_access(user, guild.id):
+            return True
         if guild is not None and bank.is_guild_admin(guild.id, user.id):
             return True
 
@@ -272,13 +277,9 @@ class Currency(commands.Cog):
         return bank.get_inventory(user_id)
 
     def redeem_consumable(self, user_id: int, item_id: str):
-        rewards = {
-            "loot_box": [30, 50, 80, 100, 150, 250, 400],
-            "luck_ticket": [20, 40, 60, 100, 150],
-        }
-        if item_id not in rewards:
+        if item_id not in CONSUMABLE_REWARDS:
             raise ValueError(f"Unsupported consumable: {item_id}")
-        reward = random.choice(rewards[item_id])
+        reward = random.choice(CONSUMABLE_REWARDS[item_id])
         redeemed, balance_after = bank.redeem_item(user_id, item_id, reward)
         return redeemed, reward, balance_after
 
@@ -347,7 +348,7 @@ class Currency(commands.Cog):
                 bank.claim_daily,
                 ctx.author.id,
                 bank.now(),
-                random.randint(20, 45),
+                random.randint(DAILY_REWARD_MIN, DAILY_REWARD_MAX),
             )
         except Exception:
             logger.exception("Daily reward transaction failed user_id=%s", ctx.author.id)
