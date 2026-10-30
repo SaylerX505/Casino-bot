@@ -9,11 +9,11 @@ from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 import config
 from cogs.casino import bank, permissions
 from cogs.casino.currency_catalog import (
-    COIN_EMOJI,
     CONSUMABLE_REWARDS,
     DAILY_REWARD_MAX,
     DAILY_REWARD_MIN,
     fmt,
+    get_coin_emoji,
 )
 from cogs.casino.currency_views import (
     CurrencyHubLayout,
@@ -36,11 +36,12 @@ class TransferConfirmationView(LayoutView):
         self.sender = sender
         self.recipient = recipient
         self.amount = int(amount)
+        self.coin_emoji = get_coin_emoji(getattr(sender, "guild", None))
         self.done = False
         self.message = None
         self._panel_text = TextDisplay(
             "# تأكيد التحويل\n"
-            f"تحويل **{fmt(self.amount)} {COIN_EMOJI}** إلى **{recipient.display_name}**؟\n"
+            f"تحويل **{fmt(self.amount)} {self.coin_emoji}** إلى **{recipient.display_name}**؟\n"
             "لن يتم خصم أي مبلغ قبل التأكيد."
         )
         self.confirm_button = discord.ui.Button(
@@ -119,8 +120,8 @@ class TransferConfirmationView(LayoutView):
                 self._panel_text.content = (
                     "# تم التحويل بنجاح\n"
                     f"المستلم: **{self.recipient.display_name}**\n"
-                    f"المبلغ: **{fmt(self.amount)} {COIN_EMOJI}**\n"
-                    f"رصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**"
+                    f"المبلغ: **{fmt(self.amount)} {self.coin_emoji}**\n"
+                    f"رصيدك الجديد: **{fmt(balance_after)} {self.coin_emoji}**"
                 )
                 try:
                     await self.cog.log_action(
@@ -141,7 +142,7 @@ class TransferConfirmationView(LayoutView):
             elif int(balance_after) < self.amount:
                 self._panel_text.content = (
                     "# التحويل لم يتم\n"
-                    f"رصيدك الحالي: **{fmt(balance_after)} {COIN_EMOJI}**."
+                    f"رصيدك الحالي: **{fmt(balance_after)} {self.coin_emoji}**."
                 )
             else:
                 self._panel_text.content = (
@@ -333,7 +334,7 @@ class Currency(commands.Cog):
         await ctx.send(
             view=StatusPanel(
                 "رصيدك",
-                f"الرصيد الحالي: **{fmt(balance)} {COIN_EMOJI}**",
+                f"الرصيد الحالي: **{fmt(balance)} {get_coin_emoji(ctx.guild)}**",
                 "neutral",
             ),
             **send_kwargs,
@@ -370,7 +371,7 @@ class Currency(commands.Cog):
             view=StatusPanel(
                 "استلمت اليومية",
                 (
-                    f"المكافأة: **{fmt(claim['amount'])} {COIN_EMOJI}**\n"
+                    f"المكافأة: **{fmt(claim['amount'])} {get_coin_emoji(ctx.guild)}**\n"
                     f"الستريك: **{claim['streak']}** يوم."
                 ),
                 "success",
@@ -501,8 +502,8 @@ class Currency(commands.Cog):
 
         item_name = "صندوق الحظ" if item_id == "loot_box" else "تذكرة الحظ"
         description = (
-            f"استخدمت **{item_name}** وكسبت **{fmt(reward)} {COIN_EMOJI}**.\n"
-            f"رصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**."
+            f"استخدمت **{item_name}** وكسبت **{fmt(reward)} {get_coin_emoji(ctx.guild)}**.\n"
+            f"رصيدك الجديد: **{fmt(balance_after)} {get_coin_emoji(ctx.guild)}**."
         )
         await ctx.send(
             view=StatusPanel("🍀 حظك!", description, "success"),

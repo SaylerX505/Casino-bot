@@ -11,11 +11,11 @@ from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 import config
 from cogs.casino import bank
 from cogs.casino.currency_catalog import (
-    COIN_EMOJI,
     DAILY_REWARD_MAX,
     DAILY_REWARD_MIN,
     INVENTORY_ITEMS,
     fmt,
+    get_coin_emoji,
 )
 from cogs.utility.theme import StatusPanel, private_status
 
@@ -62,8 +62,9 @@ def render_profile_panel(user, balance, streak, inventory):
         for item_id, quantity in inventory.items()
         if quantity > 0
     ) or "الشنطة فاضية حاليًا"
+    coin_emoji = get_coin_emoji(getattr(user, "guild", None))
     description = (
-        f"**الرصيد:** {fmt(balance)} {COIN_EMOJI}\n"
+        f"**الرصيد:** {fmt(balance)} {coin_emoji}\n"
         f"**الستريك اليومي:** {streak} يوم\n\n"
         f"**الأغراض:**\n{items[:2200]}"
     )
@@ -97,6 +98,7 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
         ))
         
     async def on_submit(self, interaction: discord.Interaction):
+        coin_emoji = get_coin_emoji(interaction.guild)
         try:
             quantity = int(self.children[0].value.strip())
         except ValueError:
@@ -150,7 +152,7 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
             return await interaction.followup.send(
                 view=StatusPanel(
                     "تعذر الشراء",
-                    f"رصيدك الحالي **{fmt(balance_after)} {COIN_EMOJI}**، ومحتاج **{fmt(total_cost)} {COIN_EMOJI}** لشراء {quantity} × {self.item_name}.",
+                    f"رصيدك الحالي **{fmt(balance_after)} {coin_emoji}**، ومحتاج **{fmt(total_cost)} {coin_emoji}** لشراء {quantity} × {self.item_name}.",
                     "warning",
                 ),
                 ephemeral=True,
@@ -159,20 +161,21 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
         await interaction.followup.send(
             view=StatusPanel(
                 "تم الشراء",
-                f"اشتريت **{quantity} × {self.item_name}** بمبلغ **{fmt(total_cost)} {COIN_EMOJI}**.\nرصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**.",
+                f"اشتريت **{quantity} × {self.item_name}** بمبلغ **{fmt(total_cost)} {coin_emoji}**.\nرصيدك الجديد: **{fmt(balance_after)} {coin_emoji}**.",
                 "success",
             ),
             ephemeral=True,
         )
 class ShopDropdown(discord.ui.Select):
-    def __init__(self, cog):
+    def __init__(self, cog, guild=None):
         self.cog = cog
         self.prices = {item[0]: item[3] for item in INVENTORY_ITEMS}
         self.names = {item[0]: f"{item[5]} {item[1]}" for item in INVENTORY_ITEMS}
+        coin_emoji = get_coin_emoji(guild)
         options = [
             discord.SelectOption(
                 label=name,
-                description=f"{fmt(price)} عملة | {description}",
+                description=f"{fmt(price)} {coin_emoji} | {description}",
                 value=item_id,
                 emoji=emoji,
             )
@@ -196,10 +199,11 @@ class ShopView(LayoutView):
     def __init__(self, cog, owner=None, *, balance=None):
         super().__init__(timeout=180)
         self.message = None
+        self.coin_emoji = get_coin_emoji(getattr(owner, "guild", None))
         if owner is not None and balance is None:
             raise ValueError("ShopView requires an asynchronously loaded balance snapshot")
         balance_line = (
-            f"**رصيدك الحالي:** {fmt(balance)} {COIN_EMOJI}\n"
+            f"**رصيدك الحالي:** {fmt(balance)} {self.coin_emoji}\n"
             if owner is not None
             else ""
         )
@@ -214,7 +218,7 @@ class ShopView(LayoutView):
             accent_color=config.EMBED_COLOR,
         )
         row = ActionRow()
-        row.add_item(ShopDropdown(cog))
+        row.add_item(ShopDropdown(cog, getattr(owner, "guild", None)))
         container.add_item(row)
         self.add_item(container)
 
@@ -244,6 +248,7 @@ class InventoryView(LayoutView):
         self.cog = cog
         self.owner = owner
         self.owner_id = owner.id
+        self.coin_emoji = get_coin_emoji(getattr(owner, "guild", None))
         self.category = category
         self.notice = notice
         self.message = None
@@ -331,7 +336,7 @@ class InventoryView(LayoutView):
                 continue
             lines.append(
                 f"{emoji} **{name} ×{quantity}** — {description}\n"
-                f"السعر في المتجر: **{fmt(price)}** {COIN_EMOJI}"
+                f"السعر في المتجر: **{fmt(price)}** {self.coin_emoji}"
             )
 
         if lines:
@@ -346,7 +351,7 @@ class InventoryView(LayoutView):
         current_notice = self.notice if notice is None else notice
         if current_notice:
             description = f"{current_notice}\n\n{description}"
-        balance_line = f"\n\n**الرصيد الحالي:** {fmt(self.balance)} {COIN_EMOJI}"
+        balance_line = f"\n\n**الرصيد الحالي:** {fmt(self.balance)} {self.coin_emoji}"
         return f"# 🎒 شنطة {self.owner.display_name}\n{description}{balance_line}"
 
     def make_embed(self, notice=None):
@@ -427,10 +432,10 @@ class InventoryView(LayoutView):
             )
 
         if item_id == "loot_box":
-            notice = f"🎁 فتحت صندوق الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
+            notice = f"🎁 فتحت صندوق الحظ وكسبت **{fmt(reward)}** {self.coin_emoji}."
         else:
-            notice = f"🎟️ استخدمت تذكرة الحظ وكسبت **{fmt(reward)}** {COIN_EMOJI}."
-        notice += f"\nرصيدك الجديد: **{fmt(balance_after)}** {COIN_EMOJI}"
+            notice = f"🎟️ استخدمت تذكرة الحظ وكسبت **{fmt(reward)}** {self.coin_emoji}."
+        notice += f"\nرصيدك الجديد: **{fmt(balance_after)}** {self.coin_emoji}"
         self.notice = notice
         try:
             await self.refresh_snapshot()
@@ -494,6 +499,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
                 ephemeral=True,
             )
 
+        coin_emoji = get_coin_emoji(interaction.guild)
         target_text = self.target.value.strip()
         match = re.fullmatch(r"<@!?(\d{17,20})>|(\d{17,20})", target_text)
         if match is None:
@@ -572,7 +578,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
             return await interaction.followup.send(
                 view=StatusPanel(
                     "رصيد غير كافٍ",
-                    f"رصيدك الحالي **{fmt(balance_after)} {COIN_EMOJI}** ولا يكفي لتحويل **{fmt(amount)} {COIN_EMOJI}**.",
+                    f"رصيدك الحالي **{fmt(balance_after)} {coin_emoji}** ولا يكفي لتحويل **{fmt(amount)} {coin_emoji}**.",
                     "warning",
                 ),
                 ephemeral=True,
@@ -581,7 +587,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
         await interaction.followup.send(
             view=StatusPanel(
                 "تم التحويل بنجاح",
-                f"حوّلت **{fmt(amount)} {COIN_EMOJI}** إلى {recipient.mention}.\nرصيدك الجديد: **{fmt(balance_after)} {COIN_EMOJI}**.",
+                f"حوّلت **{fmt(amount)} {coin_emoji}** إلى {recipient.mention}.\nرصيدك الجديد: **{fmt(balance_after)} {coin_emoji}**.",
                 "success",
             ),
             ephemeral=True,
@@ -603,12 +609,13 @@ class CurrencyHubLayout(LayoutView):
     def __init__(self, cog, requester=None, *, balance=None):
         super().__init__(timeout=None)
         self.cog = cog
+        self.coin_emoji = get_coin_emoji(getattr(requester, "guild", None))
 
         balance_line = "افتح خزنتك وتابع رصيدك وأدِر أغراضك من مكان واحد."
         if requester is not None:
             if balance is None:
                 raise ValueError("CurrencyHubLayout requires an asynchronously loaded balance snapshot")
-            balance_line = f"**الرصيد الحالي:** {fmt(balance)} {COIN_EMOJI}"
+            balance_line = f"**الرصيد الحالي:** {fmt(balance)} {self.coin_emoji}"
 
         container = Container(
             TextDisplay(
@@ -682,10 +689,11 @@ class CurrencyHubLayout(LayoutView):
 
         amount = claim["amount"]
         streak = claim["streak"]
+        coin_emoji = get_coin_emoji(interaction.guild)
         await private_status(
             interaction,
             "استلمت اليومية",
-            f"المكافأة: **{fmt(amount)} {COIN_EMOJI}**\nالستريك الحالي: **{streak}** يوم.",
+            f"المكافأة: **{fmt(amount)} {coin_emoji}**\nالستريك الحالي: **{streak}** يوم.",
             "success",
         )
 
@@ -705,8 +713,9 @@ class CurrencyHubLayout(LayoutView):
                 "حصل عطل أثناء قراءة الرصيد. جرّب تاني بعد شوية.",
                 "warning",
             )
+        coin_emoji = get_coin_emoji(interaction.guild)
         description = "\n".join(
-            f"**#{index + 1}** <@{user_id}> — **{fmt(balance)}** {COIN_EMOJI}"
+            f"**#{index + 1}** <@{user_id}> — **{fmt(balance)}** {coin_emoji}"
             for index, (user_id, balance) in enumerate(ranking)
         )
         await private_status(

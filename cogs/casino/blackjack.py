@@ -14,8 +14,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
+from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.solo_betting import (
-    COIN,
     MAX_BET,
     MIN_BET,
     claim_solo_session,
@@ -259,6 +259,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         super().__init__(timeout=180)
         self.cog = cog
         self.requester = requester
+        guild = getattr(context, "guild", None) or getattr(requester, "guild", None)
+        self.coin_emoji = get_coin_emoji(guild)
         self.context = context
         self.amount = amount
         self.original_amount = amount
@@ -359,7 +361,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             return await interaction.response.send_message(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: {balance:,} {COIN} · Bet: {self.original_amount:,} {COIN}",
+                    f"Balance: {balance:,} {self.coin_emoji} · Bet: {self.original_amount:,} {self.coin_emoji}",
                     "warning",
                 ),
                 ephemeral=True,
@@ -415,13 +417,13 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
 
     def _content(self):
         if self.phase == "waiting":
-            return f"# BLACKJACK\n**Bet:** {self.amount:,} {COIN}"
+            return f"# BLACKJACK\n**Bet:** {self.amount:,} {self.coin_emoji}"
         if self.phase == "starting":
-            return f"# BLACKJACK\n**Bet:** {self.amount:,} {COIN} · Dealing..."
+            return f"# BLACKJACK\n**Bet:** {self.amount:,} {self.coin_emoji} · Dealing..."
         if self.phase == "playing":
             notice = f"\n-# {self.notice}" if self.notice else ""
             return (
-                f"# BLACKJACK\n**Bet:** {self.amount:,} {COIN}\n"
+                f"# BLACKJACK\n**Bet:** {self.amount:,} {self.coin_emoji}\n"
                 f"**Dealer:** {_cards_text(self.dealer_cards[:1])}  [🂠]\n"
                 f"**You:** {_cards_text(self.player_cards)} · **{_hand_value(self.player_cards)}**\n"
                 f"-# Hit · Stand · Double (before first hit){notice}"
@@ -443,21 +445,21 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         stake = int(receipt.get("stake", self.amount))
         bonus = max(0, int(receipt.get("payout", 0)) - stake)
         balance_after = receipt.get("balance_after")
-        balance_line = f"\n**Balance:** {int(balance_after):,} {COIN}" if balance_after is not None else ""
+        balance_line = f"\n**Balance:** {int(balance_after):,} {self.coin_emoji}" if balance_after is not None else ""
         if receipt.get("status") == "refunded" or outcome in {"refund", "balance_limit"}:
             heading, bonus_line = "REFUNDED", "Bonus: +0"
         elif outcome == "push":
             heading, bonus_line = "PUSH", "Bonus: +0"
         elif outcome == "win":
             heading = "BLACKJACK" if self.result_kind == "natural" else "WIN"
-            bonus_line = f"Bonus: **+{bonus:,} {COIN}**"
+            bonus_line = f"Bonus: **+{bonus:,} {self.coin_emoji}**"
         else:
             heading, bonus_line = "LOSS", "Bonus: +0"
         return (
             f"# {heading} · BLACKJACK\n"
             f"**You:** {_cards_text(self.player_cards)} · {_hand_value(self.player_cards)}\n"
             f"**Dealer:** {_cards_text(self.dealer_cards)} · {_hand_value(self.dealer_cards)}\n"
-            f"Bet: {stake:,} {COIN} · {bonus_line}{balance_line}"
+            f"Bet: {stake:,} {self.coin_emoji} · {bonus_line}{balance_line}"
         )
 
     async def _art_file(self):
@@ -554,7 +556,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             return
         if not created.get("created"):
             if created.get("reason") == "insufficient_funds":
-                notice = f"Balance: {int(created.get('balance', 0)):,} {COIN} · Bet: {self.amount:,}."
+                notice = f"Balance: {int(created.get('balance', 0)):,} {self.coin_emoji} · Bet: {self.amount:,}."
             else:
                 notice = "Bet declined. No coins were taken."
             return await self._finish_without_bet(notice)
@@ -684,8 +686,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             reason = receipt.get("reason", "database_error")
             if reason == "insufficient_funds":
                 detail = (
-                    f"Balance: **{int(receipt.get('balance', 0)):,} {COIN}** "
-                    f"· Extra bet: **{self.amount:,} {COIN}**."
+                    f"Balance: **{int(receipt.get('balance', 0)):,} {self.coin_emoji}** "
+                    f"· Extra bet: **{self.amount:,} {self.coin_emoji}**."
                 )
                 self.resolving = False
                 self.notice = "Not enough coins to double. Hit or stand."
@@ -981,7 +983,7 @@ class Blackjack(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Invalid bet",
-                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {COIN}.",
+                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(ctx.guild)}.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1005,7 +1007,7 @@ class Blackjack(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: **{balance:,} {COIN}** · Bet: **{amount:,} {COIN}**.",
+                    f"Balance: **{balance:,} {get_coin_emoji(ctx.guild)}** · Bet: **{amount:,} {get_coin_emoji(ctx.guild)}**.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),

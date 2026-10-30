@@ -2,7 +2,16 @@
 
 from cogs.casino import bank
 
-COIN_EMOJI = "<:ckrcoin:1513743032124575784>"
+
+def get_coin_emoji(guild=None) -> str:
+    """Return this server's ckrcoin emoji, or a Unicode fallback outside that server."""
+    for emoji in getattr(guild, "emojis", ()):
+        if (
+            str(getattr(emoji, "name", "")).casefold() == "ckrcoin"
+            and getattr(emoji, "available", True)
+        ):
+            return str(emoji)
+    return "🪙"
 
 DAILY_REWARD_MIN = 40
 DAILY_REWARD_MAX = 60

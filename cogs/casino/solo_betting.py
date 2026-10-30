@@ -16,6 +16,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 
 from cogs.casino import bank
+from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.bet_validation import parse_bet_amount
 from cogs.utility.diagnostics import DiagnosticViewMixin
 from cogs.utility.theme import THEME, StatusPanel
@@ -26,7 +27,6 @@ MIN_BET = 10
 MAX_BET = 5_000
 GROSS_WIN_MULTIPLIER_NUMERATOR = 190
 GROSS_WIN_MULTIPLIER_DENOMINATOR = 100
-COIN = "<:ckrcoin:1513743032124575784>"
 SIDES = {
     "heads": {"label": "Heads", "emoji": "🪙"},
     "tails": {"label": "Tails", "emoji": "🪙"},
@@ -485,12 +485,13 @@ async def _publish_interrupted_wager_panel(bot, record, receipt):
         message = await channel.fetch_message(int(message_id))
         title = _GAME_TITLES.get(str(record.get("game_type")), "GAME")
         stake = int(record.get("stake", receipt.get("stake", 0)))
+        coin_emoji = get_coin_emoji(getattr(channel, "guild", None))
         await message.edit(
             view=StatusPanel(
                 "ROUND REFUNDED",
                 (
                     f"Your **{title}** round was interrupted. "
-                    f"Bet returned: **{stake:,} {COIN}**. No result was recorded."
+                    f"Bet returned: **{stake:,} {coin_emoji}**. No result was recorded."
                 ),
                 "warning",
             )
@@ -582,6 +583,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         super().__init__(timeout=120)
         self.cog = cog
         self.requester = requester
+        self.coin_emoji = get_coin_emoji(getattr(requester, "guild", None))
         self.context = context
         self.amount = amount
         self.result_published = False
@@ -698,7 +700,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         )
 
     def _waiting_content(self) -> str:
-        content = f"# {self.game_title}\n**Bet:** {self.amount:,} {COIN}"
+        content = f"# {self.game_title}\n**Bet:** {self.amount:,} {self.coin_emoji}"
         if self.instructions:
             content += f"\n{self.instructions}"
         if self.odds_description:
@@ -797,7 +799,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             return await interaction.response.send_message(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: {balance:,} {COIN} · Bet: {self.amount:,} {COIN}",
+                    f"Balance: {balance:,} {self.coin_emoji} · Bet: {self.amount:,} {self.coin_emoji}",
                     "warning",
                 ),
                 ephemeral=True,
@@ -976,7 +978,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             reason = receipt.get("reason")
             if reason == "insufficient_funds":
                 balance = int(receipt.get("balance", 0))
-                message = f"Balance: **{balance:,} {COIN}** · Bet: **{self.amount:,} {COIN}**."
+                message = f"Balance: **{balance:,} {self.coin_emoji}** · Bet: **{self.amount:,} {self.coin_emoji}**."
             elif reason == "duplicate_game":
                 message = "This round was already recorded."
             else:
@@ -1056,7 +1058,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 result_label = "Ball dropped"
         balance_after = result.get("balance_after")
         balance_line = (
-            f"\n**Balance:** {int(balance_after):,} {COIN}"
+            f"\n**Balance:** {int(balance_after):,} {self.coin_emoji}"
             if balance_after is not None
             else ""
         )
@@ -1068,28 +1070,28 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if result.get("status") == "refunded" or outcome == "balance_limit":
             self._panel_text.content = (
                 f"# REFUNDED · {self.game_title}\n"
-                f"Bet: {stake:,} {COIN} · Bonus: +0"
+                f"Bet: {stake:,} {self.coin_emoji} · Bonus: +0"
                 f"{balance_line}"
             )
         elif outcome == "win":
             self._panel_text.content = (
                 f"# WIN · {self.game_title}\n"
                 f"Pick: **{choice_label}** · Result: **{result_label}**\n"
-                f"Bet: {stake:,} {COIN} · Bonus: **+{bonus:,} {COIN}**"
+                f"Bet: {stake:,} {self.coin_emoji} · Bonus: **+{bonus:,} {self.coin_emoji}**"
                 f"{balance_line}"
             )
         elif outcome == "push":
             self._panel_text.content = (
                 f"# PUSH · {self.game_title}\n"
                 f"Pick: **{choice_label}** · Result: **{result_label}**\n"
-                f"Bet: {stake:,} {COIN} · Bonus: +0"
+                f"Bet: {stake:,} {self.coin_emoji} · Bonus: +0"
                 f"{balance_line}"
             )
         else:
             self._panel_text.content = (
                 f"# LOSS · {self.game_title}\n"
                 f"Pick: **{choice_label}** · Result: **{result_label}**\n"
-                f"Bet: {stake:,} {COIN} · Bonus: +0"
+                f"Bet: {stake:,} {self.coin_emoji} · Bonus: +0"
                 f"{balance_line}"
             )
 
@@ -1266,7 +1268,7 @@ class SoloBetting(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Invalid bet",
-                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {COIN}.",
+                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(ctx.guild)}.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1302,7 +1304,7 @@ class SoloBetting(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: **{balance:,} {COIN}** · Bet: **{amount:,} {COIN}**.",
+                    f"Balance: **{balance:,} {get_coin_emoji(ctx.guild)}** · Bet: **{amount:,} {get_coin_emoji(ctx.guild)}**.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),

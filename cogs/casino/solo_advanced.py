@@ -20,8 +20,8 @@ from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
+from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.solo_betting import (
-    COIN,
     MAX_BET,
     MIN_BET,
     _art_font,
@@ -192,6 +192,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self.cog = solo_cog
         self.context = ctx
         self.requester = ctx.author
+        self.coin_emoji = get_coin_emoji(getattr(ctx, "guild", None))
         self.amount = int(amount)
         self.game_type = game_type
         self.game_title = game_title
@@ -266,7 +267,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         raise NotImplementedError
 
     def _initial_content(self):
-        return f"# {self.game_title}\n**Bet:** {self.amount:,} {COIN}"
+        return f"# {self.game_title}\n**Bet:** {self.amount:,} {self.coin_emoji}"
 
     def _content(self):
         if self.start_error_message:
@@ -277,14 +278,14 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             return f"# {self.game_title}\nProcessing..."
         if not self.started:
             return self._initial_content()
-        return f"# {self.game_title}\n**Bet:** {self.amount:,} {COIN}"
+        return f"# {self.game_title}\n**Bet:** {self.amount:,} {self.coin_emoji}"
 
     def _final_content(self):
         receipt = self.receipt or {}
         outcome = str(receipt.get("outcome") or "")
         balance_after = receipt.get("balance_after")
         balance_line = (
-            f"\n**Balance:** {int(balance_after):,} {COIN}"
+            f"\n**Balance:** {int(balance_after):,} {self.coin_emoji}"
             if balance_after is not None
             else ""
         )
@@ -295,24 +296,24 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             return (
                 f"# REFUNDED · {self.game_title}\n"
                 f"{display or 'Bet returned.'}\n"
-                f"Bet: {stake:,} {COIN} · Bonus: +0{balance_line}"
+                f"Bet: {stake:,} {self.coin_emoji} · Bonus: +0{balance_line}"
             )
         if outcome == "push":
             return (
                 f"# PUSH · {self.game_title}\n"
                 f"{display or 'Bet returned.'}\n"
-                f"Bet: {stake:,} {COIN} · Bonus: +0{balance_line}"
+                f"Bet: {stake:,} {self.coin_emoji} · Bonus: +0{balance_line}"
             )
         if outcome == "win":
             return (
                 f"# WIN · {self.game_title}\n"
                 f"{display or 'Round won.'}\n"
-                f"Bet: {stake:,} {COIN} · Bonus: **+{bonus:,} {COIN}**{balance_line}"
+                f"Bet: {stake:,} {self.coin_emoji} · Bonus: **+{bonus:,} {self.coin_emoji}**{balance_line}"
             )
         return (
             f"# LOSS · {self.game_title}\n"
             f"{display or 'Round lost.'}\n"
-            f"Bet: {stake:,} {COIN} · Bonus: +0{balance_line}"
+            f"Bet: {stake:,} {self.coin_emoji} · Bonus: +0{balance_line}"
         )
 
     def _on_finished(self, receipt):
@@ -415,7 +416,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             return await interaction.response.send_message(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: {balance:,} {COIN} · Bet: {self.amount:,} {COIN}",
+                    f"Balance: {balance:,} {self.coin_emoji} · Bet: {self.amount:,} {self.coin_emoji}",
                     "warning",
                 ),
                 ephemeral=True,
@@ -546,8 +547,8 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
                 reason = receipt.get("reason")
                 if reason == "insufficient_funds":
                     self.start_error_message = (
-                        f"Balance **{balance:,} {COIN}** is too low "
-                        f"for a **{self.amount:,} {COIN}** bet."
+                        f"Balance **{balance:,} {self.coin_emoji}** is too low "
+                        f"for a **{self.amount:,} {self.coin_emoji}** bet."
                     )
                 elif reason == "duplicate_game":
                     self.start_error_message = (
@@ -919,7 +920,7 @@ class MinesView(InteractiveSoloWagerView):
         return callback
 
     def _initial_content(self):
-        return f"# MINES\n**Bet:** {self.amount:,} {COIN} · **Mines:** {self.mines_count}"
+        return f"# MINES\n**Bet:** {self.amount:,} {self.coin_emoji} · **Mines:** {self.mines_count}"
 
     def _render_art(self):
         show_mines = (
@@ -950,8 +951,8 @@ class MinesView(InteractiveSoloWagerView):
         bonus = max(0, cashout - self.amount)
         return (
             f"# MINES\n"
-            f"**Bet:** {self.amount:,} {COIN} · **Safe:** {len(self.revealed)}\n"
-            f"**Next safe:** {safe_chance:.0%} · **Bonus:** +{bonus:,} {COIN} · **{multiplier:.2f}x**"
+            f"**Bet:** {self.amount:,} {self.coin_emoji} · **Safe:** {len(self.revealed)}\n"
+            f"**Next safe:** {safe_chance:.0%} · **Bonus:** +{bonus:,} {self.coin_emoji} · **{multiplier:.2f}x**"
         )
 
     def _on_finished(self, receipt):
@@ -1103,7 +1104,7 @@ class HiLoView(InteractiveSoloWagerView):
         self._build([ActionRow(*self._controls)])
 
     def _initial_content(self):
-        return f"# HI-LO\n**Bet:** {self.amount:,} {COIN} · **Tie loses**"
+        return f"# HI-LO\n**Bet:** {self.amount:,} {self.coin_emoji} · **Tie loses**"
 
     def _render_art(self):
         outcome = (
@@ -1130,8 +1131,8 @@ class HiLoView(InteractiveSoloWagerView):
         bonus = max(0, int(self.amount * self.multiplier) - self.amount)
         return (
             f"# HI-LO · **{_hilo_rank_label(self.current_rank)}{self.current_suit}**\n"
-            f"**Bet:** {self.amount:,} {COIN} · **Streak:** {self.streak}\n"
-            f"**H:** {higher:.0%} · **L:** {lower:.0%} · **Tie:** 7.7% · **Bonus:** +{bonus:,} {COIN} · **{self.multiplier:.2f}x**"
+            f"**Bet:** {self.amount:,} {self.coin_emoji} · **Streak:** {self.streak}\n"
+            f"**H:** {higher:.0%} · **L:** {lower:.0%} · **Tie:** 7.7% · **Bonus:** +{bonus:,} {self.coin_emoji} · **{self.multiplier:.2f}x**"
         )
 
     def _set_controls_enabled(self, enabled: bool):
@@ -1313,7 +1314,7 @@ class AdvancedSoloGames(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Invalid bet",
-                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {COIN}.",
+                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(ctx.guild)}.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1347,7 +1348,7 @@ class AdvancedSoloGames(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: **{balance:,} {COIN}** · Bet: **{amount:,} {COIN}**.",
+                    f"Balance: **{balance:,} {get_coin_emoji(ctx.guild)}** · Bet: **{amount:,} {get_coin_emoji(ctx.guild)}**.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
