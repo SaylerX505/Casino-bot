@@ -25,7 +25,6 @@ GAME_LABELS = {
     "slots": "ماكينة الحظ",
     "blackjack": "Blackjack",
     "mines": "Mines",
-    "crash": "Crash",
     "plinko": "Plinko",
     "number_roulette": "روليت الأرقام",
     "hilo": "Hi-Lo",
@@ -91,8 +90,6 @@ GAME_COMMAND_ALIASES = {
     "الألغام": "mines",
     "الغام": "mines",
     "minesweeper": "mines",
-    "crash": "crash",
-    "كراش": "crash",
     "plinko": "plinko",
     "بلينكو": "plinko",
     "numberroulette": "number_roulette",
@@ -249,6 +246,24 @@ def configured_manager_role_ids(guild_id: int) -> set[int]:
         logger.error("Malformed manager-role configuration for guild=%s", guild_id)
         return set()
     return set(values)
+
+
+def has_manager_access(user, guild_id: int | None = None) -> bool:
+    """Return access for Discord admins and roles configured in the Wizard's Admin Roles."""
+    if has_admin_access(user):
+        return True
+
+    if guild_id is None:
+        guild = getattr(user, "guild", None)
+        guild_id = getattr(guild, "id", None)
+    if guild_id is None:
+        return False
+
+    role_ids = {
+        getattr(role, "id", None)
+        for role in getattr(user, "roles", ())
+    }
+    return bool(role_ids.intersection(configured_manager_role_ids(int(guild_id))))
 
 
 def has_staff_access(user) -> bool:

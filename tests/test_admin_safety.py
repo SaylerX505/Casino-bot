@@ -7,12 +7,14 @@ from cogs.casino import bank
 from cogs.utility.admin import AdminCommands
 
 
-def fake_interaction(*, user_id=10, guild_id=123, administrator=True):
+def fake_interaction(*, user_id=10, guild_id=123, administrator=True, roles=()):
     return SimpleNamespace(
         guild=object(),
         guild_id=guild_id,
         user=SimpleNamespace(
             id=user_id,
+            guild=SimpleNamespace(id=guild_id),
+            roles=[SimpleNamespace(id=role_id) for role_id in roles],
             guild_permissions=SimpleNamespace(administrator=administrator),
         ),
         response=SimpleNamespace(send_message=AsyncMock()),
@@ -55,13 +57,46 @@ class AdminSafetyTests(unittest.IsolatedAsyncioTestCase):
         add_admin.assert_called_once_with(123, 20)
         interaction.response.send_message.assert_awaited_once()
 
-    async def test_economy_credit_is_owner_only_while_wallets_are_global(self):
-        interaction = fake_interaction()
+    async def test_economy_credit_allows_a_wizard_admin_role_without_discord_admin(self):
+        interaction = fake_interaction(administrator=False, roles=(55,))
         member = SimpleNamespace(id=20, mention="<@20>")
-        self.cog.bot.is_owner = AsyncMock(return_value=False)
 
         with (
-            patch.object(self.cog, "_require_admin", new=AsyncMock(return_value=True)),
+            patch("cogs.casino.permissions.configured_manager_role_ids", return_value={55}),
+            patch.object(bank, "credit_balance", return_value=(True, 100)) as credit,
+            patch.object(bank, "is_guild_admin") as bot_admin_check,
+        ):
+            await self.cog.economy_credit.callback(self.cog, interaction, member, 100)
+
+        credit.assert_called_once_with(20, 100)
+        bot_admin_check.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+        view = interaction.response.send_message.await_args.kwargs["view"]
+        self.assertEqual(view.children[0].children[0].content.split("\\n", 1)[0], "# تمت إضافة العملات")
+
+    async def test_economy_debit_allows_a_wizard_admin_role_without_discord_admin(self):
+        interaction = fake_interaction(administrator=False, roles=(56,))
+        member = SimpleNamespace(id=20, mention="<@20>")
+
+        with (
+            patch("cogs.casino.permissions.configured_manager_role_ids", return_value={56}),
+            patch.object(bank, "remove_balance", return_value=(True, 0)) as remove,
+            patch.object(bank, "is_guild_admin") as bot_admin_check,
+        ):
+            await self.cog.economy_debit.callback(self.cog, interaction, member, 100)
+
+        remove.assert_called_once_with(20, 100)
+        bot_admin_check.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+        view = interaction.response.send_message.await_args.kwargs["view"]
+        self.assertEqual(view.children[0].children[0].content.split("\\n", 1)[0], "# تم خصم العملات")
+
+    async def test_economy_management_rejects_roles_not_configured_in_the_wizard(self):
+        interaction = fake_interaction(administrator=False, roles=(77,))
+        member = SimpleNamespace(id=20, mention="<@20>")
+
+        with (
+            patch("cogs.casino.permissions.configured_manager_role_ids", return_value={55}),
             patch.object(bank, "credit_balance") as credit,
         ):
             await self.cog.economy_credit.callback(self.cog, interaction, member, 100)
@@ -69,21 +104,10 @@ class AdminSafetyTests(unittest.IsolatedAsyncioTestCase):
         credit.assert_not_called()
         interaction.response.send_message.assert_awaited_once()
         view = interaction.response.send_message.await_args.kwargs["view"]
-        self.assertEqual(view.children[0].children[0].content.split("\n", 1)[0], "# الإعداد ده مش متاح لأدمن السيرفر")
+        self.assertEqual(view.children[0].children[0].content.split("\\n", 1)[0], "# غير مسموح")
 
-    async def test_economy_debit_is_owner_only_while_wallets_are_global(self):
-        interaction = fake_interaction()
-        member = SimpleNamespace(id=20, mention="<@20>")
-        self.cog.bot.is_owner = AsyncMock(return_value=False)
-
-        with (
-            patch.object(self.cog, "_require_admin", new=AsyncMock(return_value=True)),
-            patch.object(bank, "remove_balance") as remove,
-        ):
-            await self.cog.economy_debit.callback(self.cog, interaction, member, 100)
-
-        remove.assert_not_called()
-        interaction.response.send_message.assert_awaited_once()
+    async def test_economy_commands_are_not_hidden_by_discord_administrator_default(self):
+        self.assertIsNone(AdminCommands.admin.default_permissions)
 
     async def test_ai_toggle_is_owner_only_while_setting_is_global(self):
         interaction = fake_interaction()

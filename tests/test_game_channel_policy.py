@@ -18,7 +18,7 @@ class GameChannelPolicyTests(unittest.TestCase):
             "cogs.casino.permissions.bank.get_setting",
             return_value="200",
         ):
-            for game_key in ("mafia", "roulette", "mines", "crash", "plinko", "number_roulette", "hilo"):
+            for game_key in ("mafia", "roulette", "mines", "plinko", "number_roulette", "hilo"):
                 with self.subTest(game_key=game_key):
                     self.assertTrue(permissions.is_game_channel_allowed(100, 200, game_key))
                     self.assertFalse(permissions.is_game_channel_allowed(100, 201, game_key))

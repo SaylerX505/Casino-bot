@@ -24,22 +24,6 @@ class SoloAdvancedGameTests(unittest.TestCase):
             with self.subTest(mines_count=mines_count, safe_reveals=safe_reveals), self.assertRaises(ValueError):
                 solo_advanced._mines_multiplier(mines_count, safe_reveals)
 
-    def test_crash_point_is_finite_and_within_advertised_bounds(self):
-        for _ in range(500):
-            point = solo_advanced._crash_point()
-            self.assertGreaterEqual(point, 1.0)
-            self.assertLessEqual(point, solo_advanced.CRASH_MAX_MULTIPLIER)
-            self.assertEqual(round(point, 2), point)
-
-    def test_crash_point_clamps_instant_crash_and_maximum(self):
-        with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=0):
-            self.assertEqual(solo_advanced._crash_point(), 1.0)
-        with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=999_999):
-            self.assertEqual(
-                solo_advanced._crash_point(),
-                solo_advanced.CRASH_MAX_MULTIPLIER,
-            )
-
     def test_plinko_extreme_bin_has_three_times_gross_return(self):
         with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=0):
             result, won, payout = solo_advanced._plinko_drop("drop", 100)
@@ -82,7 +66,6 @@ class SoloAdvancedGameTests(unittest.TestCase):
     def test_new_games_are_registered_for_channel_policy(self):
         expected = {
             "mines": "Mines",
-            "crash": "Crash",
             "plinko": "Plinko",
             "number_roulette": "روليت الأرقام",
             "hilo": "Hi-Lo",
@@ -92,7 +75,6 @@ class SoloAdvancedGameTests(unittest.TestCase):
                 self.assertEqual(GAME_LABELS[key], label)
         for command, key in (
             ("mines", "mines"),
-            ("crash", "crash"),
             ("plinko", "plinko"),
             ("numberroulette", "number_roulette"),
             ("hilo", "hilo"),
@@ -101,7 +83,7 @@ class SoloAdvancedGameTests(unittest.TestCase):
                 self.assertEqual(GAME_COMMAND_ALIASES[command], key)
 
     def test_game_art_generates_png_for_each_new_game(self):
-        for game_type in ("mines", "crash", "hilo"):
+        for game_type in ("mines", "hilo"):
             with self.subTest(game_type=game_type):
                 image = solo_advanced._render_live_art(game_type)
                 self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
@@ -114,7 +96,6 @@ class SoloAdvancedGameTests(unittest.TestCase):
 class FinalGameArtworkStateTests(unittest.TestCase):
     def setUp(self):
         context = SimpleNamespace(author=SimpleNamespace(id=778899))
-        self.crash = solo_advanced.CrashView(None, context, 100)
         self.hilo = solo_advanced.HiLoView(None, context, 100)
 
     def test_mines_push_still_reveals_terminal_board(self):
@@ -137,36 +118,6 @@ class FinalGameArtworkStateTests(unittest.TestCase):
         self.assertEqual(str(view.tile_buttons[mine_index].emoji), "💣")
         self.assertTrue(view.tile_buttons[mine_index].disabled)
 
-
-    def test_crash_cashout_does_not_render_a_false_crash_point(self):
-        self.crash.receipt = {
-            "status": "settled",
-            "outcome": "win",
-        }
-        self.crash.result_multiplier = 2.5
-        with patch(
-            "cogs.casino.solo_advanced._render_live_art",
-            return_value=b"png",
-        ) as render:
-            self.crash._render_art()
-
-        self.assertEqual(render.call_args.kwargs["crash_point"], None)
-        self.assertTrue(render.call_args.kwargs["final"])
-        self.assertIs(render.call_args.kwargs["won"], True)
-
-    def test_crash_refund_does_not_render_as_a_loss(self):
-        self.crash.receipt = {
-            "status": "refunded",
-            "outcome": "refund",
-        }
-        with patch(
-            "cogs.casino.solo_advanced._render_live_art",
-            return_value=b"png",
-        ) as render:
-            self.crash._render_art()
-
-        self.assertIsNone(render.call_args.kwargs["crash_point"])
-        self.assertIsNone(render.call_args.kwargs["won"])
 
     def test_hilo_refund_does_not_render_as_a_loss(self):
         self.hilo.receipt = {
@@ -320,7 +271,6 @@ class LegacyStyleParityTests(unittest.TestCase):
         context = SimpleNamespace(author=requester)
         new_views = (
             solo_advanced.MinesView(None, context, 100, 3),
-            solo_advanced.CrashView(None, context, 100),
             solo_advanced.HiLoView(None, context, 100),
         )
 
@@ -347,7 +297,6 @@ class LegacySoloPresentationTests(unittest.TestCase):
         context = SimpleNamespace(author=requester)
         views = (
             solo_advanced.MinesView(None, context, 100, 3),
-            solo_advanced.CrashView(None, context, 100),
             solo_advanced.HiLoView(None, context, 100),
         )
         try:

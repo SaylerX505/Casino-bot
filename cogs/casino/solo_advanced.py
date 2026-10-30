@@ -1,4 +1,4 @@
-"""Interactive solo casino games: Mines, Crash, and Hi-Lo.
+"""Interactive solo casino games: Mines and Hi-Lo.
 
 The stake is moved into the existing durable casino-wager ledger before a
 player can act. Every terminal outcome is committed exactly once by
@@ -12,7 +12,6 @@ import io
 import logging
 import math
 import secrets
-import time
 import uuid
 
 import discord
@@ -39,9 +38,6 @@ logger = logging.getLogger(__name__)
 MINES_TILE_COUNT = 20
 MINES_MAX_COUNT = 8
 MINES_RTP = 0.97
-CRASH_RTP = 0.97
-CRASH_GROWTH_PER_SECOND = 1.16
-CRASH_MAX_MULTIPLIER = 100.0
 HILO_RTP = 0.97
 HILO_MAX_MULTIPLIER = 1_000.0
 _RECOVERY_DELAYS_SECONDS = (0.5, 1, 2, 4, 8, 15, 30)
@@ -73,17 +69,6 @@ def _mines_multiplier(mines_count: int, safe_reveals: int) -> float:
     return MINES_RTP / survival_probability
 
 
-def _crash_point() -> float:
-    """Generate a two-decimal Crash point with a 97% theoretical return.
-
-    Values are capped at 100x so a live session always reaches a terminal
-    state quickly; the cap is also shown in the game's rules.
-    """
-    roll = secrets.randbelow(1_000_000)
-    value = math.floor(97_000_000 / (1_000_000 - roll)) / 100
-    return min(CRASH_MAX_MULTIPLIER, max(1.0, value))
-
-
 def _hilo_rank_label(rank: int) -> str:
     return {11: "J", 12: "Q", 13: "K", 14: "A"}.get(rank, str(rank))
 
@@ -96,8 +81,6 @@ def _render_live_art(
     reveal_mines: bool = False,
     mines_count: int = 3,
     multiplier: float = 1.0,
-    elapsed: float = 0.0,
-    crash_point: float | None = None,
     current_rank: int | None = None,
     previous_rank: int | None = None,
     final: bool = False,
@@ -107,7 +90,6 @@ def _render_live_art(
     width, height = 1200, 420
     palette = {
         "mines": ((18, 37, 34), (8, 15, 20), (87, 210, 166), "MINES"),
-        "crash": ((48, 25, 32), (10, 12, 22), (244, 137, 112), "CRASH"),
         "hilo": ((27, 29, 51), (8, 12, 22), (191, 174, 255), "HI-LO"),
     }
     top, bottom, accent, title = palette[game_type]
@@ -166,47 +148,6 @@ def _render_live_art(
                 anchor="mm",
             )
         draw.text((645, 373), "REVEAL · MULTIPLY · CASH OUT", font=_art_font(14, bold=True), fill=accent, anchor="mm")
-    elif game_type == "crash":
-        left, top_y, right, bottom_y = 390, 70, 880, 342
-        for i in range(1, 6):
-            y = top_y + (bottom_y - top_y) * i // 6
-            draw.line((left, y, right, y), fill=(38, 49, 60), width=1)
-        for i in range(1, 8):
-            x = left + (right - left) * i // 8
-            draw.line((x, top_y, x, bottom_y), fill=(38, 49, 60), width=1)
-        x_progress = min(1.0, max(0.06, elapsed / 32))
-        y_progress = min(1.0, max(0.04, math.log(max(1.0, multiplier), CRASH_GROWTH_PER_SECOND) / 32))
-        line_points = [(left, bottom_y)]
-        for step in range(1, 31):
-            x_ratio = step / 30
-            x = left + int((right - left) * x_ratio * x_progress)
-            y = bottom_y - int((bottom_y - top_y) * min(0.94, (x_ratio ** 1.7) * y_progress))
-            line_points.append((x, y))
-        line_points.append((left + int((right - left) * x_progress), bottom_y - int((bottom_y - top_y) * y_progress)))
-        draw.line(
-            line_points,
-            fill=accent if not final or won is not False else (247, 100, 103),
-            width=5,
-            joint="curve",
-        )
-        dot_x = left + int((right - left) * x_progress)
-        dot_y = bottom_y - int((bottom_y - top_y) * y_progress)
-        draw.ellipse((dot_x - 8, dot_y - 8, dot_x + 8, dot_y + 8), fill=(255, 244, 221), outline=accent, width=3)
-        draw.rounded_rectangle((924, 83, 1141, 321), radius=24, fill=(19, 24, 34), outline=accent, width=3)
-        draw.text((1032, 127), "MULTIPLIER", font=_art_font(15, bold=True), fill=(177, 190, 195), anchor="mm")
-        draw.text((1032, 178), f"{multiplier:.2f}x", font=_art_font(37, bold=True), fill=(248, 245, 237), anchor="mm")
-        draw.line((951, 211, 1114, 211), fill=(68, 78, 86), width=2)
-        if final and crash_point is not None:
-            draw.text((1032, 251), f"CRASH {crash_point:.2f}x", font=_art_font(16, bold=True), fill=(249, 132, 117), anchor="mm")
-        elif final and won is True:
-            draw.text((1032, 251), "CASHED OUT", font=_art_font(15, bold=True), fill=accent, anchor="mm")
-        elif final:
-            draw.text((1032, 251), "ROUND CLOSED", font=_art_font(13, bold=True), fill=accent, anchor="mm")
-        else:
-            draw.text((1032, 251), "CASH OUT IN TIME", font=_art_font(12, bold=True), fill=accent, anchor="mm")
-        draw.text((64, 192), "WATCH IT", font=_art_font(19, bold=True), fill=(237, 233, 224))
-        draw.text((64, 224), "RISE.", font=_art_font(19, bold=True), fill=(237, 233, 224))
-        draw.text((64, 256), "THEN CASH OUT.", font=_art_font(17, bold=True), fill=(237, 233, 224))
     else:
         current_rank = current_rank or 8
         draw.text((64, 183), "PREDICT", font=_art_font(17, bold=True), fill=(181, 195, 205))
@@ -1087,181 +1028,6 @@ class MinesView(InteractiveSoloWagerView):
                 )
 
 
-class CrashView(InteractiveSoloWagerView):
-    def __init__(self, solo_cog, ctx, amount: int):
-        self.crash_point = _crash_point()
-        self.started_at = None
-        self._ticker_task = None
-        self._last_drawn_multiplier = 1.0
-        self.result_multiplier = None
-        super().__init__(
-            solo_cog,
-            ctx,
-            amount,
-            game_type="crash",
-            game_title="Crash",
-            accent=THEME["red_dark"],
-        )
-        self.cashout_button = discord.ui.Button(
-            label="سحب الآن · 1.00x",
-            emoji="💸",
-            style=discord.ButtonStyle.secondary,
-            custom_id="crash_cashout",
-            disabled=True,
-        )
-        self.cashout_button.callback = self.cashout
-        self._controls = [self.cashout_button]
-        self._build([ActionRow(self.cashout_button)])
-
-    def _current_multiplier(self):
-        if self.started_at is None:
-            return 1.0
-        elapsed = max(0.0, time.monotonic() - self.started_at)
-        return min(CRASH_MAX_MULTIPLIER, math.exp(math.log(CRASH_GROWTH_PER_SECOND) * elapsed))
-
-    def _initial_content(self):
-        return super()._initial_content()
-
-    def _render_art(self):
-        current = self._current_multiplier()
-        final = self.receipt is not None
-        outcome = (
-            self.receipt.get("outcome")
-            if final and self.receipt.get("status") != "refunded"
-            else None
-        )
-        crashed = outcome == "loss"
-        shown_crash = self.crash_point if crashed else None
-        return _render_live_art(
-            "crash",
-            multiplier=self.result_multiplier if final and self.result_multiplier is not None else current,
-            elapsed=max(0.0, time.monotonic() - self.started_at) if self.started_at is not None else 0.0,
-            crash_point=shown_crash,
-            final=final,
-            won=True if outcome == "win" else False if crashed else None,
-        )
-
-    def _content(self):
-        if self.start_error_message or self.receipt is not None or self.resolving or not self.started:
-            return super()._content()
-        current = self._current_multiplier()
-        payout = int(self.amount * current)
-        return (
-            f"# {self.game_title}\n"
-            f"**الرهان:** {self.amount:,} {COIN} · **المضاعف:** {current:.2f}x\n"
-            f"**الصرف الحالي:** {payout:,} {COIN}"
-        )
-
-    async def _after_start(self):
-        self.started_at = time.monotonic()
-        self._refresh()
-        await self._edit()
-        if self.crash_point <= 1.0:
-            self.result_multiplier = self.crash_point
-            self._pending_resolution = {"display_multiplier": self.crash_point}
-            await self._begin_settlement(
-                result=f"crash:{self.crash_point:.2f}x",
-                display_result=f"الانهيار حصل عند **{self.crash_point:.2f}x** قبل السحب.",
-                won=False,
-                payout=0,
-                outcome="loss",
-            )
-            return
-        self._ticker_task = asyncio.create_task(self._run_crash())
-
-    async def _run_crash(self):
-        try:
-            while not self.done and not self.resolving:
-                await asyncio.sleep(1.5)
-                async with self._state_lock:
-                    if self.done or self.resolving:
-                        return
-                    current = self._current_multiplier()
-                    if current >= self.crash_point:
-                        self.result_multiplier = self.crash_point
-                        self._pending_resolution = {"display_multiplier": self.crash_point}
-                        await self._begin_settlement(
-                            result=f"crash:{self.crash_point:.2f}x",
-                            display_result=f"الانهيار حصل عند **{self.crash_point:.2f}x**؛ الجولة انتهت قبل السحب.",
-                            won=False,
-                            payout=0,
-                            outcome="loss",
-                        )
-                        return
-                    self._last_drawn_multiplier = current
-                    self.cashout_button.label = f"سحب الآن · {current:.2f}x"
-                    self._refresh()
-                    await self._edit()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Crash ticker failed game_id=%s", self.game_id)
-            if not self.done and not self.resolving:
-                await self._begin_settlement(
-                    result="crash_internal_error",
-                    display_result="حصل عطل في تحديث الجولة؛ تم إيقافها بأمان وإرجاع الرهان.",
-                    force_refund=True,
-                )
-
-    async def cashout(self, interaction):
-        async with self._state_lock:
-            if self.done or self.resolving:
-                return
-            current = self._current_multiplier()
-            if current >= self.crash_point:
-                self.result_multiplier = self.crash_point
-                self._pending_resolution = {"display_multiplier": self.crash_point}
-                await self._begin_settlement(
-                    interaction,
-                    result=f"crash:{self.crash_point:.2f}x",
-                    display_result=f"الانهيار حصل عند **{self.crash_point:.2f}x** قبل السحب.",
-                    won=False,
-                    payout=0,
-                    outcome="loss",
-                )
-                return
-            payout = max(self.amount, int(self.amount * current))
-            outcome = "push" if payout <= self.amount else "win"
-            self.result_multiplier = current
-            self._pending_resolution = {"display_multiplier": current}
-            await self._begin_settlement(
-                interaction,
-                result=f"cashout:{current:.2f}x",
-                display_result=f"سحبت في الوقت المناسب عند **{current:.2f}x**.",
-                won=outcome == "win",
-                payout=payout if outcome == "win" else 0,
-                outcome=outcome,
-            )
-
-    async def _on_timeout(self):
-        async with self._state_lock:
-            if self.done or self.resolving:
-                return
-            current = self._current_multiplier()
-            if self.started_at is not None and current >= self.crash_point:
-                self.result_multiplier = self.crash_point
-                self._pending_resolution = {"display_multiplier": self.crash_point}
-                await self._begin_settlement(
-                    result=f"crash:{self.crash_point:.2f}x",
-                    display_result=f"الانهيار حصل عند **{self.crash_point:.2f}x** قبل السحب.",
-                    won=False,
-                    payout=0,
-                    outcome="loss",
-                )
-                return
-            payout = max(self.amount, int(self.amount * current))
-            outcome = "push" if payout <= self.amount else "win"
-            self.result_multiplier = current
-            self._pending_resolution = {"display_multiplier": current}
-            await self._begin_settlement(
-                result=f"timeout_cashout:{current:.2f}x",
-                display_result=f"انتهى الوقت؛ تم السحب تلقائيًا عند **{current:.2f}x**.",
-                won=outcome == "win",
-                payout=payout if outcome == "win" else 0,
-                outcome=outcome,
-            )
-
-
 class HiLoView(InteractiveSoloWagerView):
     def __init__(self, solo_cog, ctx, amount: int):
         self.current_rank = secrets.randbelow(13) + 2
@@ -1593,15 +1359,6 @@ class AdvancedSoloGames(commands.Cog):
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
         return await self._start_interactive(ctx, bet, MinesView, mines_count)
-
-    @commands.hybrid_command(
-        name="crash",
-        aliases=["كراش"],
-        description="راهن في Crash واسحب قبل انهيار المضاعف",
-    )
-    @commands.cooldown(1, 5, commands.BucketType.user)
-    async def crash(self, ctx, bet: str):
-        return await self._start_interactive(ctx, bet, CrashView)
 
     @commands.hybrid_command(
         name="hilo",

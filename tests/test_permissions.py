@@ -9,6 +9,7 @@ from cogs.casino.permissions import (
     ai_enabled_setting_key,
     configured_ai_enabled_for_guild,
     has_admin_access,
+    has_manager_access,
     has_staff_access,
 )
 
@@ -49,6 +50,21 @@ class PermissionTierTests(unittest.TestCase):
         staff = FakeUser(user_id=3, roles=[99])
         self.assertFalse(has_admin_access(staff))
         self.assertTrue(has_staff_access(staff))
+
+    def test_manager_roles_configured_in_the_wizard_grant_manager_access(self):
+        manager = FakeUser(user_id=20, roles=[55], administrator=False)
+        with patch("cogs.casino.permissions.configured_manager_role_ids", return_value={55}):
+            self.assertTrue(has_manager_access(manager))
+        with patch("cogs.casino.permissions.configured_manager_role_ids", return_value=set()):
+            self.assertFalse(has_manager_access(manager))
+
+    def test_staff_roles_do_not_grant_global_economy_management_access(self):
+        staff = FakeUser(user_id=21, roles=[99], administrator=False)
+        with (
+            patch("cogs.casino.permissions.configured_manager_role_ids", return_value=set()),
+            patch("cogs.casino.permissions.configured_staff_role_ids", return_value={99}),
+        ):
+            self.assertFalse(has_manager_access(staff))
 
     def test_regular_member_has_only_member_access(self):
         member = FakeUser(user_id=4)
