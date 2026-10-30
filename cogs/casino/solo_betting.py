@@ -297,14 +297,20 @@ def _render_advanced_instant_art(
         ratio = y / max(1, height - 1)
         color = tuple(int(top[i] * (1 - ratio) + bottom[i] * ratio) for i in range(3))
         draw.line((0, y, width, y), fill=color)
-    for offset in range(-height, width, 96):
+    for offset in range(-height, width, 92):
         draw.line((offset, 0, offset + height, height), fill=(*accent,), width=1)
     draw.rounded_rectangle((18, 18, width - 18, height - 18), radius=30, outline=accent, width=3)
-    draw.text((58, 48), "ÇUKUR  /  CASINO", font=_art_font(21, bold=True), fill=accent)
+    draw.ellipse((830, -220, 1300, 245), fill=top)
+    draw.ellipse((-160, 220, 300, 650), fill=top)
+    draw.text((68, 48), "ÇUKUR  /  CASINO", font=_art_font(22, bold=True), fill=accent)
     title = "PLINKO" if is_plinko else "NUMBER ROULETTE"
-    title_font = _art_font(38 if is_plinko else 31, bold=True)
-    draw.text((58, 84), title, font=title_font, fill=(247, 245, 240))
-    draw.line((58, 143, 340, 143), fill=accent, width=4)
+    title_size = 43
+    title_font = _art_font(title_size, bold=True)
+    while draw.textbbox((0, 0), title, font=title_font)[2] > 300 and title_size > 28:
+        title_size -= 1
+        title_font = _art_font(title_size, bold=True)
+    draw.text((68, 82), title, font=title_font, fill=(247, 245, 239))
+    draw.line((68, 145, 355, 145), fill=accent, width=4)
 
     if is_plinko:
         multipliers = (3.0, 2.0, 1.5, 1.1, 0.0, 1.1, 1.5, 2.0, 3.0)

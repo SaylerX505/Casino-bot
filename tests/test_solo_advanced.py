@@ -340,5 +340,59 @@ class LegacyStyleParityTests(unittest.TestCase):
                 self.assertEqual(len(view.children[0].children), len(legacy_children))
 
 
+
+class LegacySoloPresentationTests(unittest.TestCase):
+    def test_multistep_opening_copy_matches_legacy_and_keeps_start_controls(self):
+        requester = SimpleNamespace(id=998877)
+        context = SimpleNamespace(author=requester)
+        views = (
+            solo_advanced.MinesView(None, context, 100, 3),
+            solo_advanced.CrashView(None, context, 100),
+            solo_advanced.HiLoView(None, context, 100),
+        )
+        try:
+            for view in views:
+                with self.subTest(game=view.game_type):
+                    self.assertEqual(
+                        view._initial_content(),
+                        f"# {view.game_title}\n**الرهان:** 100 {solo_betting.COIN}",
+                    )
+                    self.assertEqual(view.start_button.label, "ابدأ الجولة")
+                    self.assertEqual(view.cancel_button.label, "إلغاء")
+                    self.assertIn(view.start_button, view.children[0].children[-1].children)
+        finally:
+            for view in views:
+                view.stop()
+
+    def test_multistep_final_receipts_use_compact_legacy_copy(self):
+        requester = SimpleNamespace(id=998878)
+        context = SimpleNamespace(author=requester)
+        view = solo_advanced.MinesView(None, context, 100, 3)
+        try:
+            cases = (
+                ("win", "settled", "# كسبت · Mines"),
+                ("loss", "settled", "# خسرت · Mines"),
+                ("refund", "refunded", "# تم إرجاع الرصيد · Mines"),
+                ("push", "settled", "# تم استرداد الرهان · Mines"),
+            )
+            for outcome, status, heading in cases:
+                with self.subTest(outcome=outcome):
+                    view.receipt = {
+                        "status": status,
+                        "outcome": outcome,
+                        "balance_after": 900,
+                        "payout": 190,
+                    }
+                    view._pending_display_result = "نتيجة الجولة."
+                    content = view._final_content()
+                    self.assertTrue(content.startswith(heading))
+                    self.assertIn(f"**رصيدك:** 900 {solo_betting.COIN}", content)
+                    self.assertNotIn("إجمالي الصرف", content)
+                    self.assertNotIn("صافي المكسب", content)
+                    self.assertNotIn("الرهان المفقود", content)
+        finally:
+            view.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

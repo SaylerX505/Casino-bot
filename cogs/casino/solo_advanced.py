@@ -118,12 +118,19 @@ def _render_live_art(
         ratio = y / max(1, height - 1)
         color = tuple(int(top[i] * (1 - ratio) + bottom[i] * ratio) for i in range(3))
         draw.line((0, y, width, y), fill=color)
-    for offset in range(-height, width, 100):
-        draw.line((offset, 0, offset + height, height), fill=(30, 39, 49), width=1)
+    for offset in range(-height, width, 92):
+        draw.line((offset, 0, offset + height, height), fill=(*accent,), width=1)
     draw.rounded_rectangle((18, 18, width - 18, height - 18), radius=30, outline=accent, width=3)
-    draw.text((58, 43), "ÇUKUR  /  CASINO", font=_art_font(20, bold=True), fill=accent)
-    draw.text((58, 77), title, font=_art_font(43, bold=True), fill=(247, 245, 239))
-    draw.line((58, 140, 326, 140), fill=accent, width=4)
+    draw.ellipse((830, -220, 1300, 245), fill=top)
+    draw.ellipse((-160, 220, 300, 650), fill=top)
+    draw.text((68, 48), "ÇUKUR  /  CASINO", font=_art_font(22, bold=True), fill=accent)
+    title_size = 43
+    title_font = _art_font(title_size, bold=True)
+    while draw.textbbox((0, 0), title, font=title_font)[2] > 300 and title_size > 28:
+        title_size -= 1
+        title_font = _art_font(title_size, bold=True)
+    draw.text((68, 82), title, font=title_font, fill=(245, 245, 239))
+    draw.line((68, 145, 355, 145), fill=accent, width=4)
 
     if game_type == "mines":
         revealed = revealed or set()
@@ -318,12 +325,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         raise NotImplementedError
 
     def _initial_content(self):
-        return (
-            f"# {self.game_title}\n"
-            f"**الرهان:** {self.amount:,} {COIN}\n"
-            "اضغط **ابدأ الجولة** لتأكيد الرهان وفتح أدوات اللعب. "
-            "لسه ما اتخصمش أي مبلغ من رصيدك."
-        )
+        return f"# {self.game_title}\n**الرهان:** {self.amount:,} {COIN}"
 
     def _content(self):
         if self.start_error_message:
@@ -332,9 +334,8 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
             return self._final_content()
         if self.resolving:
             return (
-                f"# جاري تأكيد النتيجة · {self.game_title}\n"
-                "قفلنا الاختيارات وبنثبت الرهان والرصيد في قاعدة البيانات. "
-                "مش هيتكرر الخصم أو الصرف لو حصل تأخير."
+                f"# جاري تأكيد {self.game_title}\n"
+                "قفلنا الجولة وبنحفظ النتيجة والتسوية بشكل آمن. استنى لحظة."
             )
         if not self.started:
             return self._initial_content()
@@ -344,31 +345,32 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         receipt = self.receipt or {}
         outcome = str(receipt.get("outcome") or "")
         balance_after = receipt.get("balance_after")
-        balance_line = f"\n**رصيدك:** {int(balance_after):,} {COIN}" if balance_after is not None else ""
+        balance_line = (
+            f"\n**رصيدك:** {int(balance_after):,} {COIN}"
+            if balance_after is not None
+            else ""
+        )
         display = self._pending_display_result or str(receipt.get("result") or "")
         if receipt.get("status") == "refunded" or outcome == "balance_limit":
             return (
-                f"# تم إرجاع الرهان · {self.game_title}\n"
-                f"{display or 'الجولة اتوقفت بأمان؛ لم تُحتسب خسارة.'}\n"
-                f"**المبلغ المُعاد:** {self.amount:,} {COIN}{balance_line}"
+                f"# تم إرجاع الرصيد · {self.game_title}\n"
+                f"{display or 'الجولة اتوقفت قبل اكتمالها؛ لم تُحتسب خسارة.'}"
+                f"{balance_line}"
             )
         if outcome == "push":
             return (
                 f"# تم استرداد الرهان · {self.game_title}\n"
-                f"{display or 'تم إرجاع قيمة الرهان بالكامل.'}\n"
-                f"**المبلغ المُعاد:** {self.amount:,} {COIN}{balance_line}"
-            )
-        if outcome == "win":
-            payout = int(receipt.get("payout") or 0)
-            profit = max(0, payout - self.amount)
-            return (
-                f"# كسبت · {self.game_title}\n{display}\n"
-                f"**إجمالي الصرف:** {payout:,} {COIN} · **صافي المكسب:** {profit:,} {COIN}"
+                f"{display or 'تم إرجاع قيمة الرهان بالكامل.'}"
                 f"{balance_line}"
             )
+        if outcome == "win":
+            return (
+                f"# كسبت · {self.game_title}\n"
+                f"{display or 'انتهت الجولة بمكسب.'}{balance_line}"
+            )
         return (
-            f"# خسرت · {self.game_title}\n{display or 'انتهت الجولة من غير مكسب.'}"
-            f"\n**الرهان المفقود:** {self.amount:,} {COIN}{balance_line}"
+            f"# خسرت · {self.game_title}\n"
+            f"{display or 'انتهت الجولة من غير مكسب.'}{balance_line}"
         )
 
     def _on_finished(self, receipt):
@@ -934,12 +936,7 @@ class MinesView(InteractiveSoloWagerView):
         return callback
 
     def _initial_content(self):
-        return (
-            f"# Mines · {self.mines_count} ألغام من 20\n"
-            f"**الرهان:** {self.amount:,} {COIN}\n"
-            "اكشف خانات آمنة لرفع المضاعف، واسحب قبل ظهور اللغم. "
-            "اضغط **ابدأ الجولة** لتأكيد الرهان؛ لم يتم الخصم بعد."
-        )
+        return super()._initial_content()
 
     def _render_art(self):
         show_mines = (
@@ -965,10 +962,9 @@ class MinesView(InteractiveSoloWagerView):
         multiplier = _mines_multiplier(self.mines_count, len(self.revealed)) if self.revealed else 1.0
         cashout = int(self.amount * multiplier) if self.revealed else self.amount
         return (
-            f"# Mines · {self.mines_count} ألغام من 20\n"
+            f"# {self.game_title}\n"
             f"**الرهان:** {self.amount:,} {COIN} · **الخانات الآمنة:** {len(self.revealed)}\n"
-            f"**مضاعف السحب الحالي:** {multiplier:.2f}x · **الصرف الحالي:** {cashout:,} {COIN}\n"
-            "اكشف خانات آمنة لرفع المضاعف، أو اسحب قبل ما تفتح لغم. نسبة الصرف النظرية 97%."
+            f"**المضاعف:** {multiplier:.2f}x · **الصرف الحالي:** {cashout:,} {COIN}"
         )
 
     def _on_finished(self, receipt):
@@ -1124,12 +1120,7 @@ class CrashView(InteractiveSoloWagerView):
         return min(CRASH_MAX_MULTIPLIER, math.exp(math.log(CRASH_GROWTH_PER_SECOND) * elapsed))
 
     def _initial_content(self):
-        return (
-            "# Crash · اسحب قبل الانهيار\n"
-            f"**الرهان:** {self.amount:,} {COIN}\n"
-            "المضاعف هيزيد تلقائيًا بعد بداية الجولة؛ اسحب قبل نقطة الانهيار. "
-            "اضغط **ابدأ الجولة** لتأكيد الرهان؛ لم يتم الخصم بعد."
-        )
+        return super()._initial_content()
 
     def _render_art(self):
         current = self._current_multiplier()
@@ -1156,11 +1147,9 @@ class CrashView(InteractiveSoloWagerView):
         current = self._current_multiplier()
         payout = int(self.amount * current)
         return (
-            "# Crash · اسحب قبل الانهيار\n"
+            f"# {self.game_title}\n"
             f"**الرهان:** {self.amount:,} {COIN} · **المضاعف:** {current:.2f}x\n"
-            f"**الصرف لو سحبت الآن:** {payout:,} {COIN}\n"
-            "المضاعف بيزيد تلقائيًا. عند نقطة انهيار عشوائية، الرهان يضيع لو ما سحبتش. "
-            "الحد الأقصى 100x."
+            f"**الصرف الحالي:** {payout:,} {COIN}"
         )
 
     async def _after_start(self):
@@ -1316,12 +1305,7 @@ class HiLoView(InteractiveSoloWagerView):
         self._build([ActionRow(*self._controls)])
 
     def _initial_content(self):
-        return (
-            f"# Hi-Lo · الكارت الحالي **{_hilo_rank_label(self.current_rank)}**\n"
-            f"**الرهان:** {self.amount:,} {COIN}\n"
-            "خمّن الكارت التالي أعلى أو أقل، وزوّد المضاعف بالتخمينات الصحيحة. "
-            "اضغط **ابدأ الجولة** لتأكيد الرهان؛ لم يتم الخصم بعد."
-        )
+        return super()._initial_content()
 
     def _render_art(self):
         outcome = (
@@ -1341,14 +1325,10 @@ class HiLoView(InteractiveSoloWagerView):
     def _content(self):
         if self.start_error_message or self.receipt is not None or self.resolving or not self.started:
             return super()._content()
-        higher_count = 14 - self.current_rank
-        lower_count = self.current_rank - 2
         return (
-            f"# Hi-Lo · الكارت الحالي **{_hilo_rank_label(self.current_rank)}**\n"
+            f"# {self.game_title} · الكارت الحالي **{_hilo_rank_label(self.current_rank)}**\n"
             f"**الرهان:** {self.amount:,} {COIN} · **التخمينات الصحيحة:** {self.streak}\n"
-            f"**المضاعف الحالي:** {self.multiplier:.2f}x · **الصرف الحالي:** {int(self.amount * self.multiplier):,} {COIN}\n"
-            f"فرصة أعلى: **{higher_count}/13** · فرصة أقل: **{lower_count}/13**. "
-            "التعادل يُحسب خسارة. اسحب في أي وقت لتثبيت المكسب."
+            f"**المضاعف:** {self.multiplier:.2f}x · **الصرف الحالي:** {int(self.amount * self.multiplier):,} {COIN}"
         )
 
     def _set_controls_enabled(self, enabled: bool):
