@@ -21,7 +21,7 @@ from cogs.utility.wizard import (
 
 class WizardViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.guild = SimpleNamespace(id=123456, owner_id=101)
+        self.guild = SimpleNamespace(id=123456, owner_id=101, me=object())
         self.owner = SimpleNamespace(id=101)
 
     def _get_setting(self, key, default=None):
@@ -191,7 +191,12 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         channel = SimpleNamespace(
             id=555,
             guild=self.guild,
-            permissions_for=lambda _member: SimpleNamespace(view_channel=True, send_messages=True),
+            permissions_for=lambda _member: SimpleNamespace(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+            ),
         )
         interaction = SimpleNamespace(
             user=self.owner,
@@ -218,6 +223,44 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         )
         interaction.response.edit_message.assert_awaited_once()
         interaction.response.send_message.assert_not_awaited()
+
+    async def test_global_channel_save_rejects_missing_game_permissions(self):
+        channel = SimpleNamespace(
+            id=556,
+            guild=self.guild,
+            permissions_for=lambda _member: SimpleNamespace(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=False,
+            ),
+        )
+        interaction = SimpleNamespace(
+            user=self.owner,
+            guild=self.guild,
+            guild_id=self.guild.id,
+            message=SimpleNamespace(id=779),
+            response=SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard.bank.get_setting", return_value="all"),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+        ):
+            view = GameChannelWizardView(self.guild, self.owner)
+            view.channel_select = SimpleNamespace(values=[channel])
+            await view.save_channel(interaction)
+
+        save_setting.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+        self.assertIn(
+            "رفع الملفات",
+            interaction.response.send_message.await_args.args[0],
+        )
+        interaction.response.edit_message.assert_not_awaited()
 
     async def test_global_channel_clear_restores_all_channels(self):
         interaction = SimpleNamespace(
