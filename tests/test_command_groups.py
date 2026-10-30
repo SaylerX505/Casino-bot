@@ -174,9 +174,24 @@ class CommandGroupTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(context.send.await_args.kwargs["ephemeral"])
         self.assertIsInstance(context.send.await_args.kwargs["view"], LayoutView)
 
-    async def test_prefix_compatibility_is_preserved(self):
-        self.assertIsNotNone(self.bot.get_command("help"))
-        self.assertIsNotNone(self.bot.get_command("stop"))
+    async def test_prefix_compatibility_and_help_aliases_are_preserved(self):
+        for command_name in (
+            "help",
+            "مساعدة",
+            "h",
+            "commands",
+            "cmds",
+            "cmd",
+            "helpme",
+            "stop",
+            "ايقاف",
+            "انهاء",
+            "cancel",
+            "endgame",
+            "stopgame",
+        ):
+            with self.subTest(command_name=command_name):
+                self.assertIsNotNone(self.bot.get_command(command_name))
 
     async def test_group_dispatch_reuses_existing_hybrid_command(self):
         command = Mock()
