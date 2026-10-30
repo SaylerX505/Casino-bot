@@ -416,7 +416,7 @@ class HelpCommand(commands.Cog):
 
     @commands.hybrid_command(
         name="help",
-        aliases=["مساعدة", "h", "commands", "cmds", "اوامر", "أوامر", "menu"],
+        aliases=["مساعدة", "h", "commands", "cmds", "cmd", "اوامر", "أوامر", "menu", "helpme"],
         description="عرض المساعدة والأوامر المتاحة",
     )
     async def custom_help(self, ctx):
@@ -429,7 +429,11 @@ class HelpCommand(commands.Cog):
         view = HelpEntryView(self.bot)
         view.message = await ctx.send(view=view)
 
-    @commands.hybrid_command(name="stop", aliases=["ايقاف", "انهاء"], description="إيقاف لعبة نشطة في القناة")
+    @commands.hybrid_command(
+        name="stop",
+        aliases=["ايقاف", "انهاء", "cancel", "endgame", "stopgame"],
+        description="إيقاف لعبة نشطة في القناة",
+    )
     async def stop_game(self, ctx):
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
         active_games = getattr(self.bot, "active_games", {})
