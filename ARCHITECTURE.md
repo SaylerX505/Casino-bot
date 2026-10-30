@@ -7,6 +7,7 @@ The bot remains a single-process Discord application, but each subsystem should 
 - `main.py`: Discord client setup, guild policy, single-acknowledgement command error responses, redacted same-guild log forwarding, and extension loading.
 - `cogs/utility/diagnostics.py`: incident IDs, exception unwrapping, structured JSON log formatting, bounded rotating file logs, and reporting for unobserved asyncio task failures.
 - `cogs/casino/game_registry.py`: ownership of active lobby/game tasks by channel. A game must release only the entry it owns.
+- `cogs/casino/permissions.py` and `cogs/utility/wizard.py`: one optional per-guild game channel shared by every solo and group game; when unset, all channels are allowed. Legacy per-game channel settings are ignored by the unified policy.
 - `cogs/casino/bank.py`: atomic economy operations and the public persistence-facing API, including `play_casino_wager` for one-transaction instant bets, durable multi-step solo wager escrow, RPS escrow, and channel/message references used to close stale views after refunds. Game modules should use domain operations instead of editing tables directly.
 - `cogs/casino/bank_schema.py`: ordered, transactional SQLite migrations applied from `schema_migrations`; legacy tables are adopted with `CREATE TABLE IF NOT EXISTS` rather than replaced.
 - `cogs/casino/bank_ledger.py`: append-only economy audit records and read queries, isolated from balance business operations; correlated multi-player actions share a transaction ID.
