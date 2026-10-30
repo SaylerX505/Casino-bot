@@ -555,7 +555,11 @@ class Wheel(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="عجلة", aliases=["عجله", "wheel"], description="ابدأ لعبة عجلة الحفرة")
+    @commands.hybrid_command(
+        name="عجلة",
+        aliases=["عجله", "wheel", "pitwheel"],
+        description="ابدأ لعبة عجلة الحفرة",
+    )
     async def wheel(self, ctx):
         if is_active_game(self.bot, ctx.channel.id):
             return await send_status(
