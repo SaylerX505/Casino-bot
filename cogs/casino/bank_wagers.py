@@ -3,13 +3,7 @@
 import time
 import uuid
 
-from cogs.casino.bank import (
-    SQLITE_MAX_INT,
-    _connect,
-    _lock,
-    _record_ledger,
-    now,
-)
+from cogs.casino import bank as _bank
 
 def create_casino_wager(
     game_id,
@@ -32,14 +26,14 @@ def create_casino_wager(
     result = str(result).strip()
     if not game_id or not uid or not game_type or not choice or not result:
         raise ValueError("casino wager identifiers and outcome fields are required")
-    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= _bank.SQLITE_MAX_INT:
         raise ValueError("casino wager stake must be a positive SQLite-safe integer")
     if not isinstance(won, bool):
         raise TypeError("casino wager won flag must be a boolean")
     if (
         isinstance(win_payout, bool)
         or not isinstance(win_payout, int)
-        or not 0 <= win_payout <= SQLITE_MAX_INT
+        or not 0 <= win_payout <= _bank.SQLITE_MAX_INT
     ):
         raise ValueError("casino wager payout must be a non-negative SQLite-safe integer")
     if won and win_payout < amount:
@@ -50,12 +44,12 @@ def create_casino_wager(
         if field_value is not None and (
             isinstance(field_value, bool)
             or not isinstance(field_value, int)
-            or not 0 < field_value <= SQLITE_MAX_INT
+            or not 0 < field_value <= _bank.SQLITE_MAX_INT
         ):
             raise ValueError(f"{field_name} must be a positive integer when provided")
 
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             if c.execute("SELECT 1 FROM casino_wagers WHERE game_id=?", (game_id,)).fetchone():
@@ -72,7 +66,7 @@ def create_casino_wager(
             balance_after = balance - amount
             c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
             transaction_id = uuid.uuid4().hex
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="casino_wager_stake",
                 user_id=uid,
@@ -103,7 +97,7 @@ def create_casino_wager(
                     result,
                     int(won),
                     win_payout,
-                    now(),
+                    _bank.now(),
                     channel_id,
                     message_id,
                 ),
@@ -130,12 +124,12 @@ def double_down_casino_wager(game_id, user_id, expected_stake):
     if (
         isinstance(expected_stake, bool)
         or not isinstance(expected_stake, int)
-        or not 0 < expected_stake <= SQLITE_MAX_INT
+        or not 0 < expected_stake <= _bank.SQLITE_MAX_INT
     ):
         raise ValueError("expected stake must be a positive SQLite-safe integer")
 
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             wager = c.execute(
@@ -163,7 +157,7 @@ def double_down_casino_wager(game_id, user_id, expected_stake):
                     "reason": "stake_changed",
                     "stake": current_stake,
                 }
-            if current_stake > SQLITE_MAX_INT // 2:
+            if current_stake > _bank.SQLITE_MAX_INT // 2:
                 c.rollback()
                 return {
                     "doubled": False,
@@ -204,7 +198,7 @@ def double_down_casino_wager(game_id, user_id, expected_stake):
                 return {"doubled": False, "reason": "stake_changed"}
 
             transaction_id = uuid.uuid4().hex
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="casino_wager_stake",
                 user_id=uid,
@@ -258,14 +252,14 @@ def play_casino_wager(
     result = str(result).strip()
     if not game_id or not uid or not game_type or not choice or not result:
         raise ValueError("casino wager identifiers and outcome fields are required")
-    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= SQLITE_MAX_INT:
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 0 < amount <= _bank.SQLITE_MAX_INT:
         raise ValueError("casino wager stake must be a positive SQLite-safe integer")
     if not isinstance(won, bool):
         raise TypeError("casino wager won flag must be a boolean")
     if (
         isinstance(win_payout, bool)
         or not isinstance(win_payout, int)
-        or not 0 <= win_payout <= SQLITE_MAX_INT
+        or not 0 <= win_payout <= _bank.SQLITE_MAX_INT
     ):
         raise ValueError("casino wager payout must be a non-negative SQLite-safe integer")
     if won and win_payout < amount:
@@ -276,12 +270,12 @@ def play_casino_wager(
         if field_value is not None and (
             isinstance(field_value, bool)
             or not isinstance(field_value, int)
-            or not 0 < field_value <= SQLITE_MAX_INT
+            or not 0 < field_value <= _bank.SQLITE_MAX_INT
         ):
             raise ValueError(f"{field_name} must be a positive integer when provided")
 
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             if c.execute(
@@ -307,7 +301,7 @@ def play_casino_wager(
                 "UPDATE users SET balance=? WHERE user_id=?",
                 (balance_after_stake, uid),
             )
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="casino_wager_stake",
                 user_id=uid,
@@ -327,14 +321,14 @@ def play_casino_wager(
             )
 
             reason = None
-            if won and balance_after_stake > SQLITE_MAX_INT - win_payout:
+            if won and balance_after_stake > _bank.SQLITE_MAX_INT - win_payout:
                 # Do not partially settle a winning round when the wallet is full.
                 balance_after = balance
                 c.execute(
                     "UPDATE users SET balance=? WHERE user_id=?",
                     (balance_after, uid),
                 )
-                _record_ledger(
+                _bank._record_ledger(
                     c,
                     event_type="casino_wager_refund",
                     user_id=uid,
@@ -357,7 +351,7 @@ def play_casino_wager(
                     "UPDATE users SET balance=? WHERE user_id=?",
                     (balance_after, uid),
                 )
-                _record_ledger(
+                _bank._record_ledger(
                     c,
                     event_type="casino_wager_payout",
                     user_id=uid,
@@ -377,7 +371,7 @@ def play_casino_wager(
             else:
                 payout = 0
                 balance_after = balance_after_stake
-                _record_ledger(
+                _bank._record_ledger(
                     c,
                     event_type="casino_wager_loss",
                     user_id=uid,
@@ -393,7 +387,7 @@ def play_casino_wager(
                 )
                 status, outcome = "settled", "loss"
 
-            timestamp = now()
+            timestamp = _bank.now()
             c.execute(
                 "INSERT INTO casino_wagers "
                 "(game_id,user_id,game_type,stake,choice,result,won,win_payout,"
@@ -470,7 +464,7 @@ def settle_casino_wager(
         if (
             isinstance(final_payout, bool)
             or not isinstance(final_payout, int)
-            or not 0 <= final_payout <= SQLITE_MAX_INT
+            or not 0 <= final_payout <= _bank.SQLITE_MAX_INT
         ):
             raise ValueError("final payout must be a non-negative SQLite-safe integer")
         if final_won and final_payout <= 0:
@@ -484,8 +478,8 @@ def settle_casino_wager(
         if final_outcome in ("loss", "push") and final_won:
             raise ValueError("loss/push outcome requires final_won=False")
 
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             wager = c.execute(
@@ -564,34 +558,34 @@ def settle_casino_wager(
             transaction_id = uuid.uuid4().hex
 
             if force_refund:
-                if balance > SQLITE_MAX_INT - stake:
+                if balance > _bank.SQLITE_MAX_INT - stake:
                     c.rollback()
                     return {"settled": False, "reason": "balance_limit"}
                 balance_after = balance + stake
                 c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
-                _record_ledger(
+                _bank._record_ledger(
                     c, event_type="casino_wager_refund", user_id=uid, delta=stake,
                     balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
                     metadata={"game_type": str(wager["game_type"]), "stake": stake, "reason": "interrupted"},
                 )
                 status, outcome, payout = "refunded", "refund", 0
             elif selected_outcome == "push":
-                if balance > SQLITE_MAX_INT - stake:
+                if balance > _bank.SQLITE_MAX_INT - stake:
                     c.rollback()
                     return {"settled": False, "reason": "balance_limit"}
                 balance_after = balance + stake
                 c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
-                _record_ledger(
+                _bank._record_ledger(
                     c, event_type="casino_wager_push", user_id=uid, delta=stake,
                     balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
                     metadata={"game_type": str(wager["game_type"]), "stake": stake, "gross_return": stake},
                 )
                 status, outcome, payout = "settled", "push", stake
             elif won:
-                if balance <= SQLITE_MAX_INT - win_payout:
+                if balance <= _bank.SQLITE_MAX_INT - win_payout:
                     balance_after = balance + win_payout
                     c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
-                    _record_ledger(
+                    _bank._record_ledger(
                         c, event_type="casino_wager_payout", user_id=uid, delta=win_payout,
                         balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
                         metadata={
@@ -603,12 +597,12 @@ def settle_casino_wager(
                     )
                     status, outcome, payout = "settled", "win", win_payout
                 else:
-                    if balance > SQLITE_MAX_INT - stake:
+                    if balance > _bank.SQLITE_MAX_INT - stake:
                         c.rollback()
                         return {"settled": False, "reason": "balance_limit"}
                     balance_after = balance + stake
                     c.execute("UPDATE users SET balance=? WHERE user_id=?", (balance_after, uid))
-                    _record_ledger(
+                    _bank._record_ledger(
                         c, event_type="casino_wager_refund", user_id=uid, delta=stake,
                         balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
                         metadata={"game_type": str(wager["game_type"]), "stake": stake, "reason": "payout_balance_limit"},
@@ -616,7 +610,7 @@ def settle_casino_wager(
                     status, outcome, payout = "refunded", "balance_limit", 0
             else:
                 balance_after = balance
-                _record_ledger(
+                _bank._record_ledger(
                     c, event_type="casino_wager_loss", user_id=uid, delta=0,
                     balance_after=balance_after, transaction_id=transaction_id, reference=game_id,
                     metadata={"game_type": str(wager["game_type"]), "stake": stake},
@@ -633,7 +627,7 @@ def settle_casino_wager(
                     status,
                     outcome,
                     payout,
-                    now(),
+                    _bank.now(),
                     game_id,
                 ),
             )
@@ -658,8 +652,8 @@ def refund_orphaned_casino_wagers():
     import logging
 
     logger = logging.getLogger(__name__)
-    with _lock:
-        rows = _connect().execute(
+    with _bank._lock:
+        rows = _bank._connect().execute(
             "SELECT game_id FROM casino_wagers WHERE status='active' ORDER BY created_at"
         ).fetchall()
         game_ids = [str(row["game_id"]) for row in rows]
@@ -686,8 +680,8 @@ def refund_orphaned_casino_wagers():
 
 def active_casino_wager_ids():
     """Return active casino wager IDs in stable order for recovery."""
-    with _lock:
-        rows = _connect().execute(
+    with _bank._lock:
+        rows = _bank._connect().execute(
             "SELECT game_id FROM casino_wagers WHERE status='active' ORDER BY created_at"
         ).fetchall()
         return [str(row["game_id"]) for row in rows]
@@ -695,8 +689,8 @@ def active_casino_wager_ids():
 
 def active_casino_wager_records():
     """Return durable panel references for wagers that may need startup recovery."""
-    with _lock:
-        rows = _connect().execute(
+    with _bank._lock:
+        rows = _bank._connect().execute(
             "SELECT game_id,user_id,game_type,stake,channel_id,message_id "
             "FROM casino_wagers WHERE status='active' ORDER BY created_at"
         ).fetchall()
@@ -705,8 +699,8 @@ def active_casino_wager_records():
 
 def casino_wager_status(game_id):
     """Return the durable status and outcome needed to verify a recovery receipt."""
-    with _lock:
-        row = _connect().execute(
+    with _bank._lock:
+        row = _bank._connect().execute(
             "SELECT status,outcome,stake,game_type FROM casino_wagers WHERE game_id=?",
             (str(game_id),),
         ).fetchone()

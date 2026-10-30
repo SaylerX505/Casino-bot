@@ -2,13 +2,7 @@
 
 import uuid
 
-from cogs.casino.bank import (
-    SQLITE_MAX_INT,
-    _connect,
-    _lock,
-    _record_ledger,
-    now,
-)
+from cogs.casino import bank as _bank
 
 def place_bet(player_a, player_b, amount):
     """Collect both stakes atomically; neither player is charged on failure."""
@@ -17,12 +11,12 @@ def place_bet(player_a, player_b, amount):
         isinstance(amount, bool)
         or not isinstance(amount, int)
         or amount <= 0
-        or amount > SQLITE_MAX_INT
+        or amount > _bank.SQLITE_MAX_INT
         or a == b
     ):
         return False
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             c.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (a,))
@@ -38,7 +32,7 @@ def place_bet(player_a, player_b, amount):
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
             transaction_id = uuid.uuid4().hex
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="pvp_bet_stake",
                 user_id=a,
@@ -47,7 +41,7 @@ def place_bet(player_a, player_b, amount):
                 transaction_id=transaction_id,
                 metadata={"counterparty": b, "stake": amount},
             )
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="pvp_bet_stake",
                 user_id=b,
@@ -72,19 +66,19 @@ def create_rps_challenge(game_id, player_a, player_b, amount, *, channel_id=None
         or isinstance(amount, bool)
         or not isinstance(amount, int)
         or amount <= 0
-        or amount > SQLITE_MAX_INT // 2
+        or amount > _bank.SQLITE_MAX_INT // 2
     ):
         return False
     if channel_id is not None and (
         isinstance(channel_id, bool)
         or not isinstance(channel_id, int)
-        or not 0 < channel_id <= SQLITE_MAX_INT
+        or not 0 < channel_id <= _bank.SQLITE_MAX_INT
     ):
         raise ValueError("channel_id must be a positive integer")
 
-    timestamp = now()
-    with _lock:
-        c = _connect()
+    timestamp = _bank.now()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             c.execute(
@@ -109,18 +103,18 @@ def set_rps_challenge_message_reference(game_id, channel_id, message_id):
         if (
             isinstance(field_value, bool)
             or not isinstance(field_value, int)
-            or not 0 < field_value <= SQLITE_MAX_INT
+            or not 0 < field_value <= _bank.SQLITE_MAX_INT
         ):
             raise ValueError(f"{field_name} must be a positive integer")
 
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             changed = c.execute(
                 "UPDATE rps_challenges SET channel_id=?,message_id=?,updated_at=? "
                 "WHERE game_id=? AND status IN ('pending','accepted')",
-                (channel_id, message_id, now(), game_id),
+                (channel_id, message_id, _bank.now(), game_id),
             ).rowcount
             if changed == 1:
                 # If acceptance raced with the command's message-reference write,
@@ -139,8 +133,8 @@ def set_rps_challenge_message_reference(game_id, channel_id, message_id):
 
 def rps_challenge_status(game_id):
     """Read the durable invite state without touching player balances."""
-    with _lock:
-        row = _connect().execute(
+    with _bank._lock:
+        row = _bank._connect().execute(
             "SELECT game_id,player_a,player_b,amount,status,outcome,channel_id,message_id "
             "FROM rps_challenges WHERE game_id=?",
             (str(game_id),),
@@ -154,8 +148,8 @@ def accept_rps_challenge(game_id, user_id):
     if not game_id or not uid:
         return {"accepted": False, "reason": "not_found"}
 
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             challenge = c.execute(
@@ -183,7 +177,7 @@ def accept_rps_challenge(game_id, user_id):
                 c.execute(
                     "UPDATE rps_challenges SET status='cancelled',outcome='duplicate_wager',updated_at=? "
                     "WHERE game_id=? AND status='pending'",
-                    (now(), game_id),
+                    (_bank.now(), game_id),
                 )
                 c.commit()
                 return {"accepted": False, "reason": "duplicate_wager"}
@@ -198,7 +192,7 @@ def accept_rps_challenge(game_id, user_id):
                 c.execute(
                     "UPDATE rps_challenges SET status='cancelled',outcome='insufficient_funds',updated_at=? "
                     "WHERE game_id=? AND status='pending'",
-                    (now(), game_id),
+                    (_bank.now(), game_id),
                 )
                 c.commit()
                 return {
@@ -212,7 +206,7 @@ def accept_rps_challenge(game_id, user_id):
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
             transaction_id = uuid.uuid4().hex
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="rps_wager_stake",
                 user_id=a,
@@ -222,7 +216,7 @@ def accept_rps_challenge(game_id, user_id):
                 reference=game_id,
                 metadata={"counterparty": b, "stake": amount},
             )
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="rps_wager_stake",
                 user_id=b,
@@ -241,7 +235,7 @@ def accept_rps_challenge(game_id, user_id):
                     a,
                     b,
                     amount,
-                    now(),
+                    _bank.now(),
                     challenge["channel_id"],
                     challenge["message_id"],
                 ),
@@ -249,7 +243,7 @@ def accept_rps_challenge(game_id, user_id):
             c.execute(
                 "UPDATE rps_challenges SET status='accepted',outcome=NULL,updated_at=? "
                 "WHERE game_id=? AND status='pending'",
-                (now(), game_id),
+                (_bank.now(), game_id),
             )
             c.commit()
             return {
@@ -279,8 +273,8 @@ def _close_rps_challenge(game_id, user_id, *, allowed_role, outcome):
     game_id, uid = str(game_id).strip(), str(user_id).strip()
     if not game_id or not uid:
         return {"closed": False, "reason": "not_found"}
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             challenge = c.execute(
@@ -300,7 +294,7 @@ def _close_rps_challenge(game_id, user_id, *, allowed_role, outcome):
             c.execute(
                 "UPDATE rps_challenges SET status=?,outcome=?,updated_at=? "
                 "WHERE game_id=? AND status='pending'",
-                (outcome, outcome, now(), game_id),
+                (outcome, outcome, _bank.now(), game_id),
             )
             c.commit()
             return {"closed": True, "reason": None, "status": outcome}
@@ -314,14 +308,14 @@ def expire_rps_challenge(game_id):
     game_id = str(game_id).strip()
     if not game_id:
         return False
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             changed = c.execute(
                 "UPDATE rps_challenges SET status='expired',outcome='timeout',updated_at=? "
                 "WHERE game_id=? AND status='pending'",
-                (now(), game_id),
+                (_bank.now(), game_id),
             ).rowcount
             c.commit()
             return changed == 1
@@ -332,8 +326,8 @@ def expire_rps_challenge(game_id):
 
 def expire_pending_rps_challenges():
     """Close every pre-acceptance invite at startup and return panels needing cleanup."""
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             rows = c.execute(
@@ -341,7 +335,7 @@ def expire_pending_rps_challenges():
                 "FROM rps_challenges WHERE status='pending' ORDER BY created_at"
             ).fetchall()
             records = [dict(row) for row in rows]
-            timestamp = now()
+            timestamp = _bank.now()
             c.execute(
                 "UPDATE rps_challenges SET status='expired',outcome='restart',updated_at=? "
                 "WHERE status='pending'",
@@ -363,12 +357,12 @@ def create_rps_wager(game_id, player_a, player_b, amount):
         or isinstance(amount, bool)
         or not isinstance(amount, int)
         or amount <= 0
-        or amount > SQLITE_MAX_INT
+        or amount > _bank.SQLITE_MAX_INT
     ):
         return False
 
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             if c.execute("SELECT 1 FROM rps_wagers WHERE game_id=?", (game_id,)).fetchone():
@@ -386,7 +380,7 @@ def create_rps_wager(game_id, player_a, player_b, amount):
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, a))
             c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amount, b))
             transaction_id = uuid.uuid4().hex
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="rps_wager_stake",
                 user_id=a,
@@ -396,7 +390,7 @@ def create_rps_wager(game_id, player_a, player_b, amount):
                 reference=game_id,
                 metadata={"counterparty": b, "stake": amount},
             )
-            _record_ledger(
+            _bank._record_ledger(
                 c,
                 event_type="rps_wager_stake",
                 user_id=b,
@@ -409,7 +403,7 @@ def create_rps_wager(game_id, player_a, player_b, amount):
             c.execute(
                 "INSERT INTO rps_wagers "
                 "(game_id,player_a,player_b,amount,status,created_at) VALUES (?,?,?,?,'active',?)",
-                (game_id, a, b, amount, now()),
+                (game_id, a, b, amount, _bank.now()),
             )
             c.commit()
             return True
@@ -421,9 +415,9 @@ def create_rps_wager(game_id, player_a, player_b, amount):
 def settle_rps_wager(game_id, winner_id=None):
     """Settle or refund a persisted RPS wager exactly once."""
     game_id = str(game_id)
-    sqlite_max_int = SQLITE_MAX_INT
-    with _lock:
-        c = _connect()
+    sqlite_max_int = _bank.SQLITE_MAX_INT
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             wager = c.execute(
@@ -484,7 +478,7 @@ def settle_rps_wager(game_id, winner_id=None):
                     return False
                 c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amount, a))
                 c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amount, b))
-                _record_ledger(
+                _bank._record_ledger(
                     c,
                     event_type="rps_wager_refund",
                     user_id=a,
@@ -494,7 +488,7 @@ def settle_rps_wager(game_id, winner_id=None):
                     reference=game_id,
                     metadata={"stake": amount},
                 )
-                _record_ledger(
+                _bank._record_ledger(
                     c,
                     event_type="rps_wager_refund",
                     user_id=b,
@@ -513,7 +507,7 @@ def settle_rps_wager(game_id, winner_id=None):
                 tax = pot - payout
                 if balances[winner] <= sqlite_max_int - payout:
                     c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (payout, winner))
-                    _record_ledger(
+                    _bank._record_ledger(
                         c,
                         event_type="rps_wager_payout",
                         user_id=winner,
@@ -539,7 +533,7 @@ def settle_rps_wager(game_id, winner_id=None):
             c.execute(
                 "UPDATE rps_wagers SET status=?, outcome=?, settled_at=? "
                 "WHERE game_id=? AND status='active'",
-                (status, outcome, now(), game_id),
+                (status, outcome, _bank.now(), game_id),
             )
             c.commit()
             return {
@@ -561,8 +555,8 @@ def refund_orphaned_rps_wagers():
     import logging
 
     logger = logging.getLogger(__name__)
-    with _lock:
-        rows = _connect().execute(
+    with _bank._lock:
+        rows = _bank._connect().execute(
             "SELECT game_id FROM rps_wagers WHERE status='active' ORDER BY created_at"
         ).fetchall()
         game_ids = [str(row["game_id"]) for row in rows]
@@ -600,8 +594,8 @@ def refund_orphaned_rps_wagers():
 
 def active_rps_wager_ids():
     """Return active escrow IDs in stable order for startup recovery workers."""
-    with _lock:
-        rows = _connect().execute(
+    with _bank._lock:
+        rows = _bank._connect().execute(
             "SELECT game_id FROM rps_wagers WHERE status='active' ORDER BY created_at"
         ).fetchall()
         return [str(row["game_id"]) for row in rows]
@@ -618,12 +612,12 @@ def set_rps_wager_message_reference(game_id, channel_id, message_id):
         if (
             isinstance(field_value, bool)
             or not isinstance(field_value, int)
-            or not 0 < field_value <= SQLITE_MAX_INT
+            or not 0 < field_value <= _bank.SQLITE_MAX_INT
         ):
             raise ValueError(f"{field_name} must be a positive integer")
 
-    with _lock:
-        c = _connect()
+    with _bank._lock:
+        c = _bank._connect()
         try:
             c.execute("BEGIN IMMEDIATE")
             changed = c.execute(
@@ -640,8 +634,8 @@ def set_rps_wager_message_reference(game_id, channel_id, message_id):
 
 def active_rps_wager_records():
     """Return active escrow and Discord panel references before startup refund."""
-    with _lock:
-        rows = _connect().execute(
+    with _bank._lock:
+        rows = _bank._connect().execute(
             "SELECT game_id,player_a,player_b,amount,channel_id,message_id "
             "FROM rps_wagers WHERE status='active' ORDER BY created_at"
         ).fetchall()
@@ -650,8 +644,8 @@ def active_rps_wager_records():
 
 def rps_wager_status(game_id):
     """Read a durable RPS receipt for recovery decisions without changing balances."""
-    with _lock:
-        row = _connect().execute(
+    with _bank._lock:
+        row = _bank._connect().execute(
             "SELECT game_id,player_a,player_b,amount,status,outcome,channel_id,message_id "
             "FROM rps_wagers WHERE game_id=?",
             (str(game_id),),

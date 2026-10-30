@@ -143,7 +143,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_table_art_is_cached_until_cards_or_phase_change(self):
         rendered = b"\\x89PNG\\r\\n\\x1a\\n" + b"table"
-        with patch("cogs.casino.blackjack.render_blackjack_table", return_value=rendered) as render:
+        with patch("cogs.casino.blackjack_view.render_blackjack_table", return_value=rendered) as render:
             first = await self.view._art_file()
             second = await self.view._art_file()
             self.assertEqual(first.filename, second.filename)
