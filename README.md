@@ -26,7 +26,7 @@ An advanced casino and social-games Discord bot for the Çukur server.
    python main.py
    ```
 
-The bot uses the configured prefix `+`. See the in-bot help menu for the available commands and game rules. Runtime dependency pins are kept in `requirements.txt`; `requirements.lock` pins the complete Python 3.11 dependency resolution used by Docker and CI.
+The bot uses the configured prefix `+`; you can also mention the bot directly before a command. See `+help`, `+commands`, or the in-bot help menu for available commands and game rules. Prefix aliases are available for common game and economy commands. Wagers accept full numbers (for example `1500`) and compact forms such as `1.5k` or `2k`, subject to each game's minimum and maximum. Runtime dependency pins are kept in `requirements.txt`; `requirements.lock` pins the complete Python 3.11 dependency resolution used by Docker and CI.
 
 ## Solo betting game
 
@@ -46,7 +46,7 @@ The bot uses the configured prefix `+`. See the in-bot help menu for the availab
 
 ## Setup wizard
 
-Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set a separate allowed-channel list for each game, disable or reopen individual games, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.
+Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set **one shared game channel for every solo and group game** or allow games in all channels, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.
 
 ## Single-server configuration
 
