@@ -955,16 +955,8 @@ class MinesView(InteractiveSoloWagerView):
         )
 
     def _on_finished(self, receipt):
-        reveal_board = (
-            receipt.get("outcome") in {"loss", "win", "push"}
-            and receipt.get("status") != "refunded"
-        )
-        for index, button in self.tile_buttons.items():
+        for button in self.tile_buttons.values():
             button.disabled = True
-            if reveal_board and index in self.mines:
-                button.style = discord.ButtonStyle.secondary
-            elif index in self.revealed:
-                button.style = discord.ButtonStyle.secondary
 
     def _set_controls_enabled(self, enabled: bool):
         for index, button in self.tile_buttons.items():

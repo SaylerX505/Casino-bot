@@ -7,7 +7,7 @@ from discord.ext import commands
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 import config
-from cogs.casino import bank
+from cogs.casino import bank, permissions
 from cogs.casino.currency_catalog import (
     COIN_EMOJI,
     CONSUMABLE_REWARDS,
@@ -21,7 +21,6 @@ from cogs.casino.currency_views import (
     build_profile_panel,
 )
 from cogs.casino.game_assets import SERVER_LOGO_URL
-from cogs.casino import permissions
 from cogs.casino.permissions import configured_log_channel_id
 from cogs.utility.theme import StatusPanel, embed_to_v2
 
