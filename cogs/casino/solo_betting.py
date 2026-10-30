@@ -283,6 +283,9 @@ def _render_advanced_instant_art(
     choice: str | None = None,
     result: str | None = None,
     won: bool | None = None,
+    path_progress: int = 8,
+    spin_offset: float = 0.0,
+    rolling: bool = False,
 ) -> bytes:
     """Render bespoke Plinko and number-roulette artwork for Components V2 panels."""
     width, height = 1200, 420
@@ -331,17 +334,21 @@ def _render_advanced_instant_art(
         center_x, top_y = 649, 71
         path_points = [(center_x, top_y)]
         right_steps = 0
+        progress = max(0, min(8, int(path_progress))) if path is not None else 0
         for row in range(8):
             y = top_y + row * 27
             for col in range(row + 1):
                 x = center_x + (2 * col - row) * 27
                 draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=(226, 226, 225), outline=accent, width=1)
-            if path is not None:
+            if path is not None and row < progress:
                 right_steps += path[row] == "R"
                 path_points.append((int(center_x + (2 * right_steps - row - 1) * 27), top_y + (row + 1) * 27))
         if slot is not None and path is not None:
-            path_points.append((433 + slot * 54, 302))
+            if progress >= 8:
+                path_points.append((433 + slot * 54, 302))
             draw.line(path_points, fill=(255, 216, 111), width=4)
+            ball_x, ball_y = path_points[-1]
+            draw.ellipse((ball_x - 9, ball_y - 9, ball_x + 9, ball_y + 9), fill=(255, 221, 121), outline=(255, 249, 218), width=3)
         else:
             draw.ellipse((center_x - 9, top_y - 16, center_x + 9, top_y + 2), fill=(255, 221, 121), outline=(255, 249, 218), width=3)
 
@@ -365,8 +372,8 @@ def _render_advanced_instant_art(
         center_x, center_y, radius = 696, 214, 161
         draw.ellipse((center_x - radius - 8, center_y - radius - 8, center_x + radius + 8, center_y + radius + 8), fill=(24, 36, 33), outline=accent, width=4)
         for number in range(37):
-            start = -90 + number * (360 / 37)
-            end = -90 + (number + 1) * (360 / 37)
+            start = -90 + number * (360 / 37) + spin_offset
+            end = -90 + (number + 1) * (360 / 37) + spin_offset
             fill = (35, 133, 87) if number == 0 else (168, 43, 52) if number in red_numbers else (21, 25, 32)
             draw.pieslice((center_x - radius, center_y - radius, center_x + radius, center_y + radius), start=start, end=end, fill=fill, outline=(227, 224, 210), width=1)
             angle = math.radians((start + end) / 2)
@@ -374,7 +381,7 @@ def _render_advanced_instant_art(
             label_y = center_y + int(math.sin(angle) * 132)
             draw.text((label_x, label_y), str(number), font=_art_font(10, bold=True), fill=(255, 250, 237), anchor="mm")
         draw.ellipse((center_x - 77, center_y - 77, center_x + 77, center_y + 77), fill=(11, 18, 23), outline=accent, width=4)
-        number_text = result if result is not None and str(result).isdigit() else "?"
+        number_text = "?" if rolling else result if result is not None and str(result).isdigit() else "?"
         result_fill = (72, 183, 121) if number_text == "0" else (244, 238, 220)
         draw.text((center_x, center_y - 5), number_text, font=_art_font(57, bold=True), fill=result_fill, anchor="mm")
         draw.text((center_x, center_y + 46), "RESULT", font=_art_font(13, bold=True), fill=accent, anchor="mm")
@@ -397,6 +404,28 @@ def _render_advanced_instant_art(
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
+
+def _encode_game_animation(frames: list[bytes]) -> bytes:
+    """Encode a short, one-shot reveal animation for a final game panel."""
+    if not frames:
+        raise ValueError("game animation requires at least one frame")
+    images = []
+    for frame_data in frames:
+        with Image.open(io.BytesIO(frame_data)) as frame:
+            images.append(frame.convert("RGB"))
+    output = io.BytesIO()
+    durations = [85] * (len(images) - 1) + [520]
+    images[0].save(
+        output,
+        format="GIF",
+        save_all=True,
+        append_images=images[1:],
+        duration=durations,
+        disposal=2,
+        optimize=True,
+    )
+    return output.getvalue()
+
 
 def has_active_solo_session(user_id: int) -> bool:
     """Whether this member already has an open solo-game session."""
@@ -713,21 +742,128 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
     def _update_result_art(self, choice: str, result: str, outcome: str) -> None:
         if self._art_filename is None:
             return
-        won = outcome == "win"
-        if self.game_type in {"plinko", "number_roulette"}:
-            self._art_bytes = _render_advanced_instant_art(
+        won = True if outcome == "win" else False if outcome == "loss" else None
+        try:
+            frames = []
+            if self.game_type == "coinflip":
+                faces = ("heads", "tails", "heads")
+                frames.extend(
+                    _render_solo_game_art(
+                        self.game_type,
+                        choice=choice,
+                        result=face,
+                    )
+                    for face in faces
+                )
+                final_frame = _render_solo_game_art(
+                    self.game_type,
+                    choice=choice,
+                    result=result,
+                    won=won,
+                )
+            elif self.game_type == "dice":
+                for _ in range(3):
+                    rolling_value = str(secrets.randbelow(6) + 1)
+                    frames.append(
+                        _render_solo_game_art(
+                            self.game_type,
+                            choice=choice,
+                            result=rolling_value,
+                        )
+                    )
+                final_frame = _render_solo_game_art(
+                    self.game_type,
+                    choice=choice,
+                    result=result,
+                    won=won,
+                )
+            elif self.game_type == "slots":
+                for _ in range(3):
+                    rolling_reels = " · ".join(
+                        secrets.choice(SLOT_SYMBOLS) for _ in range(3)
+                    )
+                    frames.append(
+                        _render_solo_game_art(
+                            self.game_type,
+                            result=rolling_reels,
+                        )
+                    )
+                final_frame = _render_solo_game_art(
+                    self.game_type,
+                    result=result,
+                    won=won,
+                )
+            elif self.game_type == "plinko":
+                parts = dict(
+                    part.split("=", 1)
+                    for part in result.split(";")
+                    if "=" in part
+                )
+                path = parts.get("path")
+                if path is not None and len(path) == 8 and all(step in "LR" for step in path):
+                    frames.extend(
+                        _render_advanced_instant_art(
+                            self.game_type,
+                            choice=choice,
+                            result=result,
+                            path_progress=progress,
+                        )
+                        for progress in (1, 3, 5, 8)
+                    )
+                final_frame = _render_advanced_instant_art(
+                    self.game_type,
+                    choice=choice,
+                    result=result,
+                    won=won,
+                )
+            elif self.game_type == "number_roulette":
+                frames.extend(
+                    _render_advanced_instant_art(
+                        self.game_type,
+                        choice=choice,
+                        result=result,
+                        spin_offset=offset,
+                        rolling=True,
+                    )
+                    for offset in (405, 315, 225, 135, 45)
+                )
+                final_frame = _render_advanced_instant_art(
+                    self.game_type,
+                    choice=choice,
+                    result=result,
+                    won=won,
+                )
+            else:
+                final_frame = _render_solo_game_art(
+                    self.game_type,
+                    choice=choice,
+                    result=result,
+                    won=won,
+                )
+            frames.append(final_frame)
+            self._art_bytes = _encode_game_animation(frames)
+            self._art_filename = f"{self.game_type}-result.gif"
+        except Exception:
+            logger.exception(
+                "Could not render animated solo result game_type=%s game_id=%s",
                 self.game_type,
-                choice=choice,
-                result=result,
-                won=won,
+                self.game_id,
             )
-        else:
-            self._art_bytes = _render_solo_game_art(
-                self.game_type,
-                choice=choice if self.game_type in {"coinflip", "dice"} else None,
-                result=result,
-                won=won,
-            )
+            self._art_filename = f"{self.game_type}.png"
+            if self.game_type in {"plinko", "number_roulette"}:
+                self._art_bytes = _render_advanced_instant_art(
+                    self.game_type,
+                    choice=choice,
+                    result=result,
+                    won=won,
+                )
+            else:
+                self._art_bytes = _render_solo_game_art(
+                    self.game_type,
+                    choice=choice if self.game_type in {"coinflip", "dice"} else None,
+                    result=result,
+                    won=won,
+                )
 
     def _disable_buttons(self) -> None:
         for button in self._buttons.values():

@@ -55,6 +55,34 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("**Chance:** 50%", self.view._panel_text.content)
         self.assertIn("Bonus: +0.9x", self.view._panel_text.content)
 
+    def test_instant_solo_games_render_one_shot_result_animations(self):
+        cases = (
+            ("coinflip", "heads", "tails"),
+            ("dice", "3", "5"),
+            ("slots", "spin", "🍒 · 🍋 · 💎"),
+            ("plinko", "drop", "slot=4;path=RRRRLLLL;multiplier=0x"),
+            ("number_roulette", "17", "17"),
+        )
+        for game_type, choice, result in cases:
+            view = SoloWagerView(
+                self.cog,
+                self.requester,
+                100,
+                game_type=game_type,
+                game_title=game_type.upper(),
+                choices=(
+                    {str(number): {"label": str(number), "emoji": None} for number in range(37)}
+                    if game_type == "number_roulette"
+                    else {"spin": {"label": "Spin", "emoji": None}}
+                ),
+            )
+            try:
+                view._update_result_art(choice, result, "win")
+                self.assertEqual(view._art_filename, f"{game_type}-result.gif")
+                self.assertTrue(view._art_bytes.startswith(b"GIF89a"))
+            finally:
+                view.stop()
+
     def test_coinflip_panel_uses_its_own_brand_accent(self):
         container = next(
             item for item in self.view.walk_children()
@@ -192,7 +220,8 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             view.message.edit.assert_awaited_once()
             edit_kwargs = view.message.edit.await_args.kwargs
             self.assertIs(edit_kwargs["view"], view)
-            self.assertEqual(edit_kwargs["attachments"][0].filename, "dice.png")
+            self.assertEqual(edit_kwargs["attachments"][0].filename, "dice-result.gif")
+            self.assertTrue(view._art_bytes.startswith(b"GIF89a"))
             context.send.assert_not_awaited()
             self.assertTrue(view.result_published)
         finally:
@@ -247,7 +276,8 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         message.edit.assert_awaited_once()
         edit_kwargs = message.edit.await_args.kwargs
         self.assertIs(edit_kwargs["view"], self.view)
-        self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip.png")
+        self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip-result.gif")
+        self.assertTrue(self.view._art_bytes.startswith(b"GIF89a"))
         self.assertTrue(self.view.done)
         self.assertIn("# WIN · COIN FLIP", self.view._panel_text.content)
         self.assertIn("**Balance:** 1,090", self.view._panel_text.content)
