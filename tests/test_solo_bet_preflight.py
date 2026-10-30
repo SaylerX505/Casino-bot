@@ -55,7 +55,7 @@ class SoloBetPreflightTests(unittest.IsolatedAsyncioTestCase):
         ctx.send.assert_awaited_once()
         result_view = ctx.send.await_args.kwargs["view"]
         self.assertIsInstance(result_view, StatusPanel)
-        self.assertIn("رصيدك مش كفاية", panel_text(result_view))
+        self.assertIn("Not enough coins", panel_text(result_view))
         self.assertIn("100", panel_text(result_view))
         view_constructor.assert_not_called()
         claim_session.assert_not_called()
@@ -77,7 +77,7 @@ class SoloBetPreflightTests(unittest.IsolatedAsyncioTestCase):
         ctx.send.assert_awaited_once()
         result_view = ctx.send.await_args.kwargs["view"]
         self.assertIsInstance(result_view, StatusPanel)
-        self.assertIn("رصيدك مش كفاية", panel_text(result_view))
+        self.assertIn("Not enough coins", panel_text(result_view))
         view_constructor.assert_not_called()
         claim_session.assert_not_called()
 
@@ -103,7 +103,7 @@ class SoloBetPreflightTests(unittest.IsolatedAsyncioTestCase):
         ctx.send.assert_awaited_once()
         result_view = ctx.send.await_args.kwargs["view"]
         self.assertIsInstance(result_view, StatusPanel)
-        self.assertIn("رصيدك مش كفاية", panel_text(result_view))
+        self.assertIn("Not enough coins", panel_text(result_view))
         self.assertIn("100", panel_text(result_view))
         register_game.assert_not_called()
 

@@ -45,7 +45,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len({button.custom_id for button in buttons}), 3)
         self.assertIn("# COIN FLIP", self.view._panel_text.content)
         self.assertIn("**Bet:** 100", self.view._panel_text.content)
-        self.assertIn("Chance: 50%", self.view._panel_text.content)
+        self.assertIn("**Chance:** 50%", self.view._panel_text.content)
         self.assertIn("Bonus: +0.9x", self.view._panel_text.content)
 
     def test_coinflip_panel_uses_its_own_brand_accent(self):
@@ -70,7 +70,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         try:
             self.assertIn("# DICE", view._panel_text.content)
             self.assertIn("**Bet:** 100", view._panel_text.content)
-            self.assertIn("Chance: 16.67%", view._panel_text.content)
+            self.assertIn("**Chance:** 16.67%", view._panel_text.content)
             self.assertIn("Pick a number from 1 to 6.", view._panel_text.content)
             buttons = [
                 item for item in view.walk_children()
@@ -111,7 +111,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             content = view._panel_text.content
             self.assertIn("# SLOTS", content)
             self.assertIn("**Bet:** 100", content)
-            self.assertIn("Chance: 44.44% any win", content)
+            self.assertIn("**Chance:** 44.44% any win", content)
             self.assertIn("Pair: +0.7x · Trips: +4x–14x bonus", content)
             buttons = [
                 item for item in view.walk_children()

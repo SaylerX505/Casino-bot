@@ -597,11 +597,11 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             self._art_bytes = _render_advanced_instant_art(game_type)
         else:
             self._art_bytes = _render_solo_game_art(game_type) if self._art_filename is not None else None
-        self._panel_text = TextDisplay(self._waiting_content())
         self._buttons = {}
         self.selected_number = None
         self._confirm_button = None
         self._replay_button = None
+        self._panel_text = TextDisplay(self._waiting_content())
 
         choice_buttons = []
         number_selects = []

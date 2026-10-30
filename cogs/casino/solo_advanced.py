@@ -1306,18 +1306,14 @@ PLINKO_MULTIPLIERS = (3.0, 2.0, 1.5, 1.1, 0.0, 1.1, 1.5, 2.0, 3.0)
 
 
 def _plinko_drop(_choice: str, stake: int) -> tuple[str, bool, int]:
-    """Resolve one weighted Plinko ball; low-return center slot loses the stake."""
+    """Resolve one fair eight-step Plinko path and its matching landing bin."""
     if isinstance(stake, bool) or not isinstance(stake, int) or stake <= 0:
         raise ValueError("Plinko stake must be a positive integer")
-    roll = secrets.randbelow(sum(PLINKO_WEIGHTS))
-    slot = 0
-    for index, weight in enumerate(PLINKO_WEIGHTS):
-        if roll < weight:
-            slot = index
-            break
-        roll -= weight
+    roll = secrets.randbits(8)
+    path = "".join("R" if roll & (1 << bit) else "L" for bit in range(8))
+    slot = path.count("R")
     multiplier = PLINKO_MULTIPLIERS[slot]
-    result = f"slot={slot};multiplier={multiplier:g}x"
+    result = f"slot={slot};path={path};multiplier={multiplier:g}x"
     if multiplier < 1.0:
         return result, False, 0
     payout = int(stake * multiplier)

@@ -43,7 +43,8 @@ class InterruptedWagerPanelTests(unittest.IsolatedAsyncioTestCase):
             item.content for item in panel.walk_children()
             if isinstance(item, discord.ui.TextDisplay)
         )
-        self.assertIn("الجولة اتوقفت بعد إعادة التشغيل", text)
+        self.assertIn("# ROUND REFUNDED", text)
+        self.assertIn("Bet returned:", text)
         self.assertIn("100", text)
         self.assertIn("رمي العملة", text)
 

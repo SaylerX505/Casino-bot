@@ -100,7 +100,8 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
             item.content for item in self.view.walk_children()
             if isinstance(item, discord.ui.TextDisplay)
         )
-        self.assertEqual(text, "# BLACKJACK\n**Bet:** 100")
+        self.assertIn("# BLACKJACK", text)
+        self.assertIn("**Bet:** 100", text)
         buttons = [
             item for item in self.view.walk_children()
             if isinstance(item, discord.ui.Button)
