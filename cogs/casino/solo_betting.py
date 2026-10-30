@@ -28,13 +28,13 @@ GROSS_WIN_MULTIPLIER_NUMERATOR = 190
 GROSS_WIN_MULTIPLIER_DENOMINATOR = 100
 COIN = "<:ckrcoin:1513743032124575784>"
 SIDES = {
-    "heads": {"label": "صورة", "emoji": "🪙"},
-    "tails": {"label": "كتابة", "emoji": "🪙"},
+    "heads": {"label": "Heads", "emoji": "🪙"},
+    "tails": {"label": "Tails", "emoji": "🪙"},
 }
 DICE_CHOICES = {str(number): {"label": str(number), "emoji": None} for number in range(1, 7)}
 SLOT_SYMBOLS = ("🍒", "🍋", "🍊", "🍇", "⭐", "💎")
 SLOT_TRIPLE_PAYOUTS = {"🍒": 500, "🍋": 600, "🍊": 700, "🍇": 800, "⭐": 1_000, "💎": 1_500}
-SLOT_CHOICES = {"spin": {"label": "تدوير", "emoji": "🎰"}}
+SLOT_CHOICES = {"spin": {"label": "Spin", "emoji": "🎰"}}
 _SOLO_GAME_ACCENTS = {
     "coinflip": THEME["gold"],
     "dice": THEME["teal"],
@@ -315,26 +315,33 @@ def _render_advanced_instant_art(
     if is_plinko:
         multipliers = (3.0, 2.0, 1.5, 1.1, 0.0, 1.1, 1.5, 2.0, 3.0)
         slot = None
+        path = None
         if result and "slot=" in result:
             try:
-                slot = max(0, min(8, int(result.split("slot=", 1)[1].split(";", 1)[0])))
-            except (ValueError, IndexError):
+                parts = dict(part.split("=", 1) for part in result.split(";") if "=" in part)
+                slot = max(0, min(8, int(parts["slot"])))
+                path = parts.get("path")
+                if path is not None and (len(path) != 8 or any(step not in "LR" for step in path)):
+                    path = None
+            except (ValueError, KeyError):
                 slot = None
+                path = None
 
         draw.rounded_rectangle((390, 38, 901, 380), radius=24, fill=(13, 17, 27), outline=accent, width=4)
-        center_x, top_y = 645, 71
-        path = [(center_x, top_y)]
-        direction = (slot - 4) / 4 if slot is not None else 0
+        center_x, top_y = 649, 71
+        path_points = [(center_x, top_y)]
+        right_steps = 0
         for row in range(8):
             y = top_y + row * 27
             for col in range(row + 1):
-                x = center_x + (col - row / 2) * 43
+                x = center_x + (2 * col - row) * 27
                 draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=(226, 226, 225), outline=accent, width=1)
-            if row:
-                path.append((int(center_x + direction * row * 23), y))
-        if slot is not None:
-            path.append((435 + slot * 51 + 24, 302))
-            draw.line(path, fill=(255, 216, 111), width=4)
+            if path is not None:
+                right_steps += path[row] == "R"
+                path_points.append((int(center_x + (2 * right_steps - row - 1) * 27), top_y + (row + 1) * 27))
+        if slot is not None and path is not None:
+            path_points.append((433 + slot * 54, 302))
+            draw.line(path_points, fill=(255, 216, 111), width=4)
         else:
             draw.ellipse((center_x - 9, top_y - 16, center_x + 9, top_y + 2), fill=(255, 221, 121), outline=(255, 249, 218), width=3)
 
@@ -439,14 +446,14 @@ def _spin_slots(_choice: str, stake: int) -> tuple[str, bool, int]:
 
 _STARTUP_PANEL_TASKS: set[asyncio.Task] = set()
 _GAME_TITLES = {
-    "coinflip": "رمي العملة",
-    "dice": "رمي النرد",
-    "slots": "ماكينة الحظ",
+    "coinflip": "COIN FLIP",
+    "dice": "DICE",
+    "slots": "SLOTS",
     "blackjack": "Blackjack",
     "mines": "Mines",
     "crash": "Crash",
     "plinko": "Plinko",
-    "number_roulette": "روليت الأرقام",
+    "number_roulette": "NUMBER ROULETTE",
     "hilo": "Hi-Lo",
 }
 
@@ -469,15 +476,14 @@ async def _publish_interrupted_wager_panel(bot, record, receipt):
         if channel is None:
             channel = await bot.fetch_channel(int(channel_id))
         message = await channel.fetch_message(int(message_id))
-        title = _GAME_TITLES.get(str(record.get("game_type")), "اللعبة")
+        title = _GAME_TITLES.get(str(record.get("game_type")), "GAME")
         stake = int(record.get("stake", receipt.get("stake", 0)))
         await message.edit(
             view=StatusPanel(
-                "الجولة اتوقفت بعد إعادة التشغيل",
+                "ROUND REFUNDED",
                 (
-                    f"الجولة السابقة من **{title}** ماكملتش قبل ما البوت يقفل. "
-                    f"اترد رهانك بالكامل: **{stake:,}** {COIN}. "
-                    "تقدر تبدأ جولة جديدة؛ مفيش مكسب أو خسارة اتحسبت من غير نتيجة مؤكدة."
+                    f"Your **{title}** round was interrupted. "
+                    f"Bet returned: **{stake:,} {COIN}**. No result was recorded."
                 ),
                 "warning",
             )
@@ -556,12 +562,12 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         amount: int,
         *,
         game_type: str = "coinflip",
-        game_title: str = "رمي العملة",
+        game_title: str = "COIN FLIP",
         choices: dict | None = None,
         payout_numerator: int = GROSS_WIN_MULTIPLIER_NUMERATOR,
         payout_denominator: int = GROSS_WIN_MULTIPLIER_DENOMINATOR,
-        odds_description: str = "1 من 2",
-        instructions: str = "اختار صورة أو كتابة.",
+        odds_description: str = "50%",
+        instructions: str = "Choose heads or tails.",
         payout_description: str | None = None,
         outcome_resolver: Callable[[str, int], tuple[str, bool, int]] | None = None,
         context=None,
@@ -593,6 +599,9 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             self._art_bytes = _render_solo_game_art(game_type) if self._art_filename is not None else None
         self._panel_text = TextDisplay(self._waiting_content())
         self._buttons = {}
+        self.selected_number = None
+        self._confirm_button = None
+        self._replay_button = None
 
         choice_buttons = []
         number_selects = []
@@ -602,7 +611,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             button = discord.ui.Button(
                 label=metadata["label"],
                 emoji=metadata.get("emoji"),
-                style=discord.ButtonStyle.secondary,
+                style=discord.ButtonStyle.primary,
                 custom_id=f"{self.game_type}_{choice}",
             )
             button.callback = partial(self.choose, side=choice)
@@ -611,8 +620,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
 
         if self.game_type == "number_roulette":
             for lower, upper, placeholder in (
-                (0, 18, "اختر رقمًا من 0 إلى 18"),
-                (19, 36, "اختر رقمًا من 19 إلى 36"),
+                (0, 18, "Choose 0–18"),
+                (19, 36, "Choose 19–36"),
             ):
                 options = [
                     discord.SelectOption(
@@ -629,15 +638,27 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                     custom_id=f"number_roulette_{lower}_{upper}",
                 )
                 async def choose_number(interaction, current_selector=selector):
-                    await self.choose(interaction, side=current_selector.values[0])
+                    self.selected_number = current_selector.values[0]
+                    self._confirm_button.disabled = False
+                    self._panel_text.content = self._waiting_content()
+                    await interaction.response.edit_message(view=self)
                 selector.callback = choose_number
                 self._buttons[f"numbers_{lower}_{upper}"] = selector
                 number_selects.append(selector)
 
+            self._confirm_button = discord.ui.Button(
+                label="Confirm",
+                style=discord.ButtonStyle.success,
+                custom_id="number_roulette_confirm",
+                disabled=True,
+            )
+            self._confirm_button.callback = self.confirm_number
+            self._buttons["confirm"] = self._confirm_button
+
         cancel = discord.ui.Button(
-            label="إلغاء",
+            label="Cancel",
             emoji="❌",
-            style=discord.ButtonStyle.secondary,
+            style=discord.ButtonStyle.danger,
             custom_id=f"{self.game_type}_cancel",
         )
         cancel.callback = self.cancel
@@ -657,7 +678,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if self.game_type == "number_roulette":
             elements.append(ActionRow(number_selects[0]))
             elements.append(ActionRow(number_selects[1]))
-            elements.append(ActionRow(cancel))
+            elements.append(ActionRow(self._confirm_button, cancel))
         elif len(choice_buttons) <= 2:
             elements.append(ActionRow(*choice_buttons, cancel))
         else:
@@ -672,44 +693,22 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         )
 
     def _waiting_content(self) -> str:
-        content = (
-            f"# {self.game_title}\n"
-            f"**الرهان:** {self.amount:,} {COIN}"
-        )
-        if self.game_type in {"plinko", "number_roulette"}:
+        content = f"# {self.game_title}\n**Bet:** {self.amount:,} {COIN}"
+        if self.instructions:
             content += f"\n{self.instructions}"
-            if self.payout_description:
-                content += f"\n-# {self.payout_description}"
+        if self.odds_description:
+            content += f"\n**Chance:** {self.odds_description}"
+        if self.payout_description:
+            content += f"\n-# {self.payout_description}"
+        if self.game_type == "number_roulette":
+            selected = self.selected_number if self.selected_number is not None else "—"
+            content += f"\n**Selected:** {selected}"
         return content
 
     def _art_file(self):
         if self._art_filename is None or self._art_bytes is None:
             return None
         return discord.File(io.BytesIO(self._art_bytes), filename=self._art_filename)
-
-    def _result_view(self, title: str, description: str, outcome: str):
-        if self._art_filename is None:
-            return StatusPanel(title, description, outcome)
-        view = LayoutView(timeout=120)
-        accent = {
-            "win": THEME["green"],
-            "loss": THEME["red_dark"],
-            "warning": THEME["orange"],
-            "neutral": THEME["teal"],
-        }.get(outcome, THEME["teal"])
-        view.add_item(
-            Container(
-                TextDisplay(f"# {title}\n{description}"),
-                MediaGallery(
-                    discord.MediaGalleryItem(
-                        media=f"attachment://{self._art_filename}",
-                        description=f"{self.game_title} result artwork",
-                    )
-                ),
-                accent_color=accent,
-            )
-        )
-        return view
 
     def _update_result_art(self, choice: str, result: str, outcome: str) -> None:
         if self._art_filename is None:
@@ -734,6 +733,112 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         for button in self._buttons.values():
             button.disabled = True
 
+    def _render_result_panel(self) -> None:
+        self.clear_items()
+        self._panel_text = TextDisplay(self._panel_text.content)
+        self._replay_button = discord.ui.Button(
+            label="Play Again",
+            emoji="↻",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"{self.game_type}_replay",
+        )
+        self._replay_button.callback = self.replay
+        elements = [self._panel_text]
+        if self._art_filename is not None:
+            elements.append(
+                MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{self._art_filename}",
+                        description=f"{self.game_title} result",
+                    )
+                )
+            )
+        elements.extend((Separator(), ActionRow(self._replay_button)))
+        self.add_item(
+            Container(
+                *elements,
+                accent_color=_SOLO_GAME_ACCENTS.get(self.game_type, THEME["teal"]),
+            )
+        )
+        self._buttons = {"replay": self._replay_button}
+
+    async def confirm_number(self, interaction: discord.Interaction) -> None:
+        if self.selected_number is None:
+            return await interaction.response.send_message(
+                view=StatusPanel("Choose a number", "Select a number first.", "warning"),
+                ephemeral=True,
+            )
+        await self.choose(interaction, side=self.selected_number)
+
+    async def replay(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.requester.id:
+            return await interaction.response.send_message(
+                view=StatusPanel("Not your game", "Only the original player can replay.", "warning"),
+                ephemeral=True,
+            )
+        if not self.done or self.context is None:
+            return await interaction.response.send_message(
+                view=StatusPanel("Game closed", "Start a new game with the command.", "warning"),
+                ephemeral=True,
+            )
+        try:
+            balance = await asyncio.to_thread(bank.get_balance, int(self.requester.id))
+        except Exception:
+            logger.exception("Could not verify replay balance user_id=%s", self.requester.id)
+            return await interaction.response.send_message(
+                view=StatusPanel("Balance unavailable", "Try again in a moment.", "warning"),
+                ephemeral=True,
+            )
+        if balance < self.amount:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "Not enough coins",
+                    f"Balance: {balance:,} {COIN} · Bet: {self.amount:,} {COIN}",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+        replay_view = SoloWagerView(
+            self.cog,
+            self.requester,
+            self.amount,
+            game_type=self.game_type,
+            game_title=self.game_title,
+            choices=self.choices,
+            payout_numerator=self.payout_numerator,
+            payout_denominator=self.payout_denominator,
+            odds_description=self.odds_description,
+            instructions=self.instructions,
+            payout_description=self.payout_description,
+            outcome_resolver=self.outcome_resolver,
+            context=self.context,
+        )
+        if not claim_solo_session(self.requester.id, replay_view):
+            replay_view.stop()
+            return await interaction.response.send_message(
+                view=StatusPanel("Game active", "Finish your current solo game first.", "warning"),
+                ephemeral=True,
+            )
+        replay_view.message = interaction.message or self.message
+        replay_file = replay_view._art_file()
+        try:
+            await interaction.response.edit_message(
+                view=replay_view,
+                attachments=[replay_file] if replay_file is not None else [],
+            )
+            self.stop()
+        except asyncio.CancelledError:
+            release_solo_session(self.requester.id, replay_view)
+            raise
+        except Exception:
+            release_solo_session(self.requester.id, replay_view)
+            logger.exception("Could not restart solo game type=%s", self.game_type)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    view=StatusPanel("Replay unavailable", "Start a new game with the command.", "warning"),
+                    ephemeral=True,
+                )
+
     async def _edit_message(self) -> bool:
         if self.message is None:
             return False
@@ -756,8 +861,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if interaction.user.id != self.requester.id:
             await interaction.response.send_message(
                 view=StatusPanel(
-                    "القائمة دي مش بتاعتك",
-                    "كل لاعب يقدر يختار في جلسة الرهان اللي بدأها هو بس.",
+                    "Not your game",
+                    "Only the original player can play this round.",
                     "warning",
                 ),
                 ephemeral=True,
@@ -768,12 +873,12 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
     async def choose(self, interaction: discord.Interaction, side: str) -> None:
         if self.done or self.resolving:
             return await interaction.response.send_message(
-                view=StatusPanel("الجولة اتقفلت", "تم تسجيل الاختيار أو انتهاء الجلسة بالفعل.", "warning"),
+                view=StatusPanel("Game closed", "This round has already ended.", "warning"),
                 ephemeral=True,
             )
         if interaction.user.id != self.requester.id:
             return await interaction.response.send_message(
-                view=StatusPanel("الاختيار مش متاح", "الرهان ده خاص بالشخص اللي بدأه.", "warning"),
+                view=StatusPanel("Not your game", "Only the original player can play this round.", "warning"),
                 ephemeral=True,
             )
 
@@ -781,8 +886,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         self.message = interaction.message or self.message
         self._disable_buttons()
         self._panel_text.content = (
-            f"# جاري تأكيد {self.game_title}\n"
-            "قفلنا الاختيار وبنحفظ نتيجة الجولة والخصم والتسوية بشكل آمن. استنى لحظة."
+            f"# {self.game_title}\n"
+            "Confirming result..."
         )
         try:
             await interaction.response.edit_message(view=self)
@@ -801,9 +906,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                 self.requester.id,
             )
             await self._finish_without_bet(
-                "# تعذر بدء الجولة\n"
-                "Discord رفض تحديث لوحة اللعب، لذلك ما اتسجلش أي رهان. "
-                "ابدأ جولة جديدة لما الواجهة تستجيب."
+                "# Could not start\n"
+                "No bet was placed. Try again."
             )
             return
 
@@ -820,8 +924,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         except Exception:
             logger.exception("Could not calculate solo wager outcome game_type=%s", self.game_type)
             await self._finish_without_bet(
-                "# تعذر حساب النتيجة\n"
-                "مفيش رهان اتخصم. جرّب تبدأ جولة جديدة بعد مراجعة الحالة."
+                "# Result unavailable\n"
+                "No bet was placed. Try again."
             )
             return
         self.game_id = game_id
@@ -861,9 +965,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         except Exception:
             logger.exception("Could not confirm atomic solo wager game_id=%s", game_id)
             self._panel_text.content = (
-                "# جاري التحقق من الرهان\n"
-                "حصل تأخير في قاعدة البيانات. هنتأكد من معرّف العملية قبل عرض نتيجة، "
-                "من غير ما نكرر الخصم أو الصرف."
+                "# Checking bet\n"
+                "Verifying the transaction. Do not place another bet yet."
             )
             await self._edit_message()
             self.cog._schedule_recovery(
@@ -875,19 +978,18 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             reason = receipt.get("reason")
             if reason == "insufficient_funds":
                 balance = int(receipt.get("balance", 0))
-                message = f"رصيدك الحالي **{balance:,}** {COIN}، ومحتاج **{self.amount:,}**."
+                message = f"Balance: **{balance:,} {COIN}** · Bet: **{self.amount:,} {COIN}**."
             elif reason == "duplicate_game":
-                message = "معرّف الجولة مستخدم بالفعل؛ لم نسحب أي مبلغ لجولة جديدة."
+                message = "This round was already recorded."
             else:
-                message = "تعذر قبول الرهان بأمان؛ لم يتم تسجيل خصم جديد."
-            return await self._finish_without_bet("# الرهان مرفوض\n" + message)
+                message = "The bet could not be accepted. No coins were taken."
+            return await self._finish_without_bet("# Bet declined\n" + message)
 
         if not receipt.get("settled"):
             # Defensive fail-closed guard: an instant bet must return a terminal receipt.
             self._panel_text.content = (
-                "# التسوية قيد التحقق\n"
-                "لم يصل إيصال نهائي من قاعدة البيانات. هنتحقق من نفس معرّف العملية "
-                "قبل السماح بجولة جديدة."
+                "# Verifying result\n"
+                "The transaction is still being checked."
             )
             await self._edit_message()
             self.cog._schedule_recovery(
@@ -903,16 +1005,15 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         self._disable_buttons()
         if self.game_id is None:
             await self._finish_without_bet(
-                "# الجولة اتقفلت بأمان\n"
-                f"رقم المتابعة: {incident_id}\n"
-                "الخطأ حصل قبل تسجيل الرهان؛ مفيش مبلغ اتخصم."
+                "# Game closed\n"
+                f"Reference: {incident_id} · No bet was placed."
             )
             return
 
         self._panel_text.content = (
-            "# جاري التحقق من حالة الرهان\n"
-            f"رقم المتابعة: {incident_id}\n"
-            "هنستعلم عن نفس معرّف العملية. لو الرهان اتسوى بالفعل، مش هيتكرر الصرف."
+            "# Checking bet\n"
+            f"Reference: {incident_id}\n"
+            "Verifying the same transaction."
         )
         self.cog._schedule_recovery(
             self.game_id,
@@ -937,9 +1038,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             await self._finalize(result)
         elif result.get("reason") == "not_found":
             await self._finish_without_bet(
-                "# لم يتأكد تسجيل الرهان\n"
-                "لم نلاقِ عملية محفوظة للمعرّف ده؛ مفيش نتيجة هنعلنها من غير تسوية مؤكدة. "
-                "راجع رصيدك قبل ما تبدأ محاولة جديدة."
+                "# Bet not confirmed\n"
+                "No result was announced. Check your balance before retrying."
             )
 
     async def _finalize(self, result: dict) -> None:
@@ -953,100 +1053,69 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
         if self.game_type == "plinko" and result_side.startswith("slot="):
             try:
                 parts = dict(part.split("=", 1) for part in result_side.split(";") if "=" in part)
-                result_label = f"الخانة {int(parts['slot']) + 1} · {parts.get('multiplier', '0x')}"
+                result_label = f"Bin {int(parts['slot']) + 1} · {parts.get('multiplier', '0x')}"
             except (KeyError, ValueError):
-                result_label = "تم إسقاط الكرة"
+                result_label = "Ball dropped"
         balance_after = result.get("balance_after")
         balance_line = (
-            f"\n**رصيدك:** {int(balance_after):,} {COIN}"
+            f"\n**Balance:** {int(balance_after):,} {COIN}"
             if balance_after is not None
             else ""
         )
         outcome = result.get("outcome", "loss")
+        stake = int(result.get("stake", self.amount))
+        bonus = max(0, int(result.get("payout", 0)) - stake)
         self._update_result_art(choice, result_side, outcome)
 
-        if result.get("status") == "refunded":
-            if result.get("outcome") == "balance_limit":
-                heading = "تم إرجاع الرصيد"
-                detail = "تعذر تسجيل المكسب بأمان؛ تم إرجاع قيمة الجولة."
-            else:
-                heading = "تم إرجاع الرصيد"
-                detail = "الجولة اتوقفت قبل اكتمالها؛ لم تُحتسب خسارة."
-            self._panel_text.content = f"# {heading} · {self.game_title}\n{detail}{balance_line}"
+        if result.get("status") == "refunded" or outcome == "balance_limit":
+            self._panel_text.content = (
+                f"# REFUNDED · {self.game_title}\n"
+                f"Bet: {stake:,} {COIN} · Bonus: +0"
+                f"{balance_line}"
+            )
         elif outcome == "win":
             self._panel_text.content = (
-                f"# كسبت · {self.game_title}\n"
-                f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**"
+                f"# WIN · {self.game_title}\n"
+                f"Pick: **{choice_label}** · Result: **{result_label}**\n"
+                f"Bet: {stake:,} {COIN} · Bonus: **+{bonus:,} {COIN}**"
+                f"{balance_line}"
+            )
+        elif outcome == "push":
+            self._panel_text.content = (
+                f"# PUSH · {self.game_title}\n"
+                f"Pick: **{choice_label}** · Result: **{result_label}**\n"
+                f"Bet: {stake:,} {COIN} · Bonus: +0"
                 f"{balance_line}"
             )
         else:
             self._panel_text.content = (
-                f"# خسرت · {self.game_title}\n"
-                f"اختيارك: **{choice_label}** · النتيجة: **{result_label}**"
+                f"# LOSS · {self.game_title}\n"
+                f"Pick: **{choice_label}** · Result: **{result_label}**\n"
+                f"Bet: {stake:,} {COIN} · Bonus: +0"
                 f"{balance_line}"
             )
 
-        # Replace the game panel in place. Only fall back to another message if Discord
-        # refuses the update after the wager has already been safely settled.
-        result_content = self._panel_text.content
+        self._render_result_panel()
         try:
             updated = await self._edit_message()
-            if updated:
-                self.result_published = True
-            else:
-                await self._publish_result(
-                    result_content,
-                    "warning"
-                    if result.get("status") == "refunded" or result.get("outcome") == "balance_limit"
-                    else "win"
-                    if outcome == "win"
-                    else "loss",
-                )
+            self.result_published = updated
+            if not updated:
+                logger.error("Could not publish settled solo result in-place game_id=%s", self.game_id)
         finally:
             self._release_session()
-            self.stop()
-
-    async def _publish_result(self, content: str, outcome: str) -> None:
-        """Use a separate receipt only when the original game panel cannot be updated."""
-        if self.context is None or self.result_published:
-            return
-        lines = content.split("\n", 1)
-        description = lines[1] if len(lines) > 1 else lines[0]
-        kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
-        if getattr(self.context, "interaction", None) is not None:
-            # The original solo-game panel is public, so keep its separate receipt public too.
-            kwargs["ephemeral"] = False
-        if outcome == "win":
-            title = f"كسبت · {self.game_title}"
-        elif outcome == "warning":
-            title = f"تم إرجاع الرصيد · {self.game_title}"
-        else:
-            title = f"خسرت · {self.game_title}"
-
-        try:
-            result_view = self._result_view(title, description, outcome)
-            if self._art_filename is not None:
-                kwargs["file"] = self._art_file()
-            await self.context.send(
-                view=result_view,
-                **kwargs,
-            )
-            self.result_published = True
-        except Exception:
-            logger.exception("Could not publish solo wager result game_type=%s", self.game_type)
 
     async def cancel(self, interaction: discord.Interaction) -> None:
         if self.done or self.resolving:
             return await interaction.response.send_message(
-                view=StatusPanel("الجولة اتقفلت", "مينفعش تلغي بعد بدء تسوية الرهان.", "warning"),
+                view=StatusPanel("Game closed", "This round can no longer be cancelled.", "warning"),
                 ephemeral=True,
             )
         self.message = interaction.message or self.message
         self.done = True
         self._disable_buttons()
         self._panel_text.content = (
-            f"# تم إلغاء {self.game_title}\n"
-            "اتلغت الجلسة قبل اختيارك؛ مفيش أي رهان اتخصم."
+            f"# CANCELLED · {self.game_title}\n"
+            "No bet was placed."
         )
         try:
             await interaction.response.edit_message(view=self)
@@ -1064,13 +1133,19 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             self.stop()
 
     async def on_timeout(self) -> None:
-        if self.done or self.resolving:
+        if self.done:
+            if self._replay_button is not None:
+                self._replay_button.disabled = True
+                await self._edit_message()
+            self.stop()
+            return
+        if self.resolving:
             return
         self.done = True
         self._disable_buttons()
         self._panel_text.content = (
-            f"# انتهت صلاحية {self.game_title}\n"
-            "الوقت خلص قبل ما تختار؛ مفيش أي رهان اتخصم."
+            f"# EXPIRED · {self.game_title}\n"
+            "No bet was placed."
         )
         try:
             await self._edit_message()
@@ -1180,8 +1255,8 @@ class SoloBetting(commands.Cog):
         if not self._wagers_ready:
             return await ctx.send(
                 view=StatusPanel(
-                    "الرهان غير متاح مؤقتًا",
-                    "قاعدة بيانات الرهانات بتتراجع دلوقتي. مفيش أي رهان جديد هيتقبل لحد ما نتأكد إن التسويات آمنة.",
+                    "Bets unavailable",
+                    "Wagers are being checked. Try again shortly.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1192,8 +1267,8 @@ class SoloBetting(commands.Cog):
             usage = f"/{command_name} bet:100" if ctx.interaction is not None else f"{ctx.prefix}{command_name} 100"
             return await ctx.send(
                 view=StatusPanel(
-                    "قيمة الرهان مش مناسبة",
-                    f"استخدم {usage}. أقل رهان **{MIN_BET:,}** وأقصى رهان **{MAX_BET:,}** {COIN}.",
+                    "Invalid bet",
+                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {COIN}.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1202,8 +1277,8 @@ class SoloBetting(commands.Cog):
         if has_active_solo_session(ctx.author.id):
             return await ctx.send(
                 view=StatusPanel(
-                    "عندك جلسة مفتوحة",
-                    "كمّل أو ألغِ جلسة الرهان الحالية قبل ما تبدأ جلسة جديدة.",
+                    "Game active",
+                    "Finish or cancel your current solo game first.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1219,8 +1294,8 @@ class SoloBetting(commands.Cog):
             )
             return await ctx.send(
                 view=StatusPanel(
-                    "تعذر التحقق من الرصيد",
-                    "حصل عطل أثناء قراءة رصيدك. مفيش رهان اتعمل؛ جرّب تاني بعد شوية.",
+                    "Balance unavailable",
+                    "No bet was placed. Try again shortly.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1228,8 +1303,8 @@ class SoloBetting(commands.Cog):
         if balance < amount:
             return await ctx.send(
                 view=StatusPanel(
-                    "رصيدك مش كفاية",
-                    f"رصيدك الحالي **{balance:,} {COIN}**، ومحتاج **{amount:,} {COIN}** لبدء الرهان. مفيش رصيد اتخصم.",
+                    "Not enough coins",
+                    f"Balance: **{balance:,} {COIN}** · Bet: **{amount:,} {COIN}**.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1254,8 +1329,8 @@ class SoloBetting(commands.Cog):
             view.stop()
             return await ctx.send(
                 view=StatusPanel(
-                    "عندك جلسة مفتوحة",
-                    "كمّل أو ألغِ جلسة الرهان الحالية قبل ما تبدأ جلسة جديدة.",
+                    "Game active",
+                    "Finish or cancel your current solo game first.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1288,12 +1363,13 @@ class SoloBetting(commands.Cog):
             ctx,
             bet,
             game_type="coinflip",
-            game_title="رمي العملة",
+            game_title="COIN FLIP",
             choices=SIDES,
             payout_numerator=190,
-            odds_description="1 من 2",
-            instructions="اختار صورة أو كتابة.",
+            odds_description="50%",
+            instructions="Choose heads or tails.",
             command_name="coinflip",
+            payout_description="Bonus: +0.9x.",
         )
 
     @commands.hybrid_command(
@@ -1307,11 +1383,12 @@ class SoloBetting(commands.Cog):
             ctx,
             bet,
             game_type="dice",
-            game_title="رمي النرد",
+            game_title="DICE",
             choices=DICE_CHOICES,
             payout_numerator=570,
-            odds_description="1 من 6",
-            instructions="اختار رقم من 1 إلى 6. الرقم الصحيح يكسبك 5.7x من قيمة الرهان.",
+            odds_description="16.67%",
+            instructions="Pick a number from 1 to 6.",
+            payout_description="Bonus: +4.7x.",
             command_name="dice",
         )
 
@@ -1326,20 +1403,13 @@ class SoloBetting(commands.Cog):
             ctx,
             bet,
             game_type="slots",
-            game_title="ماكينة الحظ",
+            game_title="SLOTS",
             choices=SLOT_CHOICES,
             payout_numerator=170,
-            odds_description="الرموز مستقلة ومتساوية الاحتمال",
-            instructions="اضغط تدوير لتجربة 3 بكرات.",
+            odds_description="44.44% any win",
+            instructions="Spin 3 reels.",
             command_name="slots",
-            payout_description=(
-                "احتمال أي فوز: 96/216 (44.44%)؛ الخسارة: 120/216 (55.56%). "
-                "زوج متطابق: 90/216 (41.67%) مع إجمالي صرف 1.7x. "
-                "ثلاثية: 6/216 (2.78%)؛ كل رمز محدد: 1/216 (0.46%). "
-                "إجمالي صرف الثلاثية: 5x (🍒)، 6x (🍋)، 7x (🍊)، "
-                "8x (🍇)، 10x (⭐)، 15x (💎)، شامل قيمة الرهان. "
-                "نسبة الصرف النظرية طويلة المدى: 94.44%."
-            ),
+            payout_description="Pair: +0.7x · Trips: +4x–14x bonus.",
             outcome_resolver=_spin_slots,
         )
 

@@ -94,21 +94,21 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.view.stop()
 
-    def test_blackjack_waiting_panel_uses_v2_and_secondary_controls(self):
+    def test_blackjack_waiting_panel_uses_v2_and_primary_deal_control(self):
         self.assertIsInstance(self.view, LayoutView)
         text = "\n".join(
             item.content for item in self.view.walk_children()
             if isinstance(item, discord.ui.TextDisplay)
         )
-        self.assertEqual(text, "# Blackjack")
-        self.assertNotIn("القواعد", text)
-        self.assertNotIn("الرهان", text)
+        self.assertEqual(text, "# BLACKJACK\n**Bet:** 100")
         buttons = [
             item for item in self.view.walk_children()
             if isinstance(item, discord.ui.Button)
         ]
-        self.assertEqual({button.label for button in buttons}, {"ابدأ اللعب", "إلغاء"})
-        self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+        self.assertEqual({button.label for button in buttons}, {"Deal", "Cancel"})
+        styles = {button.label: button.style for button in buttons}
+        self.assertIs(styles["Deal"], discord.ButtonStyle.primary)
+        self.assertIs(styles["Cancel"], discord.ButtonStyle.danger)
 
     def test_blackjack_panel_uses_gold_accent(self):
         container = next(
@@ -128,7 +128,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(
             {button.label for button in buttons},
-            {"اسحب بطاقة", "قف", "ضاعف الرهان"},
+            {"Hit", "Stand", "Double"},
         )
         self.assertEqual(len({button.custom_id for button in buttons}), 3)
 
@@ -138,7 +138,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
             item for item in self.view.walk_children()
             if isinstance(item, discord.ui.Button)
         ]
-        self.assertEqual({button.label for button in buttons}, {"اسحب بطاقة", "قف"})
+        self.assertEqual({button.label for button in buttons}, {"Hit", "Stand"})
 
 
     async def test_double_down_adds_one_card_and_stands_automatically(self):
@@ -199,7 +199,7 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(
             {button.label for button in controls},
-            {"اسحب بطاقة", "قف", "ضاعف الرهان"},
+            {"Hit", "Stand", "Double"},
         )
 
     async def test_cancelled_waiting_hand_refreshes_the_table_art(self):
@@ -219,12 +219,12 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(self.view.done)
         self.assertEqual(self.view.phase, "finished")
-        self.assertIn("مفيش رهان اتخصم", self.view.notice)
+        self.assertIn("No bet was placed.", self.view.notice)
         self.assertFalse(
             any(isinstance(item, discord.ui.Button) for item in self.view.walk_children())
         )
 
-    async def test_final_receipt_contains_only_numeric_hand_values(self):
+    async def test_final_result_stays_in_the_original_game_panel(self):
         user_context = SimpleNamespace(interaction=object(), send=AsyncMock())
         self.view.context = user_context
         self.view.player_cards = [("10", "♠"), ("7", "♥"), ("2", "♦")]
@@ -244,54 +244,20 @@ class BlackjackViewTests(unittest.IsolatedAsyncioTestCase):
         await self.view._apply_settlement(self.view.receipt)
 
         self.view._edit.assert_awaited_once()
-        user_context.send.assert_awaited_once()
-        receipt_kwargs = user_context.send.await_args.kwargs
-        self.assertIs(receipt_kwargs["ephemeral"], False)
-        sent_view = receipt_kwargs["view"]
-        self.assertIsInstance(sent_view, LayoutView)
-        rendered_text = "\n".join(
-            item.content
-            for item in sent_view.walk_children()
-            if isinstance(item, discord.ui.TextDisplay)
-        )
-        self.assertEqual(rendered_text, "يدك: 19\nيد الموزع: 17")
-        self.assertNotIn("Blackjack", rendered_text)
-        self.assertNotIn("رصيدك", rendered_text)
-        self.assertNotIn("♠", rendered_text)
-        self.assertTrue(self.view.result_published)
-
-    async def test_final_receipt_can_retry_after_transient_send_failure(self):
-        self.view.context = SimpleNamespace(
-            interaction=object(),
-            send=AsyncMock(side_effect=[RuntimeError("transient send failure"), None]),
-        )
-        self.view.player_cards = [("10", "♠"), ("7", "♥"), ("2", "♦")]
-        self.view.dealer_cards = [("10", "♣"), ("7", "♠")]
-        self.view.receipt = {
-            "status": "settled",
-            "outcome": "win",
-            "stake": 100,
-            "payout": 200,
-            "balance_after": 1_100,
-        }
-        self.view.result_kind = "win"
-
-        await self.view._publish_final_result()
-        self.assertFalse(self.view.result_published)
-
-        await self.view._publish_final_result()
-
-        self.assertTrue(self.view.result_published)
-        self.assertEqual(self.view.context.send.await_count, 2)
-        kwargs = self.view.context.send.await_args.kwargs
-        self.assertIs(kwargs["ephemeral"], False)
-        self.assertIsInstance(kwargs["view"], LayoutView)
-        text = "\n".join(
-            item.content
-            for item in kwargs["view"].walk_children()
-            if isinstance(item, discord.ui.TextDisplay)
-        )
-        self.assertEqual(text, "يدك: 19\nيد الموزع: 17")
+        user_context.send.assert_not_awaited()
+        rendered_text = self.view._finished_content()
+        self.assertIn("# WIN · BLACKJACK", rendered_text)
+        self.assertIn("**You:**", rendered_text)
+        self.assertIn("**Dealer:**", rendered_text)
+        self.assertIn("Bet: 200", rendered_text)
+        self.assertIn("Bonus: **+200", rendered_text)
+        self.assertIn("**Balance:** 1,000", rendered_text)
+        self.view._render_view()
+        buttons = [
+            item for item in self.view.walk_children()
+            if isinstance(item, discord.ui.Button)
+        ]
+        self.assertEqual({button.label for button in buttons}, {"Play Again"})
 
 if __name__ == "__main__":
     unittest.main()

@@ -271,10 +271,11 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.done = False
         self.resolving = False
         self.doubled_down = False
-        self.result_published = False
         self.result_kind = None
         self.receipt = None
         self.notice = None
+        self._replay_button = None
+        self._replay_expired = False
         self._buttons = {}
         self._render_view()
 
@@ -282,8 +283,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         if interaction.user.id != self.requester.id:
             await interaction.response.send_message(
                 view=StatusPanel(
-                    "الجولة دي مش بتاعتك",
-                    "كل لاعب يقدر يتحكم في جولة Blackjack اللي بدأها بنفسه.",
+                    "Not your game",
+                    "Only the original player can control this round.",
                     "warning",
                 ),
                 ephemeral=True,
@@ -292,10 +293,15 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         return True
 
     def _button(self, key, label, callback, emoji=None):
+        style = (
+            discord.ButtonStyle.danger if key == "cancel"
+            else discord.ButtonStyle.primary if key in {"deal", "hit", "double", "replay"}
+            else discord.ButtonStyle.secondary
+        )
         button = discord.ui.Button(
             label=label,
             emoji=emoji,
-            style=discord.ButtonStyle.secondary,
+            style=style,
             custom_id=f"blackjack_{key}",
         )
         button.callback = callback
@@ -318,34 +324,91 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         ]
         if self.phase == "waiting":
             elements.append(ActionRow(
-                self._button("deal", "ابدأ اللعب", self.start_game, "🃏"),
-                self._button("cancel", "إلغاء", self.cancel, "❌"),
+                self._button("deal", "Deal", self.start_game, "🃏"),
+                self._button("cancel", "Cancel", self.cancel, "❌"),
             ))
         elif self.phase == "playing":
             controls = [
-                self._button("hit", "اسحب بطاقة", self.hit, "🎴"),
-                self._button("stand", "قف", self.stand, "🛑"),
+                self._button("hit", "Hit", self.hit, "🎴"),
+                self._button("stand", "Stand", self.stand, "🛑"),
             ]
             if len(self.player_cards) == 2 and not self.doubled_down:
                 controls.append(
-                    self._button("double", "ضاعف الرهان", self.double_down, "2️⃣")
+                    self._button("double", "Double", self.double_down, "2️⃣")
                 )
             elements.append(ActionRow(*controls))
+        elif self.phase == "finished" and self.receipt is not None:
+            self._replay_button = self._button("replay", "Play Again", self.replay, "↻")
+            self._replay_button.disabled = self._replay_expired
+            elements.append(ActionRow(self._replay_button))
         self.add_item(Container(*elements, accent_color=THEME["gold"]))
+
+    async def replay(self, interaction):
+        if interaction.user.id != self.requester.id:
+            return await interaction.response.send_message(
+                view=StatusPanel("Not your game", "Only the original player can replay.", "warning"),
+                ephemeral=True,
+            )
+        if self.phase != "finished" or self.receipt is None or self.context is None:
+            return await self._closed(interaction)
+        try:
+            balance = await asyncio.to_thread(bank.get_balance, int(self.requester.id))
+        except Exception:
+            logger.exception("Could not verify Blackjack replay balance user_id=%s", self.requester.id)
+            return await interaction.response.send_message(
+                view=StatusPanel("Balance unavailable", "Try again shortly.", "warning"),
+                ephemeral=True,
+            )
+        if balance < self.original_amount:
+            return await interaction.response.send_message(
+                view=StatusPanel(
+                    "Not enough coins",
+                    f"Balance: {balance:,} {COIN} · Bet: {self.original_amount:,} {COIN}",
+                    "warning",
+                ),
+                ephemeral=True,
+            )
+        replay_view = BlackjackView(
+            self.cog, self.requester, self.original_amount, context=self.context
+        )
+        if not claim_solo_session(self.requester.id, replay_view):
+            replay_view.stop()
+            return await interaction.response.send_message(
+                view=StatusPanel("Game active", "Finish your current solo game first.", "warning"),
+                ephemeral=True,
+            )
+        replay_view.message = interaction.message or self.message
+        try:
+            await interaction.response.edit_message(
+                view=replay_view,
+                attachments=[await replay_view._art_file()],
+            )
+            self.stop()
+        except asyncio.CancelledError:
+            release_solo_session(self.requester.id, replay_view)
+            raise
+        except Exception:
+            release_solo_session(self.requester.id, replay_view)
+            logger.exception("Could not restart Blackjack game_id=%s", self.game_id)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    view=StatusPanel("Replay unavailable", "Start a new game with /blackjack.", "warning"),
+                    ephemeral=True,
+                )
 
     async def _recover_after_component_error(self, incident_id: str) -> None:
         """Refund an unfinished hand following an unexpected UI callback exception."""
         if self.phase == "waiting" and not self.resolving:
             await self._finish_without_bet(
-                f"الجولة اتقفلت بأمان. رقم المتابعة: {incident_id}. مفيش رهان اتخصم."
+                f"Game closed. Ref: {incident_id}. No bet was placed."
             )
             return
 
         self.resolving = True
         self.phase = "pending"
         self.notice = (
-            f"حصل خطأ أثناء الجولة (رقم المتابعة {incident_id}). "
-            "بنراجع حالة الرهان؛ أي جولة غير مكتملة هيترد رهانها."
+            f"Game error (reference {incident_id}). "
+            "Checking the wager; unfinished rounds are refunded."
         )
         self.cog._schedule_recovery(
             self.game_id,
@@ -356,36 +419,49 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
 
     def _content(self):
         if self.phase == "waiting":
-            return "# Blackjack"
+            return f"# BLACKJACK\n**Bet:** {self.amount:,} {COIN}"
         if self.phase == "starting":
-            return f"# Blackjack\n**الرهان:** {self.amount:,} {COIN}\nجاري تثبيت الرهان وتوزيع البطاقات بأمان..."
+            return f"# BLACKJACK\n**Bet:** {self.amount:,} {COIN} · Dealing..."
         if self.phase == "playing":
+            notice = f"\n-# {self.notice}" if self.notice else ""
             return (
-                "# Blackjack\n"
-                f"**الرهان:** {self.amount:,} {COIN}\n"
-                f"**الموزّع:** {_cards_text(self.dealer_cards[:1])}  [🂠]\n"
-                f"**يدك:** {_cards_text(self.player_cards)}\n"
-                f"**مجموعك:** {_hand_value(self.player_cards)}\n\n"
-                "اسحب بطاقة أو قف. تقدر تضاعف الرهان قبل أول سحب؛ هتاخد بطاقة واحدة وبعدها الموزّع يكمل.\n"
-                f"{f'-# {self.notice}' if self.notice else ''}"
+                f"# BLACKJACK\n**Bet:** {self.amount:,} {COIN}\n"
+                f"**Dealer:** {_cards_text(self.dealer_cards[:1])}  [🂠]\n"
+                f"**You:** {_cards_text(self.player_cards)} · **{_hand_value(self.player_cards)}**\n"
+                f"-# Hit · Stand · Double (before first hit){notice}"
             )
         if self.phase in ("settling", "pending"):
-            label = "جاري تسجيل النتيجة" if self.phase == "settling" else "التسوية قيد المعالجة"
+            label = "Checking result..." if self.phase == "settling" else "Settlement pending..."
             return (
-                f"# Blackjack · {label}\n"
-                f"**يدك:** {_cards_text(self.player_cards)} ({_hand_value(self.player_cards)})\n"
-                f"**يد الموزّع:** {_cards_text(self.dealer_cards)} ({_hand_value(self.dealer_cards)})\n\n"
-                f"{self.notice or 'بنحفظ النتيجة من غير ما نكرر صرف المكسب.'}"
+                f"# BLACKJACK · {label}\n"
+                f"You: {_hand_value(self.player_cards)} · Dealer: {_hand_value(self.dealer_cards)}\n"
+                f"{self.notice or 'Verifying the result.'}"
             )
         return self._finished_content()
 
     def _finished_content(self):
         receipt = self.receipt
         if receipt is None:
-            return f"# Blackjack\n{self.notice or 'انتهت الجلسة.'}\n\nمفيش رهان اتخصم."
+            return f"# BLACKJACK\n{self.notice or 'Game ended.'} · No bet was placed."
+        outcome = str(receipt.get("outcome") or "")
+        stake = int(receipt.get("stake", self.amount))
+        bonus = max(0, int(receipt.get("payout", 0)) - stake)
+        balance_after = receipt.get("balance_after")
+        balance_line = f"\n**Balance:** {int(balance_after):,} {COIN}" if balance_after is not None else ""
+        if receipt.get("status") == "refunded" or outcome in {"refund", "balance_limit"}:
+            heading, bonus_line = "REFUNDED", "Bonus: +0"
+        elif outcome == "push":
+            heading, bonus_line = "PUSH", "Bonus: +0"
+        elif outcome == "win":
+            heading = "BLACKJACK" if self.result_kind == "natural" else "WIN"
+            bonus_line = f"Bonus: **+{bonus:,} {COIN}**"
+        else:
+            heading, bonus_line = "LOSS", "Bonus: +0"
         return (
-            f"يدك: {_hand_value(self.player_cards)}\n"
-            f"يد الموزع: {_hand_value(self.dealer_cards)}"
+            f"# {heading} · BLACKJACK\n"
+            f"**You:** {_cards_text(self.player_cards)} · {_hand_value(self.player_cards)}\n"
+            f"**Dealer:** {_cards_text(self.dealer_cards)} · {_hand_value(self.dealer_cards)}\n"
+            f"Bet: {stake:,} {COIN} · {bonus_line}{balance_line}"
         )
 
     async def _art_file(self):
@@ -416,7 +492,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
 
     async def _closed(self, interaction):
         await interaction.response.send_message(
-            view=StatusPanel("الجولة اتقفلت", "ابدأ جولة جديدة بأمر Blackjack.", "warning"),
+            view=StatusPanel("Game closed", "Start a new round with /blackjack.", "warning"),
             ephemeral=True,
         )
 
@@ -465,15 +541,15 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         except Exception:
             logger.exception("Could not confirm blackjack wager game_id=%s", self.game_id)
             self.phase = "pending"
-            self.notice = "بنراجع حالة الرهان؛ مش هنكرر الخصم أو نعلن نتيجة قبل تأكيدها."
+            self.notice = "Checking bet status before announcing a result."
             await self._edit()
             self.cog._schedule_recovery(self.game_id, force_refund=True, callback=self._recovered)
             return
         if not created.get("created"):
             if created.get("reason") == "insufficient_funds":
-                notice = f"رصيدك {int(created.get('balance', 0)):,} {COIN}، ومحتاج {self.amount:,}."
+                notice = f"Balance: {int(created.get('balance', 0)):,} {COIN} · Bet: {self.amount:,}."
             else:
-                notice = "تعذر قبول الرهان بأمان؛ مفيش خصم جديد اتسجل."
+                notice = "Bet declined. No coins were taken."
             return await self._finish_without_bet(notice)
 
         self.player_cards = [self._draw(), self._draw()]
@@ -579,7 +655,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
 
         self.resolving = True
         self.message = interaction.message or self.message
-        self.notice = "جاري تأكيد الرهان الإضافي قبل سحب البطاقة..."
+        self.notice = "Confirming the extra bet..."
         try:
             await interaction.response.defer()
         except discord.HTTPException:
@@ -602,15 +678,15 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             reason = receipt.get("reason", "database_error")
             if reason == "insufficient_funds":
                 detail = (
-                    f"رصيدك الحالي **{int(receipt.get('balance', 0)):,} {COIN}** "
-                    f"ومحتاج **{self.amount:,} {COIN}** إضافية."
+                    f"Balance: **{int(receipt.get('balance', 0)):,} {COIN}** "
+                    f"· Extra bet: **{self.amount:,} {COIN}**."
                 )
                 self.resolving = False
-                self.notice = "الرصيد مش كفاية لمضاعفة الرهان؛ تقدر تسحب بطاقة أو تقف."
+                self.notice = "Not enough coins to double. Hit or stand."
                 await self._edit()
                 try:
                     await interaction.followup.send(
-                        view=StatusPanel("رصيد غير كافٍ", detail, "warning"),
+                        view=StatusPanel("Not enough coins", detail, "warning"),
                         ephemeral=True,
                     )
                 except discord.HTTPException:
@@ -622,13 +698,13 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
                 return
             if reason == "stake_limit":
                 self.resolving = False
-                self.notice = "قيمة الرهان وصلت للحد الآمن؛ كمل الجولة من غير مضاعفة."
+                self.notice = "Bet limit reached. Continue without doubling."
                 await self._edit()
                 try:
                     await interaction.followup.send(
                         view=StatusPanel(
-                            "تعذر مضاعفة الرهان",
-                            "قيمة الرهان الجديدة هتتجاوز الحد الآمن للنظام.",
+                            "Cannot double",
+                            "The new bet would exceed the allowed limit.",
                             "warning",
                         ),
                         ephemeral=True,
@@ -639,8 +715,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
 
             self.phase = "pending"
             self.notice = (
-                "تعذر تأكيد الرهان المضاعف. قفلنا التحكم مؤقتًا وبنراجع العملية "
-                "قبل ما نعلن نتيجة أو نسمح بحركة جديدة."
+                "Could not confirm the extra bet. Checking the transaction. "
+                "before announcing a result or allowing another move."
             )
             await self._edit()
             self.cog._schedule_recovery(
@@ -680,7 +756,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.resolving = True
         self.phase = "settling"
         self.result_kind = kind
-        self.notice = "جاري تسجيل الرصيد والنتيجة في معاملة واحدة..."
+        self.notice = "Saving the result..."
         await self._edit()
         won = kind in ("natural", "win")
         payout = (
@@ -702,7 +778,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             raise
         if not result.get("settled"):
             self.phase = "pending"
-            self.notice = "النتيجة اتحددت، لكن قاعدة البيانات بتتأخر. هنكرر التسوية بأمان من غير صرف مكرر."
+            self.notice = "Result ready. Retrying settlement safely."
             await self._edit()
             self.cog._schedule_recovery(
                 self.game_id, force_refund=False, settlement=settlement, callback=self._recovered
@@ -726,33 +802,13 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.done = True
         self.notice = None
         await self._edit()
-        await self._publish_final_result()
         release_solo_session(self.requester.id, self)
-        self.stop()
-
-    async def _publish_final_result(self):
-        """Publish only the two final numeric hand totals in a Components V2 receipt."""
-        if self.result_published or self.context is None or self.receipt is None:
-            return
-        kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
-        if getattr(self.context, "interaction", None) is not None:
-            kwargs["ephemeral"] = False
-        receipt_view = LayoutView(timeout=120)
-        receipt_view.add_item(Container(TextDisplay(self._finished_content())))
-        try:
-            await self.context.send(view=receipt_view, **kwargs)
-            self.result_published = True
-        except Exception:
-            logger.exception(
-                "Could not publish separate Blackjack result game_id=%s",
-                self.game_id,
-            )
 
     async def _recovered(self, result):
         if result.get("settled"):
             await self._apply_settlement(result)
         elif result.get("reason") == "not_found":
-            await self._finish_without_bet("تعذر تأكيد تسجيل الرهان؛ مفيش نتيجة هنتحسب ومفيش مبلغ اتخصم.")
+            await self._finish_without_bet("Bet could not be confirmed. No result was announced.")
 
     async def _finish_without_bet(self, notice):
         self.notice = notice
@@ -768,7 +824,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             return await self._closed(interaction)
         self.done = True
         self.phase = "finished"
-        self.notice = "اتلغت الجلسة قبل توزيع الورق؛ مفيش رهان اتخصم."
+        self.notice = "Cancelled before dealing. No bet was placed."
         self.message = interaction.message or self.message
         self._render_view()
         try:
@@ -786,8 +842,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
                 try:
                     await interaction.response.send_message(
                         view=StatusPanel(
-                            "اتلغت الجولة",
-                            "الجولة اتقفلت قبل خصم الرهان، لكن تعذر تحديث صورة الطاولة. الرسالة القديمة لن تسمح بتنفيذ حركة جديدة.",
+                            "Round cancelled",
+                            "No bet was placed. The old controls are closed.",
                             "warning",
                         ),
                         ephemeral=True,
@@ -798,16 +854,22 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.stop()
 
     async def on_timeout(self):
-        if self.done or self.resolving:
+        if self.done:
+            if self._replay_button is not None:
+                self._replay_expired = True
+                await self._edit()
+            self.stop()
+            return
+        if self.resolving:
             return
         if self.phase == "waiting":
-            await self._finish_without_bet("انتهى وقت بدء الجولة؛ مفيش أي رهان اتخصم.")
+            await self._finish_without_bet("Start timed out. No bet was placed.")
             return
         if self.phase != "playing":
             return
         self.resolving = True
         self.phase = "pending"
-        self.notice = "انتهى وقت التفاعل، وبنرجّع الرهان بدل ما نعتبر الجولة غير المكتملة خسارة."
+        self.notice = "Time expired. The unfinished bet is being returned."
         await self._edit()
         try:
             result = await self.cog._settle_with_retries(self.game_id, force_refund=True)
@@ -895,15 +957,15 @@ class Blackjack(commands.Cog):
     @commands.hybrid_command(
         name="blackjack",
         aliases=["bj", "black-jack", "بلجاك", "بلاكجاك"],
-        description="العب Blackjack برهان من العملة الافتراضية",
+        description="Play Blackjack with virtual coins",
     )
     @commands.cooldown(1, 4, commands.BucketType.user)
     async def blackjack(self, ctx, bet: str):
         if not self._wagers_ready:
             return await ctx.send(
                 view=StatusPanel(
-                    "Blackjack غير متاح مؤقتًا",
-                    "قاعدة بيانات الرهانات بتتراجع؛ مش هنقبل رهان جديد لحد ما نتأكد من التسويات.",
+                    "Blackjack unavailable",
+                    "Wagers are being checked. Try again shortly.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -913,8 +975,8 @@ class Blackjack(commands.Cog):
             usage = "/blackjack bet:100" if ctx.interaction is not None else f"{ctx.prefix}blackjack 100"
             return await ctx.send(
                 view=StatusPanel(
-                    "قيمة الرهان مش مناسبة",
-                    f"استخدم {usage}. أقل رهان **{MIN_BET:,}** وأقصى رهان **{MAX_BET:,}** {COIN}.",
+                    "Invalid bet",
+                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {COIN}.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -928,8 +990,8 @@ class Blackjack(commands.Cog):
             )
             return await ctx.send(
                 view=StatusPanel(
-                    "تعذر التحقق من الرصيد",
-                    "حصل عطل أثناء قراءة رصيدك. مفيش رهان اتعمل؛ جرّب تاني بعد شوية.",
+                    "Balance unavailable",
+                    "No bet was placed. Try again shortly.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -937,8 +999,8 @@ class Blackjack(commands.Cog):
         if balance < amount:
             return await ctx.send(
                 view=StatusPanel(
-                    "رصيدك مش كفاية",
-                    f"رصيدك الحالي **{balance:,} {COIN}**، ومحتاج **{amount:,} {COIN}** لبدء Blackjack. مفيش رصيد اتخصم.",
+                    "Not enough coins",
+                    f"Balance: **{balance:,} {COIN}** · Bet: **{amount:,} {COIN}**.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -947,7 +1009,7 @@ class Blackjack(commands.Cog):
         if not claim_solo_session(ctx.author.id, view):
             view.stop()
             return await ctx.send(
-                view=StatusPanel("عندك جولة مفتوحة", "كمّل أو ألغِ اللعبة الحالية قبل بدء Blackjack.", "warning"),
+                view=StatusPanel("Game active", "Finish or cancel your current solo game first.", "warning"),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
             )
         try:

@@ -6,6 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import discord
+
 from cogs.casino import solo_advanced, solo_betting
 from cogs.casino.permissions import GAME_COMMAND_ALIASES, GAME_LABELS
 
@@ -25,19 +27,25 @@ class SoloAdvancedGameTests(unittest.TestCase):
                 solo_advanced._mines_multiplier(mines_count, safe_reveals)
 
     def test_plinko_extreme_bin_has_three_times_gross_return(self):
-        with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=0):
+        with patch("cogs.casino.solo_advanced.secrets.randbits", return_value=0):
             result, won, payout = solo_advanced._plinko_drop("drop", 100)
-        self.assertEqual(result, "slot=0;multiplier=3x")
+        self.assertEqual(result, "slot=0;path=LLLLLLLL;multiplier=3x")
         self.assertTrue(won)
         self.assertEqual(payout, 300)
 
     def test_plinko_center_bin_loses_the_stake(self):
-        # Cumulative weights before the center bin are 1 + 8 + 28 + 56 = 93.
-        with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=93):
+        with patch("cogs.casino.solo_advanced.secrets.randbits", return_value=15):
             result, won, payout = solo_advanced._plinko_drop("drop", 100)
-        self.assertEqual(result, "slot=4;multiplier=0x")
+        self.assertEqual(result, "slot=4;path=RRRRLLLL;multiplier=0x")
         self.assertFalse(won)
         self.assertEqual(payout, 0)
+
+    def test_plinko_art_uses_the_resolved_left_right_path(self):
+        image = solo_betting._render_advanced_instant_art(
+            "plinko",
+            result="slot=4;path=RRRRLLLL;multiplier=0x",
+        )
+        self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
 
     def test_number_roulette_wins_only_on_the_exact_number(self):
         with patch("cogs.casino.solo_advanced.secrets.randbelow", return_value=17):
@@ -91,6 +99,48 @@ class SoloAdvancedGameTests(unittest.TestCase):
             with self.subTest(game_type=game_type):
                 image = solo_betting._render_advanced_instant_art(game_type)
                 self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
+
+
+class NumberRouletteSelectionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_number_selection_does_not_start_until_confirmed(self):
+        requester = SimpleNamespace(id=552211)
+        choices = {str(number): {"label": str(number), "emoji": None} for number in range(37)}
+        view = solo_betting.SoloWagerView(
+            SimpleNamespace(),
+            requester,
+            100,
+            game_type="number_roulette",
+            game_title="NUMBER ROULETTE",
+            choices=choices,
+            payout_numerator=3600,
+            odds_description="2.70%",
+            instructions="Select a number, then confirm.",
+            payout_description="Bonus: +35x.",
+        )
+        try:
+            selectors = [
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Select)
+            ]
+            confirm = next(
+                item for item in view.walk_children()
+                if isinstance(item, discord.ui.Button)
+                and item.custom_id == "number_roulette_confirm"
+            )
+            self.assertTrue(confirm.disabled)
+            selectors[0]._values = ["17"]
+            interaction = SimpleNamespace(
+                response=SimpleNamespace(edit_message=AsyncMock())
+            )
+            await selectors[0].callback(interaction)
+
+            self.assertEqual(view.selected_number, "17")
+            self.assertFalse(confirm.disabled)
+            view.choose = AsyncMock()
+            await view.confirm_number(interaction)
+            view.choose.assert_awaited_once_with(interaction, side="17")
+        finally:
+            view.stop()
 
 
 class FinalGameArtworkStateTests(unittest.TestCase):
@@ -302,12 +352,10 @@ class LegacySoloPresentationTests(unittest.TestCase):
         try:
             for view in views:
                 with self.subTest(game=view.game_type):
-                    self.assertEqual(
-                        view._initial_content(),
-                        f"# {view.game_title}\n**الرهان:** 100 {solo_betting.COIN}",
-                    )
-                    self.assertEqual(view.start_button.label, "ابدأ الجولة")
-                    self.assertEqual(view.cancel_button.label, "إلغاء")
+                    self.assertIn(f"# {view.game_title}", view._initial_content())
+                    self.assertIn(f"**Bet:** 100 {solo_betting.COIN}", view._initial_content())
+                    self.assertEqual(view.start_button.label, "Start Round")
+                    self.assertEqual(view.cancel_button.label, "Cancel")
                     self.assertIn(view.start_button, view.children[0].children[-1].children)
         finally:
             for view in views:
@@ -319,10 +367,10 @@ class LegacySoloPresentationTests(unittest.TestCase):
         view = solo_advanced.MinesView(None, context, 100, 3)
         try:
             cases = (
-                ("win", "settled", "# كسبت · Mines"),
-                ("loss", "settled", "# خسرت · Mines"),
-                ("refund", "refunded", "# تم إرجاع الرصيد · Mines"),
-                ("push", "settled", "# تم استرداد الرهان · Mines"),
+                ("win", "settled", "# WIN · MINES"),
+                ("loss", "settled", "# LOSS · MINES"),
+                ("refund", "refunded", "# REFUNDED · MINES"),
+                ("push", "settled", "# PUSH · MINES"),
             )
             for outcome, status, heading in cases:
                 with self.subTest(outcome=outcome):
@@ -335,10 +383,9 @@ class LegacySoloPresentationTests(unittest.TestCase):
                     view._pending_display_result = "نتيجة الجولة."
                     content = view._final_content()
                     self.assertTrue(content.startswith(heading))
-                    self.assertIn(f"**رصيدك:** 900 {solo_betting.COIN}", content)
-                    self.assertNotIn("إجمالي الصرف", content)
-                    self.assertNotIn("صافي المكسب", content)
-                    self.assertNotIn("الرهان المفقود", content)
+                    self.assertIn(f"**Balance:** 900 {solo_betting.COIN}", content)
+                    self.assertIn("Bonus:", content)
+                    self.assertNotIn("Payout", content)
         finally:
             view.stop()
 

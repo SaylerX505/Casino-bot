@@ -30,19 +30,23 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.view.stop()
 
-    def test_coinflip_uses_v2_layout_and_secondary_buttons(self):
+    def test_coinflip_uses_v2_layout_and_clear_primary_actions(self):
         self.assertIsInstance(self.view, LayoutView)
         buttons = [
             item for item in self.view.walk_children()
             if isinstance(item, discord.ui.Button)
         ]
         self.assertEqual(len(buttons), 3)
-        self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
-        self.assertEqual({button.label for button in buttons}, {"صورة", "كتابة", "إلغاء"})
+        self.assertEqual({button.label for button in buttons}, {"Heads", "Tails", "Cancel"})
+        self.assertEqual(
+            {button.style for button in buttons},
+            {discord.ButtonStyle.primary, discord.ButtonStyle.danger},
+        )
         self.assertEqual(len({button.custom_id for button in buttons}), 3)
-        self.assertIn("# رمي العملة", self.view._panel_text.content)
-        self.assertIn("**الرهان:** 100", self.view._panel_text.content)
-        self.assertNotIn("1.9x", self.view._panel_text.content)
+        self.assertIn("# COIN FLIP", self.view._panel_text.content)
+        self.assertIn("**Bet:** 100", self.view._panel_text.content)
+        self.assertIn("Chance: 50%", self.view._panel_text.content)
+        self.assertIn("Bonus: +0.9x", self.view._panel_text.content)
 
     def test_coinflip_panel_uses_its_own_brand_accent(self):
         container = next(
@@ -57,28 +61,28 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             self.requester,
             100,
             game_type="dice",
-            game_title="رمي النرد",
+            game_title="DICE",
             choices=DICE_CHOICES,
             payout_numerator=570,
-            odds_description="1 من 6",
-            instructions="اختار رقم من 1 إلى 6.",
+            odds_description="16.67%",
+            instructions="Pick a number from 1 to 6.",
         )
         try:
-            self.assertIn("# رمي النرد", view._panel_text.content)
-            self.assertIn("**الرهان:** 100", view._panel_text.content)
-            self.assertNotIn("5.7x", view._panel_text.content)
-            self.assertNotIn("1 من 6", view._panel_text.content)
-            self.assertNotIn("570", view._panel_text.content)
+            self.assertIn("# DICE", view._panel_text.content)
+            self.assertIn("**Bet:** 100", view._panel_text.content)
+            self.assertIn("Chance: 16.67%", view._panel_text.content)
+            self.assertIn("Pick a number from 1 to 6.", view._panel_text.content)
             buttons = [
                 item for item in view.walk_children()
                 if isinstance(item, discord.ui.Button)
             ]
             self.assertEqual(len(buttons), 7)
-            self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
             self.assertEqual(
                 {button.label for button in buttons},
-                {"1", "2", "3", "4", "5", "6", "إلغاء"},
+                {"1", "2", "3", "4", "5", "6", "Cancel"},
             )
+            self.assertEqual(sum(button.style is discord.ButtonStyle.primary for button in buttons), 6)
+            self.assertEqual(sum(button.style is discord.ButtonStyle.danger for button in buttons), 1)
             self.assertEqual(len({button.custom_id for button in buttons}), 7)
             rows = [
                 item for item in view.walk_children()
@@ -95,37 +99,36 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             self.requester,
             100,
             game_type="slots",
-            game_title="ماكينة الحظ",
+            game_title="SLOTS",
             choices=SLOT_CHOICES,
             payout_numerator=170,
-            odds_description="الرموز مستقلة ومتساوية الاحتمال",
-            instructions="اضغط تدوير لتجربة 3 بكرات.",
-            payout_description="زوج متطابق: 1.7x · ثلاثية: 5x-15x",
+            odds_description="44.44% any win",
+            instructions="Spin 3 reels.",
+            payout_description="Pair: +0.7x · Trips: +4x–14x bonus",
             outcome_resolver=_spin_slots,
         )
         try:
             content = view._panel_text.content
-            self.assertIn("# ماكينة الحظ", content)
-            self.assertIn("**الرهان:** 100", content)
-            self.assertNotIn("جدول الجوائز", content)
-            self.assertNotIn("1.7x", content)
-            self.assertNotIn("15x", content)
+            self.assertIn("# SLOTS", content)
+            self.assertIn("**Bet:** 100", content)
+            self.assertIn("Chance: 44.44% any win", content)
+            self.assertIn("Pair: +0.7x · Trips: +4x–14x bonus", content)
             buttons = [
                 item for item in view.walk_children()
                 if isinstance(item, discord.ui.Button)
             ]
             self.assertEqual(len(buttons), 2)
-            self.assertEqual({button.label for button in buttons}, {"تدوير", "إلغاء"})
-            self.assertTrue(all(button.style is discord.ButtonStyle.secondary for button in buttons))
+            self.assertEqual({button.label for button in buttons}, {"Spin", "Cancel"})
+            self.assertEqual({button.style for button in buttons}, {discord.ButtonStyle.primary, discord.ButtonStyle.danger})
             self.assertIn("slots_spin", {button.custom_id for button in buttons})
         finally:
             view.stop()
 
     def test_coinflip_dice_and_slots_panels_include_generated_artwork(self):
         for game_type, title, choices in (
-            ("coinflip", "رمي العملة", SIDES),
-            ("dice", "رمي النرد", DICE_CHOICES),
-            ("slots", "ماكينة الحظ", SLOT_CHOICES),
+            ("coinflip", "COIN FLIP", SIDES),
+            ("dice", "DICE", DICE_CHOICES),
+            ("slots", "SLOTS", SLOT_CHOICES),
         ):
             with self.subTest(game_type=game_type):
                 view = SoloWagerView(
@@ -155,7 +158,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
             self.requester,
             10,
             game_type="dice",
-            game_title="رمي النرد",
+            game_title="DICE",
             choices=DICE_CHOICES,
             payout_numerator=570,
             context=context,
@@ -173,11 +176,11 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
                 "balance_after": 53,
             })
             board_text = view._panel_text.content
-            self.assertIn("خسرت · رمي النرد", board_text)
-            self.assertIn("اختيارك: **2** · النتيجة: **4**", board_text)
-            self.assertIn("رصيدك:** 53", board_text)
-            self.assertNotIn("الرهان:", board_text)
-            self.assertNotIn("إجمالي الصرف", board_text)
+            self.assertIn("# LOSS · DICE", board_text)
+            self.assertIn("Pick: **2** · Result: **4**", board_text)
+            self.assertIn("**Balance:** 53", board_text)
+            self.assertIn("Bet: 10", board_text)
+            self.assertIn("Bonus: +0", board_text)
             self.assertNotEqual(view._art_bytes, original_art)
             view.message.edit.assert_awaited_once()
             edit_kwargs = view.message.edit.await_args.kwargs
@@ -239,10 +242,10 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(edit_kwargs["view"], self.view)
         self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip.png")
         self.assertTrue(self.view.done)
-        self.assertIn("كسبت · رمي العملة", self.view._panel_text.content)
-        self.assertIn("رصيدك:** 1,090", self.view._panel_text.content)
-        self.assertNotIn("الرهان:", self.view._panel_text.content)
-        self.assertNotIn("إجمالي الصرف", self.view._panel_text.content)
+        self.assertIn("# WIN · COIN FLIP", self.view._panel_text.content)
+        self.assertIn("**Balance:** 1,090", self.view._panel_text.content)
+        self.assertIn("Bonus: **+90", self.view._panel_text.content)
+        self.assertIn("Play Again", {item.label for item in self.view.walk_children() if isinstance(item, discord.ui.Button)})
         context.send.assert_not_awaited()
         self.assertTrue(self.view.result_published)
 
@@ -265,33 +268,10 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.view.message.edit.assert_awaited_once()
         self.assertTrue(self.view.result_published)
         context.send.assert_not_awaited()
-        self.assertIn("كسبت · رمي العملة", self.view._panel_text.content)
-        self.assertIn("رصيدك:** 1,090", self.view._panel_text.content)
-        self.assertNotIn("الرهان:", self.view._panel_text.content)
-        self.assertNotIn("إجمالي الصرف", self.view._panel_text.content)
-
-    async def test_result_receipt_can_retry_after_a_transient_send_failure(self):
-        context = SimpleNamespace(
-            interaction=object(),
-            send=AsyncMock(side_effect=[RuntimeError("transient send failure"), None]),
-        )
-        self.view.context = context
-        receipt_text = "# كسبت الرهان\nصافي الربح: +90"
-        
-        await self.view._publish_result(receipt_text, "win")
-        self.assertFalse(self.view.result_published)
-
-        await self.view._publish_result(receipt_text, "win")
-        
-        self.assertTrue(self.view.result_published)
-        self.assertEqual(context.send.await_count, 2)
-        kwargs = context.send.await_args.kwargs
-        self.assertIs(kwargs["ephemeral"], False)
-        self.assertIsInstance(kwargs["view"], LayoutView)
-        self.assertEqual(kwargs["file"].filename, "coinflip.png")
-
-
-
+        self.assertIn("# WIN · COIN FLIP", self.view._panel_text.content)
+        self.assertIn("**Balance:** 1,090", self.view._panel_text.content)
+        self.assertIn("Bonus: **+90", self.view._panel_text.content)
+        self.assertIn("Play Again", {item.label for item in self.view.walk_children() if isinstance(item, discord.ui.Button)})
 
     async def test_discord_panel_update_failure_releases_session_without_betting(self):
         self.view.message = SimpleNamespace(id=702, edit=AsyncMock())
@@ -316,7 +296,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.view.done)
         self.assertFalse(self.view.resolving)
         self.assertTrue(all(button.disabled for button in self.view._buttons.values()))
-        self.assertIn("تعذر بدء الجولة", self.view._panel_text.content)
+        self.assertIn("# Could not start", self.view._panel_text.content)
         self.view.message.edit.assert_awaited_once()
         edit_kwargs = self.view.message.edit.await_args.kwargs
         self.assertIs(edit_kwargs["view"], self.view)
@@ -334,8 +314,8 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         play_wager.assert_not_called()
         interaction.response.edit_message.assert_awaited_once_with(view=self.view)
         self.assertTrue(self.view.done)
-        self.assertIn("تم إلغاء", self.view._panel_text.content)
-        self.assertIn("مفيش أي رهان اتخصم", self.view._panel_text.content)
+        self.assertIn("# CANCELLED · COIN FLIP", self.view._panel_text.content)
+        self.assertIn("No bet was placed.", self.view._panel_text.content)
 
     async def test_cancelled_panel_edit_still_releases_claimed_solo_session(self):
         self.assertTrue(claim_solo_session(self.requester.id, self.view))
@@ -391,7 +371,7 @@ class SoloWagerViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(edit_kwargs["view"], self.view)
         self.assertEqual(edit_kwargs["attachments"][0].filename, "coinflip.png")
         self.assertTrue(self.view.done)
-        self.assertIn("انتهت صلاحية", self.view._panel_text.content)
+        self.assertIn("# EXPIRED · COIN FLIP", self.view._panel_text.content)
 
     async def test_session_is_bound_to_the_requesting_member(self):
         other_user = SimpleNamespace(id=202)
