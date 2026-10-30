@@ -983,7 +983,7 @@ class Blackjack(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Invalid bet",
-                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(ctx.guild)}.",
+                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(getattr(ctx, "guild", None))}.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1007,7 +1007,7 @@ class Blackjack(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: **{balance:,} {get_coin_emoji(ctx.guild)}** · Bet: **{amount:,} {get_coin_emoji(ctx.guild)}**.",
+                    f"Balance: **{balance:,} {get_coin_emoji(getattr(ctx, "guild", None))}** · Bet: **{amount:,} {get_coin_emoji(getattr(ctx, "guild", None))}**.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),

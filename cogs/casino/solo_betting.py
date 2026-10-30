@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 MIN_BET = 10
 MAX_BET = 5_000
+COIN = "🪙"
 GROSS_WIN_MULTIPLIER_NUMERATOR = 190
 GROSS_WIN_MULTIPLIER_DENOMINATOR = 100
 SIDES = {
@@ -1268,7 +1269,7 @@ class SoloBetting(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Invalid bet",
-                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(ctx.guild)}.",
+                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(getattr(ctx, "guild", None))}.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1304,7 +1305,7 @@ class SoloBetting(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: **{balance:,} {get_coin_emoji(ctx.guild)}** · Bet: **{amount:,} {get_coin_emoji(ctx.guild)}**.",
+                    f"Balance: **{balance:,} {get_coin_emoji(getattr(ctx, "guild", None))}** · Bet: **{amount:,} {get_coin_emoji(getattr(ctx, "guild", None))}**.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),

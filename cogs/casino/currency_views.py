@@ -98,7 +98,7 @@ class BuyForm(discord.ui.Modal, title="شراء غرض"):
         ))
         
     async def on_submit(self, interaction: discord.Interaction):
-        coin_emoji = get_coin_emoji(interaction.guild)
+        coin_emoji = get_coin_emoji(getattr(interaction, "guild", None))
         try:
             quantity = int(self.children[0].value.strip())
         except ValueError:
@@ -499,7 +499,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
                 ephemeral=True,
             )
 
-        coin_emoji = get_coin_emoji(interaction.guild)
+        coin_emoji = get_coin_emoji(getattr(interaction, "guild", None))
         target_text = self.target.value.strip()
         match = re.fullmatch(r"<@!?(\d{17,20})>|(\d{17,20})", target_text)
         if match is None:
@@ -689,7 +689,7 @@ class CurrencyHubLayout(LayoutView):
 
         amount = claim["amount"]
         streak = claim["streak"]
-        coin_emoji = get_coin_emoji(interaction.guild)
+        coin_emoji = get_coin_emoji(getattr(interaction, "guild", None))
         await private_status(
             interaction,
             "استلمت اليومية",
@@ -713,7 +713,7 @@ class CurrencyHubLayout(LayoutView):
                 "حصل عطل أثناء قراءة الرصيد. جرّب تاني بعد شوية.",
                 "warning",
             )
-        coin_emoji = get_coin_emoji(interaction.guild)
+        coin_emoji = get_coin_emoji(getattr(interaction, "guild", None))
         description = "\n".join(
             f"**#{index + 1}** <@{user_id}> — **{fmt(balance)}** {coin_emoji}"
             for index, (user_id, balance) in enumerate(ranking)
