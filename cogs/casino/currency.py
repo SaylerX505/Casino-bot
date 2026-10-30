@@ -334,7 +334,7 @@ class Currency(commands.Cog):
         await ctx.send(
             view=StatusPanel(
                 "رصيدك",
-                f"الرصيد الحالي: **{fmt(balance)} {get_coin_emoji(getattr(ctx, "guild", None))}**",
+                f"الرصيد الحالي: **{fmt(balance)} {get_coin_emoji(getattr(ctx, 'guild', None))}**",
                 "neutral",
             ),
             **send_kwargs,
@@ -371,7 +371,7 @@ class Currency(commands.Cog):
             view=StatusPanel(
                 "استلمت اليومية",
                 (
-                    f"المكافأة: **{fmt(claim['amount'])} {get_coin_emoji(getattr(ctx, "guild", None))}**\n"
+                    f"المكافأة: **{fmt(claim['amount'])} {get_coin_emoji(getattr(ctx, 'guild', None))}**\n"
                     f"الستريك: **{claim['streak']}** يوم."
                 ),
                 "success",
@@ -502,8 +502,8 @@ class Currency(commands.Cog):
 
         item_name = "صندوق الحظ" if item_id == "loot_box" else "تذكرة الحظ"
         description = (
-            f"استخدمت **{item_name}** وكسبت **{fmt(reward)} {get_coin_emoji(getattr(ctx, "guild", None))}**.\n"
-            f"رصيدك الجديد: **{fmt(balance_after)} {get_coin_emoji(getattr(ctx, "guild", None))}**."
+            f"استخدمت **{item_name}** وكسبت **{fmt(reward)} {get_coin_emoji(getattr(ctx, 'guild', None))}**.\n"
+            f"رصيدك الجديد: **{fmt(balance_after)} {get_coin_emoji(getattr(ctx, 'guild', None))}**."
         )
         await ctx.send(
             view=StatusPanel("🍀 حظك!", description, "success"),

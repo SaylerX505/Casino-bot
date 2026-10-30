@@ -192,7 +192,7 @@ class InteractiveSoloWagerView(DiagnosticViewMixin, LayoutView):
         self.cog = solo_cog
         self.context = ctx
         self.requester = ctx.author
-        self.coin_emoji = get_coin_emoji(getattr(ctx, "guild", None))
+        self.coin_emoji = get_coin_emoji(getattr(ctx, 'guild', None))
         self.amount = int(amount)
         self.game_type = game_type
         self.game_title = game_title
@@ -1314,7 +1314,7 @@ class AdvancedSoloGames(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Invalid bet",
-                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(getattr(ctx, "guild", None))}.",
+                    f"Use {usage}. Bet: {MIN_BET:,}–{MAX_BET:,} {get_coin_emoji(getattr(ctx, 'guild', None))}.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
@@ -1348,7 +1348,7 @@ class AdvancedSoloGames(commands.Cog):
             return await ctx.send(
                 view=StatusPanel(
                     "Not enough coins",
-                    f"Balance: **{balance:,} {get_coin_emoji(getattr(ctx, "guild", None))}** · Bet: **{amount:,} {get_coin_emoji(getattr(ctx, "guild", None))}**.",
+                    f"Balance: **{balance:,} {get_coin_emoji(getattr(ctx, 'guild', None))}** · Bet: **{amount:,} {get_coin_emoji(getattr(ctx, 'guild', None))}**.",
                     "warning",
                 ),
                 **({"ephemeral": True} if ctx.interaction is not None else {}),
