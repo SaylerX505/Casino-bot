@@ -616,9 +616,21 @@ class GameChannelWizardView(WizardLayout):
         bot_member = getattr(interaction.guild, "me", None)
         if bot_member is not None:
             permissions = selected.permissions_for(bot_member)
-            if not permissions.view_channel or not permissions.send_messages:
+            required_permissions = (
+                "view_channel",
+                "send_messages",
+                "read_message_history",
+                "attach_files",
+            )
+            missing = [
+                permission
+                for permission in required_permissions
+                if not getattr(permissions, permission, False)
+            ]
+            if missing:
                 return await interaction.response.send_message(
-                    "البوت محتاج صلاحية عرض القناة وإرسال الرسائل فيها عشان الألعاب تشتغل.",
+                    "البوت محتاج صلاحيات عرض القناة وإرسال الرسائل وقراءة سجل الرسائل ورفع الملفات "
+                    "عشان كل الألعاب تشتغل في القناة المختارة.",
                     ephemeral=True,
                 )
 
