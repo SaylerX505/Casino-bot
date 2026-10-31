@@ -2,7 +2,7 @@ import asyncio
 import io
 import logging
 import math
-import random
+import secrets
 import config
 from functools import partial
 
@@ -17,16 +17,16 @@ from cogs.casino.game_registry import (
     register_game_task,
     release_game_task,
 )
-from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
-    embed_to_v2,
     THEME,
     StatusPanel,
-    WatermarkView,
-    base_embed,
+    developer_credit_row,
     get_currency,
     lobby_embed,
+    private_status,
     report_game_failure,
+    send_status,
+    try_edit_view,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,15 +35,38 @@ FEE = 50
 MAX_PLAYERS = 25
 COIN = "<:ckrcoin:1513743032124575784>"
 SEGMENTS = [
-    ("+100", 100),
+    ("+20", 20),
     ("-50", -50),
     ("x2", "x2"),
     ("BOX", "box"),
     ("0", 0),
-    ("+150", 150),
+    ("+40", 40),
     ("-30", -30),
-    ("+70", 70),
+    ("LOSE", -50),
 ]
+BOX_NET_OUTCOMES = (-50, -30, -10, 10, 30)
+
+
+def resolve_wheel_segment(segment_index, *, box_net=None):
+    """Resolve a sector into gross payout or final loss while keeping labels honest."""
+    if isinstance(segment_index, bool) or not isinstance(segment_index, int):
+        raise TypeError("segment index must be an integer")
+    if not 0 <= segment_index < len(SEGMENTS):
+        raise ValueError("segment index is outside the wheel")
+
+    label, outcome = SEGMENTS[segment_index]
+    if outcome == "x2":
+        return label, FEE * 2, None, f"\nإجمالي الصرف يساوي ضعفي رسوم الدخول؛ صافي الربح +{FEE:,} {COIN}."
+    if outcome == "box":
+        net = secrets.choice(BOX_NET_OUTCOMES) if box_net is None else box_net
+        if isinstance(net, bool) or not isinstance(net, int) or net not in BOX_NET_OUTCOMES:
+            raise ValueError("box net outcome is not an allowed reward")
+        return label, FEE + net, None, f"\n🎁 الصندوق: صافي التغيير {net:+,} {COIN}."
+    if outcome > 0:
+        return label, FEE + outcome, None, f"\nالقيمة الموجبة على القطاع هي صافي الربح {outcome:+,} {COIN}."
+    if outcome < 0:
+        return label, 0, abs(outcome), ""
+    return label, FEE, None, "\nتم استرداد رسوم الدخول؛ لا ربح ولا خسارة."
 SEGMENT_COLORS = [
     (245, 197, 66),
     (42, 166, 164),
@@ -53,6 +76,91 @@ SEGMENT_COLORS = [
     (155, 89, 182),
 ]
 
+
+async def publish_wheel_panel(
+    ctx,
+    panel,
+    *,
+    fallback_message=None,
+    file=None,
+    pending_receipts=None,
+):
+    """Publish the normal separate result message with a visible delivery fallback."""
+    pending = pending_receipts if pending_receipts is not None else []
+    kwargs = {"allowed_mentions": discord.AllowedMentions.none()}
+    if file is not None:
+        kwargs["file"] = file
+
+    try:
+        message = await ctx.send(view=panel, **kwargs)
+    except Exception:
+        logger.exception(
+            "Could not publish separate wheel result channel_id=%s",
+            getattr(getattr(ctx, "channel", None), "id", None),
+        )
+        details = "\n\n".join(
+            item.content
+            for item in panel.walk_children()
+            if isinstance(item, TextDisplay)
+        ).strip()
+        pending.append(details or "# نتيجة العجلة\nتعذر نشر تفاصيل النتيجة المنفصلة.")
+        if fallback_message is not None:
+            fallback_text = "\n\n".join(pending)
+            await try_edit_view(
+                fallback_message,
+                StatusPanel("نتائج العجلة غير المنشورة", fallback_text[:3600], "warning"),
+                context="wheel_receipt_fallback",
+            )
+        return None
+
+    if pending:
+        receipt_text = "\n\n".join(pending)
+        try:
+            await ctx.send(
+                view=StatusPanel("إيصالات سابقة تعذر نشرها", receipt_text[:3600], "warning"),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except Exception:
+            logger.exception("Could not flush previously failed wheel receipts")
+            if fallback_message is not None:
+                await try_edit_view(
+                    fallback_message,
+                    StatusPanel("نتائج العجلة غير المنشورة", receipt_text[:3600], "warning"),
+                    context="wheel_receipt_flush_fallback",
+                )
+        else:
+            pending.clear()
+            if fallback_message is not None:
+                await try_edit_view(
+                    fallback_message,
+                    StatusPanel(
+                        "العجلة مستمرة",
+                        "تم نشر النتائج السابقة في رسالة منفصلة. تابع رسالة نتيجة كل لاعب وسجل الجولة.",
+                        "neutral",
+                    ),
+                    context="wheel_receipt_recovered",
+                )
+    return message
+
+
+def format_wheel_summary(results):
+    """Render a concise final scoreboard without exposing wager accounting.
+
+    Each row is (player, result_label, net_change). A missing label means the
+    player could not enter; "balance_limit" means the settlement was safely
+    refused. The net delta determines the result category but is not displayed.
+    """
+    lines = []
+    for player, label, net_change in results:
+        if label is None:
+            lines.append(f"⛔ {player.mention} — رصيد غير كافٍ لرسوم الدخول.")
+        elif label == "balance_limit":
+            lines.append(f"⚠️ {player.mention} — ماقدرناش نصرف الجائزة بسبب حد الرصيد.")
+        else:
+            marker = "🟢" if net_change > 0 else "🔴" if net_change < 0 else "⚪"
+            label_text = "مكسب" if net_change > 0 else "خسارة" if net_change < 0 else "تعادل"
+            lines.append(f"{marker} {player.mention} — {label_text}")
+    return "\n".join(lines) or "مفيش نتائج للجولة."
 
 def format_wheel_breakdown(payout, target_loss=None, refund=0):
     """Render mutually exclusive accounting paths with no double-counting."""
@@ -79,7 +187,6 @@ def format_wheel_breakdown(payout, target_loss=None, refund=0):
     )
 
 
-# --- WHEEL ART ---
 def render_wheel(highlight=None):
     size = 600
     center = size // 2
@@ -126,9 +233,16 @@ def render_wheel(highlight=None):
     return buffer
 
 
-# --- LOBBY VIEW ---
 class WheelResultPanel(LayoutView):
-    def __init__(self, title, description, outcome="neutral", image_name=None):
+    def __init__(
+        self,
+        title,
+        description,
+        outcome="neutral",
+        image_name=None,
+        *,
+        developer_credit=False,
+    ):
         super().__init__(timeout=120)
         accents = {
             "success": THEME["green"],
@@ -151,6 +265,8 @@ class WheelResultPanel(LayoutView):
                     )
                 ),
             ])
+        if developer_credit:
+            content.extend([Separator(), developer_credit_row()])
         self.add_item(Container(*content, accent_color=accents.get(outcome, THEME["grey"])))
 
 
@@ -173,7 +289,6 @@ class WheelLobby(LayoutView):
                 label=label,
                 custom_id=custom_id,
                 style=discord.ButtonStyle.secondary,
-                emoji=emoji,
             )
             button.callback = partial(getattr(self, callback_name), button=button)
             self._buttons.append(button)
@@ -188,17 +303,15 @@ class WheelLobby(LayoutView):
         self.lobby_task = ctx.bot.loop.create_task(self.run_timer())
 
     def make_embed(self):
-        rules = (
-            f"**رسوم الدخول:** {FEE:,} {COIN}\n"
-            "**طريقة اللعب:** لف العجلة واكسب أو اخسر حسب النتيجة.\n"
-            "المبلغ الظاهر في النتيجة هو صافي التغيير في رصيدك."
-        )
+        rules = ""
         return lobby_embed(
             "🎡 عجلة الحفرة",
             rules,
             self.players,
             self.time_left,
             max_players=MAX_PLAYERS,
+            host=self.ctx.author,
+            min_players=1,
         )
 
     def _panel_content(self, embed=None):
@@ -230,7 +343,10 @@ class WheelLobby(LayoutView):
                     await self.start_game()
                 elif self.message:
                     self._refresh_panel()
-                    await self.message.edit(view=self)
+                    try:
+                        await self.message.edit(view=self)
+                    except discord.HTTPException:
+                        logger.debug("Could not refresh wheel lobby", exc_info=True)
         except asyncio.CancelledError:
             raise
 
@@ -242,8 +358,7 @@ class WheelLobby(LayoutView):
             self.started = True
             self._panel_text.content = "# انتهى التسجيل\nمحدش انضم للجولة دي. افتح لوبي جديد عشان تلعبوا."
             self._disable_buttons()
-            if self.message:
-                await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="wheel_lobby_empty")
             release_game_task(self.ctx.bot, self.ctx.channel.id, self.lobby_task)
             self.stop()
             return
@@ -251,8 +366,7 @@ class WheelLobby(LayoutView):
         self.started = True
         self._panel_text.content = "# الجولة بدأت\nاللوبي اتقفل. بنجهز نتائج العجلة."
         self._disable_buttons()
-        if self.message:
-            await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="wheel_lobby_start")
 
         task = self.ctx.bot.loop.create_task(self.play_rounds())
         registered = register_game_task(
@@ -294,19 +408,40 @@ class WheelLobby(LayoutView):
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.ctx.author.id:
             return await self._private_notice(interaction, "الهوست بس يقدر يبدأ الجولة.")
+        if self.started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
 
         await interaction.response.defer()
+        if self.started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         self.time_left = 0
         await self.start_game()
 
     async def play_rounds(self):
         currency = get_currency(self.ctx.bot)
         results = []
+        pending_receipts = []
 
         async def publish_panel(panel, file=None):
-            # Each spin remains a separate channel event rather than overwriting prior results.
-            kwargs = {"file": file} if file is not None else {}
-            return await self.ctx.send(view=panel, **kwargs)
+            # Normal play posts a distinct message per spin; failures are preserved
+            # on the closed lobby, then re-emitted separately when sending recovers.
+            return await publish_wheel_panel(
+                self.ctx,
+                panel,
+                fallback_message=self.message,
+                file=file,
+                pending_receipts=pending_receipts,
+            )
 
         try:
             if currency is None:
@@ -321,28 +456,11 @@ class WheelLobby(LayoutView):
 
             players = list(self.players)
             for index, player in enumerate(players, start=1):
-                balance_before = currency.get_balance(player.id)
-                segment_index = random.randrange(len(SEGMENTS))
-                label, outcome = SEGMENTS[segment_index]
-                outcome_note = ""
-                payout = 0
-                target_loss = None
+                segment_index = secrets.randbelow(len(SEGMENTS))
+                label, payout, target_loss, _outcome_note = resolve_wheel_segment(segment_index)
 
-                if outcome == "x2":
-                    payout = FEE * 2
-                elif outcome == "box":
-                    payout = random.choice([20, 50, 80, 120, 200])
-                    outcome_note = "\n🎁 جائزة الصندوق من المكافآت العشوائية."
-                elif isinstance(outcome, int) and outcome > 0:
-                    payout = outcome
-                elif isinstance(outcome, int) and outcome < 0:
-                    target_loss = abs(outcome)
-                else:
-                    target_loss = FEE
-                    if outcome == 0:
-                        outcome_note = "\nلم تكسب جائزة؛ الخسارة النهائية هي رسوم الدخول."
-
-                settlement = currency.settle_wheel(
+                settlement = await asyncio.to_thread(
+                    currency.settle_wheel,
                     player.id,
                     payout=payout,
                     target_loss=target_loss,
@@ -350,19 +468,18 @@ class WheelLobby(LayoutView):
                 if not settlement["played"]:
                     reason = settlement["reason"]
                     if reason == "insufficient":
-                        results.append((player, None, balance_before, balance_before))
+                        results.append((player, None, 0))
                         title = "رصيد غير كافٍ"
                         description = (
                             f"**اللاعب:** {player.mention}\n"
-                            f"رصيدك أقل من رسوم الدخول ({FEE:,} {COIN}).\n"
-                            "لم يتم خصم أي عملات."
+                            f"**رصيدك:** {settlement['after']:,} {COIN}"
                         )
                     else:
-                        results.append((player, "balance_limit", balance_before, balance_before))
+                        results.append((player, "balance_limit", 0))
                         title = "تعذر صرف النتيجة"
                         description = (
                             f"**اللاعب:** {player.mention}\n"
-                            "رصيدك قريب من الحد الأقصى المدعوم؛ لم يتم خصم رسوم الدخول."
+                            f"**رصيدك:** {settlement['after']:,} {COIN}"
                         )
                     panel = WheelResultPanel(
                         f"🎡 نتيجة اللفة {index}/{len(players)} • {title}",
@@ -375,14 +492,12 @@ class WheelLobby(LayoutView):
 
                 balance_after = settlement["after"]
                 net_change = settlement["net"]
-                refund = settlement["refund"]
-                results.append((player, label, balance_before, balance_after))
+                results.append((player, label, net_change))
+                result_label = "مكسب" if net_change > 0 else "خسارة" if net_change < 0 else "تعادل"
                 description = (
                     f"**اللاعب:** {player.mention}\n"
-                    f"**النتيجة:** {label}{outcome_note}\n"
-                    f"{format_wheel_breakdown(payout, target_loss, refund)}\n"
-                    f"**صافي الرصيد:** {net_change:+,} {COIN}\n"
-                    f"**الرصيد الحالي:** {balance_after:,} {COIN}"
+                    f"**النتيجة:** {result_label}\n"
+                    f"**رصيدك:** {balance_after:,} {COIN}"
                 )
                 outcome_color = "win" if net_change > 0 else "loss" if net_change < 0 else "neutral"
                 panel = WheelResultPanel(
@@ -395,22 +510,12 @@ class WheelLobby(LayoutView):
                 await publish_panel(panel, image_file)
                 await asyncio.sleep(1.5)
 
-            lines = []
-            for player, label, before, after in results:
-                if label is None:
-                    lines.append(f"⛔ {player.mention} — رصيد غير كافٍ لرسوم الدخول.")
-                elif label == "balance_limit":
-                    lines.append(f"⚠️ {player.mention} — ماقدرناش نصرف الجائزة بسبب حد الرصيد.")
-                else:
-                    net = after - before
-                    marker = "🟢" if net > 0 else "🔴" if net < 0 else "⚪"
-                    lines.append(f"{marker} {player.mention} — {net:+,} {COIN}")
-
             await publish_panel(
                 WheelResultPanel(
                     "🏁 خلصت جولات العجلة",
-                    "\n".join(lines) or "مفيش نتائج للجولة.",
+                    format_wheel_summary(results),
                     outcome="success",
+                    developer_credit=True,
                 )
             )
         except asyncio.CancelledError:
@@ -442,21 +547,33 @@ class WheelLobby(LayoutView):
             release_game_task(self.ctx.bot, self.ctx.channel.id, asyncio.current_task())
 
 
-# --- COG COMMANDS ---
 class Wheel(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="عجلة", aliases=["عجله", "wheel"], description="ابدأ لعبة عجلة الحفرة")
-    @is_staff_or_admin()
+    @commands.hybrid_command(
+        name="عجلة",
+        aliases=["عجله", "wheel", "pitwheel"],
+        description="ابدأ لعبة عجلة الحفرة",
+    )
     async def wheel(self, ctx):
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send(view=embed_to_v2(base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"])))
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ العجلة.",
+                "warning",
+            )
 
         view = WheelLobby(ctx)
         if not register_game_task(self.bot, ctx.channel.id, view.lobby_task, ctx.author.id, "Wheel lobby", view=view):
             view.lobby_task.cancel()
-            return await ctx.send(view=embed_to_v2(base_embed(description="❌ فيه لعبة أو لوبي شغال بالفعل.", color=THEME["red_dark"])))
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ العجلة.",
+                "warning",
+            )
 
         try:
             view.message = await ctx.send(view=view)

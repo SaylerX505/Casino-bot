@@ -5,6 +5,7 @@ from cogs.casino.game_registry import is_active_game, owns_game_task, register_g
 import asyncio
 import logging
 import random
+import time
 from functools import partial
 import config
 
@@ -20,8 +21,7 @@ from cogs.casino.mafia_views import (
     RoleRevealView,
     SecretButtonView,
 )
-from cogs.casino.permissions import is_staff_or_admin
-from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed
+from cogs.utility.theme import embed_to_v2, THEME, StatusPanel, lobby_embed, report_game_failure, result_embed, send_status, wait_for_view_fixed_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,6 @@ async def poke_reminder(user, role_name, view):
         except discord.HTTPException:
             pass
 
-# --- CORE GAME LOOP ---
 
 class MafiaGameState:
     """Shared live state so shop items (scan/veto) can interact with a running game."""
@@ -77,7 +76,6 @@ async def run_mafia_game(ctx, players):
             
         alive = players.copy()
 
-        # --- LIVE GAME STATE ---
         try:
             _state = MafiaGameState()
             _state.alive = alive
@@ -91,8 +89,9 @@ async def run_mafia_game(ctx, players):
         reveal_view = RoleRevealView(alive, game_roles)
         reveal_view.message = await ctx.send(view=reveal_view)
         set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), reveal_view)
-        await asyncio.sleep(5) 
-        
+        await asyncio.sleep(5)
+        await reveal_view.close()
+
         day_number = 1
         
         while True:
@@ -131,10 +130,16 @@ async def run_mafia_game(ctx, players):
                     reminder_tasks.add(reminder)
                     reminder.add_done_callback(reminder_tasks.discard)
 
-                    await m_view.wait()
+                    mafia_timed_out = await wait_for_view_fixed_timeout(m_view, max(0.0, m_view.deadline - time.monotonic()))
                     mafia_target_id = m_view.selected_id
-                    
+
                     if mafia_target_id is None:
+                        m_view._panel_text.content = (
+                            "# انتهت مهلة حركة المافيا\n"
+                            "مفيش اختيار اتسجل؛ حركة المافيا هتعدي من غير اغتيال."
+                            if mafia_timed_out
+                            else "# حركة المافيا اتقفلت\nمفيش اختيار اتسجل."
+                        )
                         afk_tracker[hitman] += 1
                         if afk_tracker[hitman] >= 3:
                             alive.remove(hitman)
@@ -188,10 +193,16 @@ async def run_mafia_game(ctx, players):
                     reminder_tasks.add(reminder)
                     reminder.add_done_callback(reminder_tasks.discard)
 
-                    await d_view.wait()
+                    doctor_timed_out = await wait_for_view_fixed_timeout(d_view, max(0.0, d_view.deadline - time.monotonic()))
                     doctor_target_id = d_view.selected_id
 
                     if doctor_target_id is None:
+                        d_view._panel_text.content = (
+                            "# انتهت مهلة حركة الدكتور\n"
+                            "مفيش علاج اتسجل؛ الجولة هتكمل من غير إنقاذ."
+                            if doctor_timed_out
+                            else "# حركة الدكتور اتقفلت\nمفيش علاج اتسجل."
+                        )
                         afk_tracker[doctor] += 1
                         if afk_tracker[doctor] >= 3:
                             alive.remove(doctor)
@@ -291,9 +302,13 @@ async def run_mafia_game(ctx, players):
             vote_msg = await ctx.send(view=vote_view)
             vote_view.message = vote_msg
             set_game_view(ctx.bot, ctx.channel.id, asyncio.current_task(), vote_view)
-            await vote_view.wait() 
-            
+            await wait_for_view_fixed_timeout(vote_view, max(0.0, vote_view.deadline - time.monotonic()))
+
             vote_view.disable_controls()
+            vote_view._panel_text.content = (
+                "# انتهى التصويت\n"
+                f"اتقفل التصويت بعد تسجيل **{len(vote_view.votes)}/{len(alive)}** أصوات. الاختيارات اتقفلت."
+            )
             try: await vote_msg.edit(view=vote_view)
             except discord.HTTPException: pass
             
@@ -346,13 +361,12 @@ async def run_mafia_game(ctx, players):
                 else:
                     hanged_player = next((p for p in alive if p.id == top_target_id), None)
                     if hanged_player:
-                        # --- VETO RESOLUTION ---
                         try:
                             cur_cog = ctx.bot.get_cog('Currency')
                         except Exception:
                             logger.exception("Could not resolve the Currency cog for the Mafia item action")
                             cur_cog = None
-                        if cur_cog and cur_cog.remove_item(hanged_player.id, "veto", 1):
+                        if cur_cog and await asyncio.to_thread(cur_cog.remove_item, hanged_player.id, "veto", 1):
                             embed = discord.Embed(
                                 description=f"⛔ **{hanged_player.mention}** استخدم **فيتو**! الناس صوتت ضده بس الفيتو لغى الإعدام... عاش يا وحش!",
                                 color=discord.Color.gold()
@@ -413,7 +427,7 @@ async def town_wins(ctx, mafias):
         outcome="win",
     )
     embed.set_image(url="attachment://reveal.jpg")
-    await ctx.send(view=embed_to_v2(embed), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
+    await ctx.send(view=embed_to_v2(embed, developer_credit=True), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
 async def mafia_wins(ctx, mafias):
     reveal_bytes = await generate_mafia_reveal(mafias)
@@ -423,39 +437,67 @@ async def mafia_wins(ctx, mafias):
         outcome="loss",
     )
     embed.set_image(url="attachment://reveal.jpg")
-    await ctx.send(view=embed_to_v2(embed), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
+    await ctx.send(view=embed_to_v2(embed, developer_credit=True), file=discord.File(fp=reveal_bytes, filename="reveal.jpg"))
 
-# --- COG COMMANDS ---
 class Mafia(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name='مافيا', description='بدء لعبة المافيا')
-    @is_staff_or_admin()
+    @commands.hybrid_command(
+        name="مافيا",
+        aliases=["mafia", "maf"],
+        description="بدء لعبة المافيا",
+    )
     async def start_mafia(self, ctx):
         """يبدأ لعبة المافيا في الحفرة"""
         if is_active_game(self.bot, ctx.channel.id):
-            return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+            return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
         view = None
         try:
             menu_file = discord.File("mafiagame/menu.jpg", filename="menu.jpg")
             view = MafiaLobbyView(ctx, start_game=run_mafia_game)
             if not register_game_task(self.bot, ctx.channel.id, view.timer_task, ctx.author.id, "Mafia lobby", view=view):
                 view.timer_task.cancel()
-                return await ctx.send("❌ فيه لعبة أو لوبي شغال في الروم بالفعل.")
+                return await send_status(
+                ctx,
+                "الروم مشغول",
+                "فيه لعبة أو لوبي شغال في الروم بالفعل. استنى الجولة الحالية تخلص قبل ما تبدأ واحدة جديدة.",
+                "warning",
+            )
             view.message = await ctx.send(view=view, file=menu_file)
             if not owns_game_task(self.bot, ctx.channel.id, view.timer_task):
                 view._disable_buttons()
                 await view.message.edit(view=view)
-        except Exception as e:
+        except Exception:
             if view is not None:
                 release_game_task(self.bot, ctx.channel.id, view.timer_task)
                 view.timer_task.cancel()
-            embed = discord.Embed(
-                description=f"⚠️ تأكد من وجود مجلد `mafiagame` والصور بالأسماء الصحيحة. \nالخطأ: {e}",
-                color=discord.Color.red()
+            logger.exception(
+                "Could not create Mafia lobby requester_id=%s channel_id=%s",
+                ctx.author.id,
+                ctx.channel.id,
             )
-            await ctx.send(view=embed_to_v2(embed))
+            send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}
+            try:
+                await ctx.send(
+                    view=StatusPanel(
+                        "تعذر فتح لوبي المافيا",
+                        "حصل عطل أثناء تجهيز واجهة اللعبة أو تحميل ملفاتها. سجلنا التفاصيل؛ جرّب تاني بعد شوية.",
+                        "warning",
+                    ),
+                    **send_kwargs,
+                )
+            except (discord.HTTPException, discord.InteractionResponded):
+                logger.exception(
+                    "Could not send Mafia startup error panel requester_id=%s channel_id=%s",
+                    ctx.author.id,
+                    ctx.channel.id,
+                )
 
     @commands.hybrid_command(name='اكشف', aliases=['scan', 'كشف'], description='استخدم أداة كشف المافيا')
     async def mafia_scan(self, ctx):
@@ -470,7 +512,7 @@ class Mafia(commands.Cog):
         cur_cog = self.bot.get_cog("Currency")
         if cur_cog is None:
             return await respond("الاقتصاد غير متاح", "مركز الاقتصاد مش محمّل حاليًا. جرّب تاني بعد إصلاح البوت.")
-        if cur_cog.get_item_count(ctx.author.id, "mafia_scan") <= 0:
+        if await asyncio.to_thread(cur_cog.get_item_count, ctx.author.id, "mafia_scan") <= 0:
             return await respond(
                 "أداة الكشف مش موجودة",
                 "مفيش كشف مافيا في شنطتك. تقدر تشتريه من المتجر داخل مركز الاقتصاد.",
@@ -487,7 +529,7 @@ class Mafia(commands.Cog):
         alive_mafias = [member for member in game.mafias if member in game.alive and member != ctx.author]
         if not alive_mafias:
             return await respond("مفيش هدف صالح", "مفيش مافيا تانية عايشة تقدر تكشفها دلوقتي.")
-        if not cur_cog.remove_item(ctx.author.id, "mafia_scan", 1):
+        if not await asyncio.to_thread(cur_cog.remove_item, ctx.author.id, "mafia_scan", 1):
             return await respond(
                 "تعذر استخدام الأداة",
                 "الأداة اتستخدمت أو مش موجودة. اتأكد من شنطتك وحاول تاني.",
@@ -510,7 +552,7 @@ class Mafia(commands.Cog):
             )
         except discord.Forbidden:
             try:
-                cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
+                await asyncio.to_thread(cur_cog.add_item, ctx.author.id, "mafia_scan", 1)
             except Exception:
                 logger.exception(
                     "Failed to refund mafia_scan after DM Forbidden user_id=%s",
@@ -526,7 +568,7 @@ class Mafia(commands.Cog):
             )
         except discord.HTTPException:
             try:
-                cur_cog.add_item(ctx.author.id, "mafia_scan", 1)
+                await asyncio.to_thread(cur_cog.add_item, ctx.author.id, "mafia_scan", 1)
             except Exception:
                 logger.exception(
                     "Failed to refund mafia_scan after DM HTTP error user_id=%s",

@@ -20,13 +20,27 @@ GAME_LABELS = {
     "wheel": "عجلة الحفرة",
     "rps": "حجرة ورقة مقص",
     "riddle": "الفزورة",
+    "coinflip": "رمي العملة",
+    "dice": "رمي النرد",
+    "slots": "ماكينة الحظ",
+    "blackjack": "Blackjack",
+    "mines": "Mines",
+    "plinko": "Plinko",
+    "number_roulette": "روليت الأرقام",
+    "hilo": "Hi-Lo",
 }
 GAME_COMMAND_ALIASES = {
     "mafia": "mafia",
+    "maf": "mafia",
     "مافيا": "mafia",
     "roulette": "roulette",
+    "russianroulette": "roulette",
+    "rr": "roulette",
     "روليت": "roulette",
     "hide-and-seek": "hide_and_seek",
+    "hide": "hide_and_seek",
+    "hideandseek": "hide_and_seek",
+    "hide_seek": "hide_and_seek",
     "hide_and_seek": "hide_and_seek",
     "غميضه": "hide_and_seek",
     "غميضة": "hide_and_seek",
@@ -35,12 +49,60 @@ GAME_COMMAND_ALIASES = {
     "جيو": "geoguessr",
     "كراسي": "chairs",
     "chairs": "chairs",
+    "musical-chairs": "chairs",
+    "musicalchairs": "chairs",
     "wheel": "wheel",
+    "pitwheel": "wheel",
     "عجلة": "wheel",
     "rps": "rps",
+    "rock-paper-scissors": "rps",
+    "rockpaperscissors": "rps",
+    "حجرة": "rps",
+    "مقص": "rps",
     "حومص": "rps",
     "riddle": "riddle",
+    "quiz": "riddle",
     "فزورة": "riddle",
+    "coinflip": "coinflip",
+    "coin-flip": "coinflip",
+    "coin": "coinflip",
+    "cf": "coinflip",
+    "flip": "coinflip",
+    "عملة": "coinflip",
+    "رمي_العملة": "coinflip",
+    "dice": "dice",
+    "roll": "dice",
+    "die": "dice",
+    "نرد": "dice",
+    "زهر": "dice",
+    "slots": "slots",
+    "slot": "slots",
+    "spin": "slots",
+    "سلوت": "slots",
+    "ماكينة": "slots",
+    "blackjack": "blackjack",
+    "black-jack": "blackjack",
+    "bj": "blackjack",
+    "بلجاك": "blackjack",
+    "بلاكجاك": "blackjack",
+    "mines": "mines",
+    "mine": "mines",
+    "الألغام": "mines",
+    "الغام": "mines",
+    "minesweeper": "mines",
+    "plinko": "plinko",
+    "بلينكو": "plinko",
+    "numberroulette": "number_roulette",
+    "number-roulette": "number_roulette",
+    "nr": "number_roulette",
+    "روليت_الأرقام": "number_roulette",
+    "روليت_ارقام": "number_roulette",
+    "روليت_الارقام": "number_roulette",
+    "hilo": "hilo",
+    "hilow": "hilo",
+    "hi-lo": "hilo",
+    "highlow": "hilo",
+    "هاي_لو": "hilo",
 }
 
 
@@ -57,7 +119,13 @@ def manager_role_setting_key(guild_id: int) -> str:
 
 
 def game_channel_setting_key(guild_id: int, game_key: str) -> str:
+    """Legacy per-game key retained for migration and diagnostics."""
     return f"guild:{int(guild_id)}:game_channels:{game_key}"
+
+
+def games_channel_setting_key(guild_id: int) -> str:
+    """Persist the optional single channel shared by every game in a guild."""
+    return f"guild:{int(guild_id)}:games_channel"
 
 
 def log_channel_setting_key(guild_id: int, log_type: str) -> str:
@@ -180,8 +248,26 @@ def configured_manager_role_ids(guild_id: int) -> set[int]:
     return set(values)
 
 
+def has_manager_access(user, guild_id: int | None = None) -> bool:
+    """Return access for Discord admins and roles configured in the Wizard's Admin Roles."""
+    if has_admin_access(user):
+        return True
+
+    if guild_id is None:
+        guild = getattr(user, "guild", None)
+        guild_id = getattr(guild, "id", None)
+    if guild_id is None:
+        return False
+
+    role_ids = {
+        getattr(role, "id", None)
+        for role in getattr(user, "roles", ())
+    }
+    return bool(role_ids.intersection(configured_manager_role_ids(int(guild_id))))
+
+
 def has_staff_access(user) -> bool:
-    """Discord admins, configured bot managers, and game-staff roles can host games."""
+    """Return access to protected management actions and staff-only controls."""
     if has_admin_access(user):
         return True
 
@@ -240,26 +326,30 @@ def game_key_from_interaction(interaction: discord.Interaction) -> str | None:
 
 
 def is_game_channel_allowed(guild_id: int | None, channel_id: int | None, game_key: str) -> bool:
-    """Missing/'all' policy means unrestricted; a configured list is an allowlist."""
+    """Apply the single optional channel shared by all games in a guild.
+
+    Legacy per-game settings are intentionally ignored so older saved choices
+    cannot silently keep individual games locked after the wizard is simplified.
+    """
     if guild_id is None or channel_id is None or game_key not in GAME_LABELS:
         return True
     try:
-        raw = bank.get_setting(game_channel_setting_key(guild_id, game_key), "all")
+        raw = bank.get_setting(games_channel_setting_key(guild_id), "all")
     except Exception:
-        logger.exception(
-            "Could not read channel policy guild=%s game=%s",
-            guild_id,
-            game_key,
-        )
+        logger.exception("Could not read global game-channel policy guild=%s", guild_id)
         return False
 
     if raw is None or str(raw).strip().lower() == "all":
         return True
-    channel_ids = _parse_id_list(raw)
-    if channel_ids is None:
-        logger.error("Malformed channel policy guild=%s game=%s", guild_id, game_key)
+    try:
+        allowed_channel_id = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.error("Malformed global game-channel policy guild=%s", guild_id)
         return False
-    return int(channel_id) in set(channel_ids)
+    if allowed_channel_id <= 0:
+        logger.error("Invalid global game-channel policy guild=%s", guild_id)
+        return False
+    return int(channel_id) == allowed_channel_id
 
 
 def is_staff_or_admin():

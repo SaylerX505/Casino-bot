@@ -1,4 +1,3 @@
-# --- AI CHAT SERVICE ---
 """Privacy-conscious AI replies. Conversation history is memory-only and scoped per channel."""
 import asyncio
 import logging

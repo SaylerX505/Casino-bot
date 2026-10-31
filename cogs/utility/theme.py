@@ -1,8 +1,8 @@
-# --- EMBED THEME ---
 """موحد شكل البوت - الوان الحفرة + helpers"""
+import asyncio
 import discord
 import logging
-from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
+from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 import config
 
 THEME = {
@@ -19,23 +19,38 @@ BRAND = getattr(config, "BRAND", "Çukur")
 PREFIX = getattr(config, "PREFIX", "+")
 
 
-class WatermarkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
-
-
 def base_embed(title: str = None, description: str = None, color: int = None) -> discord.Embed:
     e = discord.Embed(title=title, description=description, color=color or THEME["grey"])
+    footer_text = f"كازينو الحفرة • {BRAND}"
     if LOGO_URL:
         e.set_thumbnail(url=LOGO_URL)
-        e.set_footer(text=f"كازينو الحفرة • {BRAND} • Developed by @neglawy", icon_url=LOGO_URL)
+        e.set_footer(text=footer_text, icon_url=LOGO_URL)
     else:
-        e.set_footer(text=f"كازينو الحفرة • {BRAND} • Developed by @neglawy")
+        e.set_footer(text=footer_text)
     return e
 
 
-def embed_to_v2(embed: discord.Embed) -> LayoutView:
+def developer_credit_row() -> ActionRow:
+    """Return the disabled, non-interactive developer credit used on final game results."""
+    return ActionRow(
+        discord.ui.Button(
+            label="Developed by Sayler & Neglawy",
+            style=discord.ButtonStyle.secondary,
+            disabled=True,
+        )
+    )
+
+
+def add_developer_credit(view: LayoutView) -> LayoutView:
+    """Attach the standard credit to a completed game view, safely and at most once."""
+    if not isinstance(view, LayoutView) or getattr(view, "_developer_credit_added", False):
+        return view
+    view.add_item(Container(developer_credit_row(), accent_color=THEME["grey"]))
+    view._developer_credit_added = True
+    return view
+
+
+def embed_to_v2(embed: discord.Embed, *, developer_credit: bool = False) -> LayoutView:
     """Convert a legacy informational embed into a Components V2 panel.
 
     This preserves the title, body, fields, footer, accent color, and meaningful
@@ -86,6 +101,8 @@ def embed_to_v2(embed: discord.Embed) -> LayoutView:
                 ),
             ]
         )
+    if developer_credit:
+        children.extend([Separator(), developer_credit_row()])
 
     view = LayoutView(timeout=180)
     view.add_item(Container(*children, accent_color=accent))
@@ -93,7 +110,14 @@ def embed_to_v2(embed: discord.Embed) -> LayoutView:
 
 
 class StatusPanel(LayoutView):
-    def __init__(self, title: str, description: str, outcome: str = "neutral"):
+    def __init__(
+        self,
+        title: str,
+        description: str,
+        outcome: str = "neutral",
+        *,
+        developer_credit: bool = False,
+    ):
         super().__init__(timeout=120)
         colors = {
             "win": THEME["gold"],
@@ -103,21 +127,89 @@ class StatusPanel(LayoutView):
             "neutral": THEME["grey"],
         }
         body = f"# {title}\n{description}" if description else f"# {title}"
+        footer = f"-# كازينو الحفرة • {BRAND}"
+        children = [TextDisplay(body[:3850]), Separator(), TextDisplay(footer)]
+        if developer_credit:
+            children.extend([Separator(), developer_credit_row()])
         self.add_item(
             Container(
-                TextDisplay(body[:4000]),
-                Separator(),
+                *children,
                 accent_color=colors.get(outcome, THEME["grey"]),
             )
         )
 
 
-async def report_game_failure(ctx, title: str, description: str, fallback_view=None) -> bool:
-    """Report an unexpected game failure by editing the live panel when possible.
+async def send_status(ctx, title: str, description: str, outcome: str = "neutral"):
+    """Send a branded Components V2 status panel from a prefix or slash command.
 
-    Editing the active message is preferred to avoid stacking duplicate failure
-    posts into a game channel. A new panel is sent only when no usable message
-    is available or Discord rejects the edit.
+    Slash-command errors are ephemeral to avoid polluting busy game channels;
+    prefix-command responses remain visible in the channel where the command ran.
+    """
+    kwargs = {"ephemeral": True} if getattr(ctx, "interaction", None) is not None else {}
+    return await ctx.send(view=StatusPanel(title, description, outcome), **kwargs)
+
+
+async def private_status(interaction, title: str, description: str, outcome: str = "warning"):
+    """Acknowledge an interaction with the standard private Components V2 status panel."""
+    panel = StatusPanel(title, description, outcome)
+    if interaction.response.is_done():
+        return await interaction.followup.send(view=panel, ephemeral=True)
+    return await interaction.response.send_message(view=panel, ephemeral=True)
+
+
+async def wait_for_view_fixed_timeout(view, timeout: float) -> bool:
+    """Wait for a fixed wall-clock deadline even when component clicks reset View.timeout.
+
+    Returns True when the deadline expires and False when the view completes naturally.
+    Callers should disable controls and render an appropriate closed-state panel afterward.
+    """
+    waiter = asyncio.create_task(view.wait())
+    try:
+        done, _pending = await asyncio.wait({waiter}, timeout=max(0.0, float(timeout)))
+        if waiter in done:
+            return bool(await waiter)
+
+        # A component click can renew discord.py's native View timeout; stop the view
+        # explicitly at the gameplay deadline rather than letting activity extend a round.
+        view.stop()
+        await waiter
+        return True
+    except BaseException:
+        if not waiter.done():
+            waiter.cancel()
+            try:
+                await waiter
+            except asyncio.CancelledError:
+                pass
+        raise
+
+
+async def try_edit_view(message, view, *, context: str) -> bool:
+    """Best-effort lobby update that never lets an HTTP edit failure strand a game.
+
+    A missing/deleted lobby message should not prevent the actual round from
+    starting or prevent an empty lobby from releasing its channel reservation.
+    The reason is logged locally; exception details are never sent to Discord.
+    """
+    if message is None:
+        return False
+    try:
+        await message.edit(view=view)
+    except discord.HTTPException:
+        logging.getLogger("casino.ui").warning(
+            "Could not update a game lobby panel context=%s",
+            context,
+            exc_info=True,
+        )
+        return False
+    return True
+
+
+async def report_game_failure(ctx, title: str, description: str, fallback_view=None) -> bool:
+    """Close active controls and publish a separate V2 failure receipt.
+
+    The original round/table remains visible as game history; only its controls are
+    disabled. Repeated error paths for the same registered game are de-duplicated.
     """
     logger = logging.getLogger(__name__)
     panel = StatusPanel(title, description, "warning")
@@ -125,25 +217,51 @@ async def report_game_failure(ctx, title: str, description: str, fallback_view=N
     entry = active_games.get(ctx.channel.id, {}) if isinstance(active_games, dict) else {}
     if not isinstance(entry, dict):
         entry = {}
-    active_view = entry.get("view")
+
+    if entry.get("failure_reported"):
+        return False
+    # Reserve the failure receipt before the first await so concurrent exception
+    # handlers cannot publish duplicate warnings for one game.
+    entry["failure_reported"] = "pending"
+
+    active_view = entry.get("view") or fallback_view
     message = (
         getattr(active_view, "message", None)
-        or getattr(fallback_view, "message", None)
         or entry.get("message")
     )
 
-    if message is not None:
+    if active_view is not None:
         try:
-            await message.edit(content=None, embeds=[], attachments=[], view=panel)
-            return True
+            disable = getattr(active_view, "_disable_buttons", None)
+            if callable(disable):
+                disable()
+            else:
+                for item in active_view.walk_children():
+                    if hasattr(item, "disabled"):
+                        item.disabled = True
+            stop = getattr(active_view, "stop", None)
+            if callable(stop):
+                stop()
+            if message is not None:
+                await message.edit(view=active_view)
         except discord.HTTPException:
-            logger.exception("Failed to replace the active game message with a failure panel")
+            logger.warning(
+                "Could not disable failed game controls; preserving the separate failure receipt",
+                exc_info=True,
+            )
+        except Exception:
+            logger.exception("Unexpected failure while closing broken game controls")
 
     try:
-        await ctx.send(view=panel)
+        await ctx.send(
+            view=panel,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        entry["failure_reported"] = True
         return True
     except discord.HTTPException:
-        logger.exception("Failed to send a game failure panel")
+        entry.pop("failure_reported", None)
+        logger.exception("Failed to send a separate game failure receipt")
         return False
 
 
@@ -165,21 +283,54 @@ def result_embed(
         embed.set_thumbnail(url=thumbnail_url)
     return embed
 
-def lobby_embed(title: str, rules: str, players, time_left: int, max_players: int = 25) -> discord.Embed:
-    if players:
-        plist = "\n".join([f"**{i+1}** : {p.mention}" for i, p in enumerate(players)])
+def lobby_embed(
+    title: str,
+    rules: str,
+    players,
+    time_left: int,
+    max_players: int = 25,
+    *,
+    host=None,
+    min_players: int = 2,
+) -> discord.Embed:
+    """Build a compact, consistent lobby card with only the information needed to join."""
+    members = list(players or ())
+    visible_members = members[:5]
+    player_lines = [
+        f"**{index + 1}.** {player.mention}"
+        for index, player in enumerate(visible_members)
+    ]
+    remaining_members = len(members) - len(visible_members)
+    if remaining_members:
+        player_lines.append(f"-# +{remaining_members} لاعب آخر")
+
+    if player_lines:
+        player_list = "\n".join(player_lines)
     else:
-        plist = "في انتظار اللاعبين... خش يا معلم يلا 🏃"
-    e = discord.Embed(
-        title=title,
-        description=f"{rules}\n**اللاعبين المنضمين ({len(players)}/{max_players}):**\n{plist}\n\n⏳ تبدأ بعد **{time_left}** ثانية...",
-        color=THEME["teal"],
-    )
+        player_list = "مفيش لاعبين لسه."
+
+    metadata = []
+    if host is not None:
+        host_name = (
+            getattr(host, "mention", None)
+            or getattr(host, "display_name", None)
+            or getattr(host, "name", "مضيف اللوبي")
+        )
+        metadata.append(f"**المضيف:** {host_name}")
+    if min_players > 1:
+        metadata.append(f"**الحد الأدنى للبدء:** {min_players} لاعب")
+
+    # Rules should read like a short subtitle, not a multi-paragraph tutorial.
+    rules_text = " ".join(line.strip() for line in (rules or "").splitlines() if line.strip())
+    roster = f"**اللاعبون ({len(members)}/{max_players}):**\n{player_list}"
+    countdown = f"⏳ يبدأ تلقائيًا خلال **{max(0, int(time_left))} ثانية**"
+    sections = [rules_text, " · ".join(metadata), roster, countdown]
+    description = "\n\n".join(section for section in sections if section)
+    e = discord.Embed(title=title, description=description, color=THEME["teal"])
     if LOGO_URL:
         e.set_thumbnail(url=LOGO_URL)
         e.set_footer(text=f"كازينو الحفرة • {BRAND}", icon_url=LOGO_URL)
     return e
-
 
 def is_staff_or_admin():
     from cogs.casino.permissions import is_staff_or_admin as check

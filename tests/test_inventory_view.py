@@ -3,9 +3,12 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from discord.ext import commands
+
 import discord
 
-from cogs.casino.currency import Currency, CurrencyHubLayout, InventoryView
+from cogs.casino.currency import Currency, CurrencyHubLayout, setup
+from cogs.casino.currency_views import InventoryView
 
 
 class FakeCurrency:
@@ -30,7 +33,7 @@ class FakeCurrency:
         return False
 
 
-class InventoryViewTests(unittest.TestCase):
+class InventoryViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.owner = SimpleNamespace(
             id=123,
@@ -38,7 +41,12 @@ class InventoryViewTests(unittest.TestCase):
             display_avatar=SimpleNamespace(url="https://example.com/avatar.png"),
         )
         self.cog = FakeCurrency()
-        self.view = InventoryView(self.cog, self.owner)
+        self.view = InventoryView(
+            self.cog,
+            self.owner,
+            inventory=self.cog.get_inventory(self.owner.id),
+            balance=self.cog.get_balance(self.owner.id),
+        )
 
     def button(self, custom_id):
         return next(
@@ -66,13 +74,13 @@ class InventoryViewTests(unittest.TestCase):
         self.assertIn("طلقة مزدوجة", tools)
         self.assertNotIn("صندوق حظ", tools)
 
-    def test_use_buttons_reflect_inventory_counts(self):
+    async def test_use_buttons_reflect_inventory_counts_after_off_loop_snapshot_refresh(self):
         self.assertFalse(self.button("inventory_use_box").disabled)
         self.assertTrue(self.button("inventory_use_ticket").disabled)
 
         self.cog.inventory["loot_box"] = 0
         self.cog.inventory["luck_ticket"] = 1
-        self.view.refresh_buttons()
+        await self.view.refresh_snapshot()
 
         self.assertTrue(self.button("inventory_use_box").disabled)
         self.assertFalse(self.button("inventory_use_ticket").disabled)
@@ -94,20 +102,62 @@ class InventoryViewTests(unittest.TestCase):
 
 class PersistentEconomyViewLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_hub_is_registered_on_load_and_removed_on_unload(self):
-        bot = SimpleNamespace(add_view=Mock(), remove_view=Mock())
-        cog = Currency(bot)
+        bot = commands.Bot(command_prefix="+", intents=discord.Intents.none())
+        try:
+            cog = Currency(bot)
+            await cog.cog_load()
 
-        await cog.cog_load()
+            view = cog._persistent_hub_view
+            self.assertIsInstance(view, CurrencyHubLayout)
+            self.assertIsNone(view.timeout)
+            self.assertIs(bot._currency_hub_layout, view)
+            self.assertIn(view, bot.persistent_views)
 
-        bot.add_view.assert_called_once()
-        view = bot.add_view.call_args.args[0]
-        self.assertIsInstance(view, CurrencyHubLayout)
-        self.assertIsNone(view.timeout)
+            cog.cog_unload()
 
-        cog.cog_unload()
+            self.assertTrue(view.is_finished())
+            self.assertNotIn(view, bot.persistent_views)
+            self.assertIsNone(cog._persistent_hub_view)
+            self.assertFalse(hasattr(bot, "_currency_hub_layout"))
+        finally:
+            await bot.close()
 
-        bot.remove_view.assert_called_once_with(view)
-        self.assertIsNone(cog._persistent_hub_view)
+    async def test_extension_reload_replaces_the_old_persistent_view_once(self):
+        bot = commands.Bot(command_prefix="+", intents=discord.Intents.none())
+        try:
+            first = Currency(bot)
+            await first.cog_load()
+            old_view = first._persistent_hub_view
+            self.assertIn(old_view, bot.persistent_views)
+
+            first.cog_unload()
+            second = Currency(bot)
+            await second.cog_load()
+            new_view = second._persistent_hub_view
+
+            self.assertIsNot(old_view, new_view)
+            self.assertTrue(old_view.is_finished())
+            self.assertNotIn(old_view, bot.persistent_views)
+            self.assertIn(new_view, bot.persistent_views)
+            self.assertIs(bot._currency_hub_layout, new_view)
+        finally:
+            await bot.close()
+
+    async def test_extension_setup_registers_persistent_hub_once(self):
+        bot = commands.Bot(command_prefix="+", intents=discord.Intents.none())
+        try:
+            await setup(bot)
+
+            cog = bot.get_cog("Currency")
+            self.assertIsInstance(cog, Currency)
+            self.assertIsInstance(cog._persistent_hub_view, CurrencyHubLayout)
+            self.assertIs(bot._currency_hub_layout, cog._persistent_hub_view)
+            self.assertEqual(
+                sum(view is cog._persistent_hub_view for view in bot.persistent_views),
+                1,
+            )
+        finally:
+            await bot.close()
 
 
 if __name__ == "__main__":

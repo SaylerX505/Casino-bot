@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, patch
 import discord
 from discord.ui import LayoutView
 
-from cogs.casino.permissions import GAME_LABELS
 from cogs.utility.wizard import (
     AdminRoleWizardView,
     AISettingsWizardView,
@@ -22,7 +21,7 @@ from cogs.utility.wizard import (
 
 class WizardViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.guild = SimpleNamespace(id=123456, owner_id=101)
+        self.guild = SimpleNamespace(id=123456, owner_id=101, me=object())
         self.owner = SimpleNamespace(id=101)
 
     def _get_setting(self, key, default=None):
@@ -88,28 +87,58 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertIn("wizard_clear_manager_roles", {button.custom_id for button in buttons})
 
-    def test_channel_wizard_has_every_game_and_channel_selector(self):
+    async def test_admin_role_assignment_is_locked_to_discord_administrators(self):
+        view = AdminRoleWizardView(self.guild, self.owner)
+        interaction = SimpleNamespace(
+            guild=self.guild,
+            user=SimpleNamespace(
+                id=202,
+                guild_permissions=SimpleNamespace(administrator=False),
+            ),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard._is_discord_admin", return_value=False),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+        ):
+            await view.save_roles(interaction)
+
+        save_setting.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+        view.stop()
+
+    def test_channel_wizard_has_one_global_channel_selector(self):
         with patch("cogs.utility.wizard.bank.get_setting", side_effect=self._get_setting):
-            view = GameChannelWizardView(self.guild, self.owner, selected_game="roulette")
+            view = GameChannelWizardView(self.guild, self.owner)
 
         self.assertIsInstance(view, LayoutView)
-        selects = [
+        channel_selects = [
             item for item in view.walk_children()
-            if isinstance(item, discord.ui.Select)
+            if isinstance(item, discord.ui.ChannelSelect)
         ]
-        self.assertEqual(len(selects), 1)
-        self.assertEqual(len(selects[0].options), len(GAME_LABELS))
-        self.assertTrue(any(isinstance(item, discord.ui.ChannelSelect) for item in view.walk_children()))
-        self.assertEqual(view.selected_game, "roulette")
+        self.assertEqual(len(channel_selects), 1)
+        self.assertEqual(channel_selects[0].max_values, 1)
+        self.assertFalse(
+            any(isinstance(item, discord.ui.Select) for item in view.walk_children())
+        )
+        content = "\n".join(
+            item.content
+            for item in view.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("كل الألعاب", content)
+        self.assertIn("قناة الألعاب العامة", content)
         buttons = [
             item for item in view.walk_children()
             if isinstance(item, discord.ui.Button)
         ]
         button_ids = {button.custom_id for button in buttons}
-        self.assertIn("wizard_channels_all_roulette", button_ids)
-        self.assertIn("wizard_channels_disable_roulette", button_ids)
+        self.assertIn("wizard_channels_all", button_ids)
+        self.assertIn("wizard_channels_back", button_ids)
+        self.assertNotIn("wizard_channels_disable_roulette", button_ids)
 
-    def test_review_lists_every_game_and_roles(self):
+    def test_review_lists_one_global_game_channel_and_roles(self):
         with patch("cogs.utility.wizard.bank.get_setting", side_effect=self._get_setting):
             view = WizardReviewView(self.guild, self.owner)
         content = "\n".join(
@@ -117,8 +146,8 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
             for item in view.walk_children()
             if isinstance(item, discord.ui.TextDisplay)
         )
-        for game_name in GAME_LABELS.values():
-            self.assertIn(game_name, content)
+        self.assertIn("جميع الألعاب", content)
+        self.assertIn("كل القنوات", content)
         self.assertIn("<@&300>", content)
 
     def test_ai_settings_page_exposes_toggle_and_role_allowlist(self):
@@ -175,6 +204,107 @@ class WizardViewTests(unittest.IsolatedAsyncioTestCase):
         save_setting.assert_called_once_with(
             f"guild:{self.guild.id}:ai_enabled",
             "true",
+        )
+        interaction.response.edit_message.assert_awaited_once()
+        interaction.response.send_message.assert_not_awaited()
+
+    async def test_global_channel_save_persists_one_channel_for_all_games(self):
+        channel = SimpleNamespace(
+            id=555,
+            guild=self.guild,
+            permissions_for=lambda _member: SimpleNamespace(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+            ),
+        )
+        interaction = SimpleNamespace(
+            user=self.owner,
+            guild=self.guild,
+            guild_id=self.guild.id,
+            message=SimpleNamespace(id=777),
+            response=SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard.bank.get_setting", return_value="all"),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+        ):
+            view = GameChannelWizardView(self.guild, self.owner)
+            view.channel_select = SimpleNamespace(values=[channel])
+            await view.save_channel(interaction)
+
+        save_setting.assert_called_once_with(
+            "guild:123456:games_channel",
+            "555",
+        )
+        interaction.response.edit_message.assert_awaited_once()
+        interaction.response.send_message.assert_not_awaited()
+
+    async def test_global_channel_save_rejects_missing_game_permissions(self):
+        channel = SimpleNamespace(
+            id=556,
+            guild=self.guild,
+            permissions_for=lambda _member: SimpleNamespace(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=False,
+            ),
+        )
+        interaction = SimpleNamespace(
+            user=self.owner,
+            guild=self.guild,
+            guild_id=self.guild.id,
+            message=SimpleNamespace(id=779),
+            response=SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard.bank.get_setting", return_value="all"),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+        ):
+            view = GameChannelWizardView(self.guild, self.owner)
+            view.channel_select = SimpleNamespace(values=[channel])
+            await view.save_channel(interaction)
+
+        save_setting.assert_not_called()
+        interaction.response.send_message.assert_awaited_once()
+        self.assertIn(
+            "رفع الملفات",
+            interaction.response.send_message.await_args.args[0],
+        )
+        interaction.response.edit_message.assert_not_awaited()
+
+    async def test_global_channel_clear_restores_all_channels(self):
+        interaction = SimpleNamespace(
+            user=self.owner,
+            guild=self.guild,
+            guild_id=self.guild.id,
+            message=SimpleNamespace(id=778),
+            response=SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+        with (
+            patch("cogs.utility.wizard._guard_interaction", return_value=True),
+            patch("cogs.utility.wizard.bank.get_setting", return_value="555"),
+            patch("cogs.utility.wizard.bank.set_setting") as save_setting,
+        ):
+            view = GameChannelWizardView(self.guild, self.owner)
+            await view.allow_all_channels(interaction)
+
+        save_setting.assert_called_once_with(
+            "guild:123456:games_channel",
+            "all",
         )
         interaction.response.edit_message.assert_awaited_once()
         interaction.response.send_message.assert_not_awaited()

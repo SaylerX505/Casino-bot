@@ -7,7 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import Container, LayoutView, Separator, TextDisplay
 
-from cogs.casino import bank
+from cogs.casino import bank, permissions
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,6 @@ class AdminCommands(commands.Cog):
     admin = app_commands.Group(
         name="admin",
         description="إدارة إعدادات البوت داخل السيرفر",
-        default_permissions=discord.Permissions(administrator=True),
     )
     access = app_commands.Group(
         name="access",
@@ -92,12 +91,35 @@ class AdminCommands(commands.Cog):
                 return False
         return True
 
+    async def _require_economy_admin(self, interaction: discord.Interaction) -> bool:
+        """Allow Discord admins and this guild's Wizard-configured Admin Roles."""
+        try:
+            allowed = (
+                interaction.guild_id is not None
+                and permissions.has_manager_access(interaction.user, interaction.guild_id)
+            )
+        except Exception:
+            logger.exception("Failed to verify Wizard Admin Role access for economy management")
+            allowed = False
+
+        if not allowed:
+            await interaction.response.send_message(
+                view=AdminResult(
+                    "غير مسموح",
+                    "لازم تكون Administrator أو معاك واحدة من رولات **Admin Roles** المحددة من الـ Wizard في السيرفر ده.",
+                    success=False,
+                ),
+                ephemeral=True,
+            )
+            return False
+        return True
+
     async def _require_global_owner(
         self,
         interaction: discord.Interaction,
         setting_name: str,
     ) -> bool:
-        """Protect bot-wide controls while economy/AI settings are globally scoped."""
+        """Protect remaining bot-wide controls that are application-scoped."""
         try:
             is_owner = await self.bot.is_owner(interaction.user)
         except (discord.DiscordException, RuntimeError):
@@ -190,9 +212,7 @@ class AdminCommands(commands.Cog):
         member: discord.Member,
         amount: app_commands.Range[int, 1, 1_000_000_000],
     ):
-        if not await self._require_admin(interaction, require_bot_admin=True):
-            return
-        if not await self._require_global_owner(interaction, "الاقتصاد"):
+        if not await self._require_economy_admin(interaction):
             return
         credited, balance = bank.credit_balance(member.id, amount)
         if not credited:
@@ -216,9 +236,7 @@ class AdminCommands(commands.Cog):
         member: discord.Member,
         amount: app_commands.Range[int, 1, 1_000_000_000],
     ):
-        if not await self._require_admin(interaction, require_bot_admin=True):
-            return
-        if not await self._require_global_owner(interaction, "الاقتصاد"):
+        if not await self._require_economy_admin(interaction):
             return
         removed, balance = bank.remove_balance(member.id, amount)
         if not removed:
@@ -241,9 +259,7 @@ class AdminCommands(commands.Cog):
     @admin.command(name="ai-toggle", description="تشغيل أو إيقاف محسن")
     @app_commands.describe(enabled="فعّل محسن أو أوقفه")
     async def ai_toggle(self, interaction: discord.Interaction, enabled: bool):
-        if not await self._require_admin(interaction, require_bot_admin=True):
-            return
-        if not await self._require_global_owner(interaction, "محسن"):
+        if not await self._require_economy_admin(interaction):
             return
         cog = self.bot.get_cog("AI")
         if cog is None:
@@ -274,9 +290,7 @@ class AdminCommands(commands.Cog):
 
     @admin.command(name="status", description="عرض حالة البوت وأدمنز البوت")
     async def admin_status(self, interaction: discord.Interaction):
-        if not await self._require_admin(interaction, require_bot_admin=True):
-            return
-        if not await self._require_global_owner(interaction, "حالة البوت"):
+        if not await self._require_economy_admin(interaction):
             return
         admins = bank.list_guild_admins(interaction.guild_id)
         ai_cog = self.bot.get_cog("AI")

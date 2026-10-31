@@ -226,5 +226,17 @@ class BankTransactionTests(unittest.TestCase):
         self.assertEqual(bank.get_item_count(103, "loot_box"), 1)
 
 
+
+    def test_purchase_rejects_inventory_overflow_without_charging(self):
+        maximum = bank.SQLITE_MAX_INT
+        bank.set_balance(81, 500)
+        bank.add_item(81, "shield", maximum)
+
+        ok, balance = bank.purchase_item(81, "shield", 1, 1)
+
+        self.assertFalse(ok)
+        self.assertEqual(balance, 500)
+        self.assertEqual(bank.get_balance(81), 500)
+        self.assertEqual(bank.get_item_count(81, "shield"), maximum)
 if __name__ == "__main__":
     unittest.main()

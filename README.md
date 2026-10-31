@@ -26,11 +26,26 @@ An advanced casino and social-games Discord bot for the Çukur server.
    python main.py
    ```
 
-The bot uses the configured prefix `+`. See the in-bot help menu for the available commands and game rules. Runtime dependency pins are kept in `requirements.txt`; `requirements.lock` pins the complete Python 3.11 dependency resolution used by Docker and CI.
+The bot uses the configured prefix `+`; you can also mention the bot directly before a command. See `+help`, `+commands`, or the in-bot help menu for available commands and game rules. Prefix aliases are available for common game and economy commands. Wagers accept full numbers (for example `1500`) and compact forms such as `1.5k` or `2k`, subject to each game's minimum and maximum. Runtime dependency pins are kept in `requirements.txt`; `requirements.lock` pins the complete Python 3.11 dependency resolution used by Docker and CI.
+
+## Solo betting game
+
+- `/coinflip bet:100` or `+coinflip 100` opens a choice panel in the channel; only the requester can use its controls.
+- `+coinflip 100` / `/coinflip bet:100`: the player chooses Heads or Tails. A correct guess receives a **1.9x gross return** (0.9x net profit); a miss loses the stake.
+- `+dice 100` / `/dice bet:100`: the player chooses a number from 1 to 6. The odds are 1 in 6 and a correct guess receives a **5.7x gross return** (4.7x net profit).
+- `+blackjack 100` / `/blackjack bet:100`: play a multi-step hand against the dealer. Regular wins pay **2.0x gross** (1.0x net); a natural blackjack pays **2.5x gross** (1.5x net); pushes return the full stake.
+- `+slots 100` / `/slots bet:100`: spin three independent reels. Any win occurs in 96/216 outcomes (44.44%); a loss occurs in 120/216 (55.56%). One matching pair appears in 90/216 outcomes (41.67%) and returns **1.7x gross**. A triple appears in 6/216 outcomes (2.78%); each specific triple is 1/216 (0.46%) and returns **5x–15x gross**, depending on the symbol. The theoretical long-run gross return of the published paytable is **94.44%**.
+- `+mines 100 3` / `/mines bet:100 mines_count:3`: play a 20-tile board with 1–8 hidden mines. Each safe reveal increases the 97%-RTP multiplier; cash out to lock in the displayed gross return, or lose the stake on a mine.
+- `+plinko 100` / `/plinko bet:100`: drop one ball through an illustrated 9-bin board. Bins pay 3x, 2x, 1.5x, 1.1x or 0x gross, with a binomial-weighted theoretical gross return of about **95.8%**.
+- `+روليت_الأرقام 100` / `/numberroulette bet:100`: choose one number from 0–36 using the two compact dropdowns. A correct number returns **36x gross** (35x net profit), giving a **97.30%** theoretical return.
+- `+hilo 100` / `/hilo bet:100`: guess whether the next rank is higher or lower, grow the multiplier with each correct guess, and cash out any time. Ties count as a miss; theoretical payout edge is 3%.
+- Coinflip, dice, and slots share one configurable V2 betting panel and edit in place instead of posting a second result message. Blackjack has its own multi-step V2 panel. Every game edits its active message; instant games use one atomic stake-and-settlement transaction, while Blackjack debits only when the player presses **ابدأ اللعب**.
+- Instant wagers and RPS escrow are recorded transactionally with economy ledger entries. Coinflip/dice/slots commit the final result and payout together, so completed instant wagers are never left active for startup recovery to reinterpret. Multi-step Blackjack remains in escrow and is refunded if interrupted; the original channel/message IDs allow the bot to close stale controls with a clear recovery notice.
+- Configure the permitted channels through `/wizard`, just like the other games.
 
 ## Setup wizard
 
-Run `/wizard` as the server owner or a Discord Administrator to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set a separate allowed-channel list for each game, disable or reopen individual games, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Discord Administrator remains a trusted override for hosting games. Role selection grants only bot game-staff access, not new Discord permissions. The wizard cannot be managed by the staff roles it configures.
+Run `/wizard` as the server owner, a Discord Administrator, or a member with a configured **Admin Role** to configure the bot privately. The wizard lets you choose bot-manager roles and game-staff roles, set **one shared game channel for every solo and group game** or allow games in all channels, configure economy/error log destinations, manage the optional AI responder and its access-role allowlist, and review saved settings. Changes are persisted immediately in SQLite; restart is not required. Admin Roles grant bot-management access, while Staff Roles grant game-staff actions; neither grants Discord permissions. Only the server owner or a Discord Administrator can add, remove, or change Admin Roles. Staff Roles cannot manage the wizard.
 
 ## Single-server configuration
 
@@ -38,7 +53,7 @@ This bot is designed to run in one Discord server. `HOME_GUILD_ID` is required: 
 
 ## Data and persistence
 
-The economy and small application settings are stored in SQLite at the project-root `data/bank.db` by default. Schema changes are applied through ordered, transactional migrations recorded in `schema_migrations`; legacy tables are adopted without replacing their rows. Balance changes are written to the append-only `economy_ledger` in the same SQL transaction as the balance mutation, with correlated transaction IDs for transfers and wagers. Set `BANK_DB_FILE` only if the host requires a custom path. Mount persistent storage at `/app/data` when using Docker. Keep only one bot process connected to a given SQLite file.
+The economy and small application settings are stored in SQLite at the project-root `data/bank.db` by default. Schema changes are applied through ordered, transactional migrations recorded in `schema_migrations`; legacy tables are adopted without replacing their rows. The casino-wager schema also stores optional channel/message references for safely closing interrupted game panels after recovery. Balance changes are written to the append-only `economy_ledger` in the same SQL transaction as the balance mutation, with correlated transaction IDs for transfers and wagers. Set `BANK_DB_FILE` only if the host requires a custom path. Mount persistent storage at `/app/data` when using Docker. Keep only one bot process connected to a given SQLite file.
 
 Never commit the live database, SQLite journal files, user histories, activity snapshots, runtime logs, backups, or real environment secrets. Archived source snapshots are excluded from Docker images. Static game content such as `data/database.json` and `data/fazoora.json` remains in the repository because the games need it.
 
@@ -75,6 +90,13 @@ python -m unittest discover -s tests -v
 ```
 
 The tests use temporary SQLite databases and should not operate on the live economy database. Run `python -m compileall -q main.py config.py cogs tests`, then `coverage run --branch -m unittest discover -s tests -v` and `coverage report --show-missing` to check correctness and coverage. CI also runs a broader undefined-name/syntax scan and audits every package in `requirements.lock` with pip-audit. RPS wagers are recorded as escrow; unresolved settlements retry with bounded backoff while the process is alive, remaining orphaned wagers are refunded at startup, and settlement is idempotent. Run only one bot instance against a given economy database. GitHub Actions builds the Docker image as a deployment smoke check.
+
+## Diagnostics and incident handling
+
+- Console logging follows `LOG_LEVEL`; local diagnostics are also written as JSON Lines to `data/logs/casino-bot.log` by default.
+- Set `CASINO_LOG_FILE` to use another path, or set it to `off` to disable file logging while keeping console logs.
+- Log files rotate at 5 MiB with five backups. Keep the directory on private persistent storage, and do not commit or publish it: local tracebacks may contain operational details.
+- Unexpected command failures get an incident ID. Share that ID with the maintainer to find the matching structured log entry; Discord responses and the configured error-log channel receive a redacted summary, not a full traceback or raw exception message.
 
 ## Deployment notes
 

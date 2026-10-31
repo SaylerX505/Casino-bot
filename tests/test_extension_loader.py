@@ -10,26 +10,59 @@ class ExtensionLoaderClassificationTests(unittest.TestCase):
         helper_modules = {
             "bank.py",
             "bank_ledger.py",
+            "bank_rps.py",
             "bank_schema.py",
-            "permissions.py",
-            "game_registry.py",
-            "game_assets.py",
+            "bank_settings.py",
+            "bank_wagers.py",
+            "bank_wallet.py",
+            "bet_validation.py",
+            "blackjack_art.py",
+            "blackjack_core.py",
+            "blackjack_view.py",
             "currency_catalog.py",
+            "currency_inventory.py",
+            "currency_shop.py",
+            "currency_transfer.py",
             "currency_views.py",
+            "game_assets.py",
+            "game_registry.py",
             "geoguessr_art.py",
             "geoguessr_storage.py",
             "geoguessr_views.py",
             "mafia_art.py",
             "mafia_views.py",
+            "permissions.py",
+            "rps_core.py",
+            "rps_views.py",
             "roulette_art.py",
             "roulette_views.py",
+            "solo_advanced_art.py",
+            "solo_advanced_base.py",
+            "solo_advanced_core.py",
+            "solo_advanced_views.py",
+            "solo_betting_art.py",
+            "solo_betting_core.py",
+            "solo_betting_view.py",
         }
         for filename in helper_modules:
             with self.subTest(filename=filename):
                 self.assertFalse(should_load_extension("cogs.casino", filename))
 
     def test_actual_game_cogs_remain_extensions(self):
-        for filename in ("mafia.py", "geoguessr.py", "currency.py", "roulette.py"):
+        for filename in (
+            "blackjack.py",
+            "chairs.py",
+            "currency.py",
+            "fazoora.py",
+            "geoguessr.py",
+            "hide_and_seek.py",
+            "mafia.py",
+            "roulette.py",
+            "rps.py",
+            "solo_advanced.py",
+            "solo_betting.py",
+            "wheel.py",
+        ):
             with self.subTest(filename=filename):
                 self.assertTrue(should_load_extension("cogs.casino", filename))
 

@@ -20,7 +20,6 @@ from cogs.casino.game_registry import (
     release_game_task,
     set_game_view,
 )
-from cogs.casino.permissions import is_staff_or_admin
 from cogs.utility.theme import (
     StatusPanel,
     report_game_failure,
@@ -28,11 +27,6 @@ from cogs.utility.theme import (
 
 logger = logging.getLogger(__name__)
 
-
-class WatermarkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy", style=discord.ButtonStyle.secondary, disabled=True))
 
 DATABASE_FILE = "data/database.json"
 USED_TRACKER_FILE = "data/used_images.json"
@@ -64,6 +58,14 @@ def get_flag_emoji(country_code):
     if not country_code or len(country_code) != 2: return "❓"
     return chr(ord(country_code[0].upper()) + 127397) + chr(ord(country_code[1].upper()) + 127397)
 
+def order_guesses_by_submission(guesses, received_at):
+    """Order completed guesses by when the message reached the round loop.
+
+    Geocoding is asynchronous; completion order is not a fair proxy for who
+    submitted first. Missing timestamps sort last as a defensive fallback.
+    """
+    return sorted(guesses, key=lambda player: received_at.get(player, float("inf")))
+
 def get_guess_data(guess_text):
     try:
         location = geolocator.geocode(
@@ -76,7 +78,37 @@ def get_guess_data(guess_text):
         logger.debug("Optional GeoGuessr enhancement failed", exc_info=True)
     return None, None
 
-# --- CORE GAME LOOP ---
+def build_final_result(scores):
+    """Summarize final scores without announcing a zero-point game as a tie."""
+    final_scores = sorted(scores.items(), key=lambda entry: entry[1], reverse=True)
+    if not final_scores:
+        return "لم يتم تسجيل نقاط؛ مفيش فائز في اللعبة دي.", SERVER_LOGO_URL, "neutral"
+
+    top_score = final_scores[0][1]
+    if top_score <= 0:
+        return (
+            "مفيش فائز بالنقاط المرة دي؛ محدش جمع نقاط خلال الجولات. جرّبوا مرة تانية.",
+            SERVER_LOGO_URL,
+            "neutral",
+        )
+
+    winners = [player for player, score in final_scores if score == top_score]
+    if len(winners) > 1:
+        winner_mentions = " و ".join(player.mention for player in winners)
+        return (
+            f"🏆 تعادل! الفائزون هم {winner_mentions} برصيد {top_score} نقطة!",
+            SERVER_LOGO_URL,
+            "neutral",
+        )
+
+    winner = winners[0]
+    return (
+        f"🏆 {winner.mention} هو الفائز برصيد {top_score} نقطة!",
+        winner.display_avatar.url,
+        "success",
+    )
+
+
 async def run_game_loop(ctx, players):
     try:
         scores = {player: 0 for player in players}
@@ -109,14 +141,6 @@ async def run_game_loop(ctx, players):
         selected_rounds = random.sample(unused_keys, total_rounds)
 
         for round_num, db_key in enumerate(selected_rounds, 1):
-            round_msg = await ctx.send(
-                view=StatusPanel(
-                    f"الجولة {round_num} من {total_rounds}",
-                    "بنجهز صورة الجولة وبيانات الدولة...",
-                    "neutral",
-                )
-            )
-
             round_data = game_db[db_key]
             actual_country_code = round_data['country_code']
             actual_country_ar = round_data['country_ar']
@@ -131,13 +155,12 @@ async def run_game_loop(ctx, players):
                 file = discord.File(fp=image_file_path, filename="streetview.png")
             except OSError:
                 logger.exception("GeoGuessr image became unavailable during a game path=%s", image_file_path)
-                await round_msg.edit(
+                await ctx.send(
                     view=StatusPanel(
                         "تعذر تجهيز الجولة",
                         "صورة الجولة اختفت أو تعذر فتحها. أوقفنا اللعبة بدل ما نعرض جولة ناقصة.",
                         "warning",
-                    ),
-                    attachments=[],
+                    )
                 )
                 return
 
@@ -146,21 +169,21 @@ async def run_game_loop(ctx, players):
                 save_used_images(used_images)
             except OSError:
                 logger.exception("Could not save GeoGuessr used-image tracker")
-                await round_msg.edit(
+                await ctx.send(
                     view=StatusPanel(
                         "تعذر حفظ الجولة",
                         "حالة الصور لم تُحفظ بأمان، لذلك أوقفنا اللعبة قبل بدء الجولة.",
                         "warning",
-                    ),
-                    attachments=[],
+                    )
                 )
                 return
 
-            timer_state = {"end_time": time.time() + 30.0}
+            timer_state = {"end_time": time.monotonic() + 30.0}
             active_view = ActiveGameView(ctx.author, timer_state, round_num, total_rounds)
-            msg = round_msg
             try:
-                await msg.edit(view=active_view, attachments=[file])
+                # Publish the playable round once; preparation errors and results
+                # are posted separately instead of replacing this message.
+                msg = await ctx.send(view=active_view, file=file)
             except discord.HTTPException:
                 logger.exception("Could not publish GeoGuessr round=%s", round_num)
                 file.close()
@@ -176,6 +199,7 @@ async def run_game_loop(ctx, players):
             guesses = {}
             guess_data_cache = {}
             guess_order = []
+            guess_received_at = {}
             processing_users = set()
             reaction_tasks = set()
 
@@ -185,11 +209,12 @@ async def run_game_loop(ctx, players):
             async def process_reaction(guess_msg, text, received_at):
                 try:
                     coords, code = await asyncio.to_thread(get_guess_data, text)
-                    if received_at > timer_state["end_time"] or time.time() > timer_state["end_time"] + 5:
+                    if received_at > timer_state["end_time"] or time.monotonic() > timer_state["end_time"] + 5:
                         return
                     if code is None:
                         return
                     if guess_msg.author not in guesses:
+                        guess_received_at[guess_msg.author] = received_at
                         guess_order.append(guess_msg.author)
                     guesses[guess_msg.author] = text
                     guess_data_cache[guess_msg.author] = {"coords": coords, "code": code, "text": text}
@@ -206,7 +231,7 @@ async def run_game_loop(ctx, players):
                     processing_users.discard(guess_msg.author)
             last_update = 30
             while True:
-                remaining = int(timer_state["end_time"] - time.time())
+                remaining = int(timer_state["end_time"] - time.monotonic())
                 if remaining <= 0 or len(guesses) >= len(players):
                     break
                     
@@ -220,7 +245,7 @@ async def run_game_loop(ctx, players):
 
                 try:
                     guess_msg = await ctx.bot.wait_for('message', check=check, timeout=1.0)
-                    received_at = time.time()
+                    received_at = time.monotonic()
                     if received_at > timer_state["end_time"]:
                         break
                     guess_text = guess_msg.content.strip().lower()
@@ -241,7 +266,7 @@ async def run_game_loop(ctx, players):
 
             active_view.disable_controls()
             active_view._panel_text.content = (
-                f"# انتهت الجولة {round_num}\nتم إغلاق التخمينات. بنحسب النتائج..."
+                f"# انتهت الجولة {round_num}\nتم إغلاق التخمينات. النتيجة في الرسالة التالية."
             )
             try:
                 await msg.edit(view=active_view)
@@ -249,6 +274,8 @@ async def run_game_loop(ctx, players):
                 logger.warning("GeoGuessr controls could not be disabled", exc_info=True)
 
             await asyncio.sleep(0.5)
+
+            guess_order = order_guesses_by_submission(guess_order, guess_received_at)
 
             closest_distance = float('inf')
             best_guess_code = None
@@ -304,64 +331,36 @@ async def run_game_loop(ctx, players):
                     'avatar_url': player.display_avatar.url, 'coords': guess_data_cache.get(player, {}).get('coords'), 'correct': is_correct
                 })
 
-            await msg.edit(
-                view=GeoGuessrResultPanel(
-                    "📊 ملخص الجولة",
-                    summary_text,
-                    outcome="neutral",
-                ),
-                attachments=[],
-            )
-            await asyncio.sleep(2) 
-
             map_bytes = await generate_result_map(actual_country_center_coords, player_results)
-            map_file = discord.File(fp=map_bytes, filename="result_map.png")
-            await msg.edit(
-                view=GeoGuessrResultPanel(
-                    "خريطة نتائج الجولة",
-                    "أماكن التخمينات بالنسبة للدولة الصحيحة.",
-                    outcome="neutral",
-                    image_name="result_map.png",
-                ),
-                attachments=[map_file],
-            )
-            await asyncio.sleep(3)
-
             board_bytes = await generate_dashboard_image(player_results, round_num, total_rounds)
+            map_file = discord.File(fp=map_bytes, filename="result_map.png")
             board_file = discord.File(fp=board_bytes, filename="dashboard.png")
-            await msg.edit(
-                view=GeoGuessrResultPanel(
-                    "🏆 لوحة النتائج",
-                    "ملخص ترتيب اللاعبين بعد الجولة.",
-                    outcome="neutral",
-                    image_name="dashboard.png",
-                ),
-                attachments=[board_file],
+            result_view = GeoGuessrResultPanel(
+                f"📊 نتيجة الجولة {round_num} من {total_rounds}",
+                summary_text,
+                outcome="neutral",
+                image_names=("result_map.png", "dashboard.png"),
             )
-            await asyncio.sleep(4) 
+            await ctx.send(
+                view=result_view,
+                files=[map_file, board_file],
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            # Each round result gets its own message, preserving the closed
+            # guessing board and keeping earlier maps/scores readable in chat.
+            await asyncio.sleep(4)
 
-        # --- TIE BREAKER ANNOUNCEMENT ---
-        final_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        top_score = final_scores[0][1]
-        
-        winners = [p for p, s in final_scores if s == top_score]
-        
-        if len(winners) > 1:
-            winner_mentions = " و ".join([w.mention for w in winners])
-            desc = f"🏆 **تعادل!** الفائزون هم {winner_mentions} برصيد `{top_score} نقطة`!"
-            thumb = SERVER_LOGO_URL
-        else:
-            winner = winners[0]
-            desc = f"🏆 **{winner.mention}** هو الفائز برصيد `{top_score} نقطة`!"
-            thumb = winner.display_avatar.url
-            
-        await msg.edit(
-            view=StatusPanel(
+        description, winner_image, outcome = build_final_result(scores)
+
+        await ctx.send(
+            view=GeoGuessrResultPanel(
                 "🏁 انتهت اللعبة!",
-                desc,
-                "success" if len(winners) == 1 else "neutral",
+                description,
+                outcome=outcome,
+                image_url=winner_image,
+                developer_credit=True,
             ),
-            attachments=[],
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
     except asyncio.CancelledError:
@@ -377,13 +376,11 @@ async def run_game_loop(ctx, players):
         release_game_task(ctx.bot, ctx.channel.id, asyncio.current_task())
 
 
-# --- COG COMMANDS ---
 class GeoGuessr(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.hybrid_command(name='جيو', aliases=["geo", "geoguessr", "خمن"], description="ابدأ لعبة تخمين الدولة")
-    @is_staff_or_admin()
     async def start_geo(self, ctx):
         """يبدأ لعبة جيوغيسر"""
         send_kwargs = {"ephemeral": True} if ctx.interaction is not None else {}

@@ -74,9 +74,76 @@ def _migration_2_economy_ledger(connection):
     )
 
 
+def _migration_3_single_player_casino_wagers(connection):
+    """Persist solo wagers so stake debit and settlement can be recovered safely."""
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS casino_wagers ("
+        "game_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, game_type TEXT NOT NULL, "
+        "stake INTEGER NOT NULL CHECK(stake > 0), choice TEXT NOT NULL, result TEXT NOT NULL, "
+        "won INTEGER NOT NULL CHECK(won IN (0, 1)), "
+        "win_payout INTEGER NOT NULL CHECK(win_payout >= 0), "
+        "status TEXT NOT NULL CHECK(status IN ('active', 'settled', 'refunded')), "
+        "outcome TEXT, payout INTEGER NOT NULL DEFAULT 0 CHECK(payout >= 0), "
+        "created_at REAL NOT NULL, settled_at REAL)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_casino_wagers_active "
+        "ON casino_wagers(created_at) WHERE status='active'"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_casino_wagers_user_created "
+        "ON casino_wagers(user_id, created_at DESC)"
+    )
+
+
+def _migration_4_casino_wager_message_refs(connection):
+    """Remember the live Discord panel so startup recovery can close stale controls."""
+    columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(casino_wagers)").fetchall()
+    }
+    if "channel_id" not in columns:
+        connection.execute("ALTER TABLE casino_wagers ADD COLUMN channel_id INTEGER")
+    if "message_id" not in columns:
+        connection.execute("ALTER TABLE casino_wagers ADD COLUMN message_id INTEGER")
+
+
+def _migration_5_rps_wager_message_refs(connection):
+    """Remember each RPS challenge panel so startup can close stale controls."""
+    columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(rps_wagers)").fetchall()
+    }
+    if "channel_id" not in columns:
+        connection.execute("ALTER TABLE rps_wagers ADD COLUMN channel_id INTEGER")
+    if "message_id" not in columns:
+        connection.execute("ALTER TABLE rps_wagers ADD COLUMN message_id INTEGER")
+
+
+def _migration_6_rps_challenge_handshake(connection):
+    """Persist invite/accept state separately from money that has actually been escrowed."""
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS rps_challenges ("
+        "game_id TEXT PRIMARY KEY, player_a TEXT NOT NULL, player_b TEXT NOT NULL, "
+        "amount INTEGER NOT NULL CHECK(amount > 0), "
+        "status TEXT NOT NULL CHECK(status IN "
+        "('pending', 'accepted', 'declined', 'cancelled', 'expired')), "
+        "outcome TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL, "
+        "channel_id INTEGER, message_id INTEGER)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rps_challenges_pending "
+        "ON rps_challenges(created_at) WHERE status='pending'"
+    )
+
+
 _SCHEMA_MIGRATIONS = (
     (1, "core_schema", _migration_1_core_schema),
     (2, "economy_ledger", _migration_2_economy_ledger),
+    (3, "single_player_casino_wagers", _migration_3_single_player_casino_wagers),
+    (4, "casino_wager_message_refs", _migration_4_casino_wager_message_refs),
+    (5, "rps_wager_message_refs", _migration_5_rps_wager_message_refs),
+    (6, "rps_challenge_handshake", _migration_6_rps_challenge_handshake),
 )
 
 

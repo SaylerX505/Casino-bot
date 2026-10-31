@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from functools import partial
 
 import discord
@@ -17,15 +18,16 @@ from discord.ui import (
 import config
 from cogs.casino.game_assets import SERVER_LOGO_URL
 from cogs.casino.game_registry import register_game_task
-from cogs.utility.theme import THEME, StatusPanel, lobby_embed
+from cogs.utility.theme import (
+    THEME,
+    StatusPanel,
+    lobby_embed,
+    private_status,
+    try_edit_view,
+)
 
 logger = logging.getLogger(__name__)
 
-
-class WatermarkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(discord.ui.Button(label="Developed by @neglawy & @17 Nicotine", style=discord.ButtonStyle.secondary, disabled=True))
 
 class MafiaDropdown(discord.ui.Select):
     def __init__(self, targets, view_parent):
@@ -42,6 +44,15 @@ class MafiaDropdown(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if time.monotonic() >= self.view_parent.deadline or self.view_parent.is_finished():
+            self.view_parent.disable_controls()
+            self.view_parent._panel_text.content = (
+                "# انتهى الوقت\nمفيش اختيار اتسجل؛ الحركة هتعدي من غير قرار."
+            )
+            await interaction.response.edit_message(view=self.view_parent)
+            self.view_parent.stop()
+            return
+
         self.view_parent.selected_id = int(self.values[0])
         self.view_parent._panel_text.content = (
             "# تم تسجيل الاختيار\nالأمر اتسجل بسرية. ارجع للشات الأساسي."
@@ -52,9 +63,11 @@ class MafiaDropdown(discord.ui.Select):
 
 
 class EphemeralActionView(LayoutView):
-    def __init__(self, targets):
-        super().__init__(timeout=20.0)
+    def __init__(self, targets, *, timeout=20.0):
+        super().__init__(timeout=max(0.1, timeout))
+        self.deadline = time.monotonic() + max(0.1, timeout)
         self.selected_id = None
+        self.message = None
         self.dropdown = MafiaDropdown(targets, self)
         self._panel_text = TextDisplay(
             "# اختيار سري\nاختار هدفًا واحدًا من القائمة. اختيارك مش هيظهر في القناة."
@@ -71,6 +84,17 @@ class EphemeralActionView(LayoutView):
     def disable_controls(self):
         self.dropdown.disabled = True
 
+    async def on_timeout(self):
+        self.disable_controls()
+        self._panel_text.content = (
+            "# انتهى وقت الاختيار\nمفيش اختيار اتسجل. الحركة هتعدي من غير قرار."
+        )
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                logger.debug("Could not disable expired Mafia private action controls", exc_info=True)
+
 
 class SecretButtonView(LayoutView):
     def __init__(self, active_user, role_users, targets, role_name):
@@ -81,6 +105,8 @@ class SecretButtonView(LayoutView):
         self.role_name = role_name
         self.selected_id = None
         self.message = None
+        self.deadline = time.monotonic() + 20.0
+        self.action_open = False
 
         if role_name == "mafia":
             button_label = "افتح قائمة الاغتيال"
@@ -122,6 +148,25 @@ class SecretButtonView(LayoutView):
         self.button.disabled = True
 
     async def btn_callback(self, interaction: discord.Interaction):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0 or self.is_finished():
+            self.disable_controls()
+            self._panel_text.content = (
+                "# انتهى وقت الحركة السرية\nمفيش اختيار اتسجل قبل انتهاء المهلة."
+            )
+            await try_edit_view(
+                self.message or interaction.message,
+                self,
+                context=f"mafia_{self.role_name}_action_expired",
+            )
+            self.stop()
+            return await private_status(
+                interaction,
+                "انتهى وقت الحركة",
+                "الجولة اتقفلت؛ مفيش اختيار اتسجل.",
+                "warning",
+            )
+
         if interaction.user not in self.role_users:
             role_ar = "المافيا" if self.role_name == "mafia" else "الدكتور"
             return await interaction.response.send_message(
@@ -140,24 +185,65 @@ class SecretButtonView(LayoutView):
                 ephemeral=True,
             )
 
-        ephemeral_view = EphemeralActionView(self.targets)
-        await interaction.response.send_message(
-            view=ephemeral_view,
-            ephemeral=True,
-        )
+        if self.selected_id is not None or self.action_open:
+            return await private_status(
+                interaction,
+                "الاختيار السري مفتوح بالفعل",
+                "عندك قائمة اختيار واحدة للجولة دي. كمّلها أو استنى انتهاء المهلة؛ مش هنعمل اختيارًا موازيًا.",
+                "warning",
+            )
+
+        self.action_open = True
+        ephemeral_view = EphemeralActionView(self.targets, timeout=remaining)
+        try:
+            await interaction.response.send_message(
+                view=ephemeral_view,
+                ephemeral=True,
+            )
+        except asyncio.CancelledError:
+            self.action_open = False
+            raise
+        except discord.HTTPException:
+            self.action_open = False
+            logger.exception(
+                "Could not open Mafia private target picker role=%s user_id=%s",
+                self.role_name,
+                interaction.user.id,
+            )
+            return
+        ephemeral_view.message = await interaction.original_response()
         await ephemeral_view.wait()
 
         self.selected_id = ephemeral_view.selected_id
+        self.disable_controls()
         if self.selected_id is not None:
-            self.disable_controls()
             self._panel_text.content = (
                 "# الحركة اتسجلت\nتم تسجيل الاختيار السري. النتيجة هتظهر بعد نهاية الليل."
             )
-            try:
-                await interaction.message.edit(view=self)
-            except discord.HTTPException:
-                logger.debug("Could not disable Mafia secret-action V2 controls", exc_info=True)
-            self.stop()
+        else:
+            self._panel_text.content = (
+                "# انتهى وقت الحركة السرية\nلم يتم تسجيل اختيار؛ الجولة هتعدي من غير حركة."
+            )
+        await try_edit_view(
+            self.message or interaction.message,
+            self,
+            context=f"mafia_{self.role_name}_action_closed",
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        if self.selected_id is not None:
+            return
+        self.disable_controls()
+        self._panel_text.content = (
+            "# انتهى وقت الحركة السرية\nلم يتم تسجيل اختيار؛ الجولة هتعدي من غير حركة."
+        )
+        if self.message is not None:
+            await try_edit_view(
+                self.message,
+                self,
+                context=f"mafia_{self.role_name}_action_expired",
+            )
 
 
 class VoteDropdown(discord.ui.Select):
@@ -175,6 +261,18 @@ class VoteDropdown(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if (
+            self.view_parent.closed
+            or self.view_parent.is_finished()
+            or time.monotonic() >= self.view_parent.deadline
+        ):
+            self.view_parent.disable_controls()
+            return await private_status(
+                interaction,
+                "انتهى التصويت",
+                "التصويت اتقفل بالفعل؛ مش ممكن تغيير الاختيار بعد انتهاء المهلة.",
+                "warning",
+            )
         if interaction.user not in self.view_parent.alive_players:
             return await interaction.response.send_message(
                 view=StatusPanel("التصويت غير متاح", "الميتين مابيتكلموش؛ التصويت للأحياء فقط.", "warning"),
@@ -189,6 +287,8 @@ class DayVoteView(LayoutView):
     def __init__(self, alive_players):
         super().__init__(timeout=20.0)
         self.alive_players = alive_players
+        self.deadline = time.monotonic() + 20.0
+        self.closed = False
         self.votes = {}
         self.message = None
         self._panel_text = TextDisplay(self._vote_summary())
@@ -228,6 +328,14 @@ class DayVoteView(LayoutView):
         return "\n".join(lines)[:4000]
 
     async def skip_btn(self, interaction: discord.Interaction):
+        if self.closed or self.is_finished() or time.monotonic() >= self.deadline:
+            self.disable_controls()
+            return await private_status(
+                interaction,
+                "انتهى التصويت",
+                "التصويت اتقفل بالفعل؛ مش ممكن تفويت التصويت بعد انتهاء المهلة.",
+                "warning",
+            )
         if interaction.user not in self.alive_players:
             return await interaction.response.send_message(
                 view=StatusPanel("التصويت غير متاح", "الميتين مابيتكلموش؛ التصويت للأحياء فقط.", "warning"),
@@ -237,21 +345,40 @@ class DayVoteView(LayoutView):
         await self.update_embed(interaction)
 
     async def update_embed(self, interaction):
-        self._panel_text.content = self._vote_summary()
+        if self.closed or self.is_finished() or time.monotonic() >= self.deadline:
+            self.disable_controls()
+            return await private_status(
+                interaction,
+                "انتهى التصويت",
+                "التصويت اتقفل بالفعل؛ مش ممكن تغيير الاختيار بعد انتهاء المهلة.",
+                "warning",
+            )
+
+        if len(self.votes) >= len(self.alive_players):
+            self.closed = True
+            self.disable_controls()
+            self._panel_text.content = (
+                "# اكتمل التصويت\n"
+                f"كل الأحياء سجلوا أصواتهم (**{len(self.votes)}/{len(self.alive_players)}**). بنحسب النتيجة."
+            )
+            self.stop()
+        else:
+            self._panel_text.content = self._vote_summary()
+
         try:
             await interaction.response.edit_message(view=self)
         except discord.HTTPException:
             logger.debug("Could not update Mafia V2 vote panel", exc_info=True)
 
-        if len(self.votes) >= len(self.alive_players):
-            self.stop()
-
     def disable_controls(self):
+        self.closed = True
         self.dropdown.disabled = True
         self.skip_button.disabled = True
 
 
 class MafiaLobbyView(LayoutView):
+    MAX_TIME_EXTENSIONS = 3
+
     def __init__(self, ctx, *, start_game):
         super().__init__(timeout=120)
         self.ctx = ctx
@@ -259,16 +386,17 @@ class MafiaLobbyView(LayoutView):
         self.players = []
         self.game_started = False
         self.time_left = 60
+        self.extensions_left = self.MAX_TIME_EXTENSIONS
         self.message = None
         self._panel_text = TextDisplay(self._panel_content())
         self._buttons = []
         for label, custom_id, callback_name, emoji in (
-            ("انضمام (Join)", "mafia_join", "join_button", None),
-            ("مغادرة (Leave)", "mafia_leave", "leave_button", None),
+            ("انضمام", "mafia_join", "join_button", None),
+            ("مغادرة", "mafia_leave", "leave_button", None),
             ("ابدأ الآن", "mafia_start", "start_button", None),
             ("+10 ثواني", "mafia_add_time", "add_time", "⏱️"),
         ):
-            button = discord.ui.Button(label=label, custom_id=custom_id, style=discord.ButtonStyle.secondary, emoji=emoji)
+            button = discord.ui.Button(label=label, custom_id=custom_id, style=discord.ButtonStyle.secondary)
             button.callback = partial(getattr(self, callback_name), button=button)
             self._buttons.append(button)
         self.add_item(Container(
@@ -282,35 +410,45 @@ class MafiaLobbyView(LayoutView):
 
     def get_embed(self):
         embed = lobby_embed(
-            "أهلاً بيكو في الحفرة...",
-            "المافيا بتتحرك في الضلمة... والدكتور بيحاول ينقذ ما يمكن إنقاذه.",
+            "🕵️ مافيا الحفرة",
+            "",
             self.players,
             self.time_left,
             max_players=25,
+            host=self.ctx.author,
+            min_players=5,
         )
         embed.color = discord.Color.dark_red()
         embed.set_image(url="attachment://menu.jpg")
         embed.set_footer(text="لعبة المافيا - كازينو الحفرة", icon_url=SERVER_LOGO_URL)
         return embed
 
+    def _sync_extension_control(self):
+        exhausted = self.game_started or self.extensions_left <= 0
+        for button in self._buttons:
+            if button.custom_id == "mafia_add_time":
+                button.disabled = exhausted
+
     def _panel_content(self, embed=None):
         embed = embed or self.get_embed()
         title = f"# {embed.title}\n" if embed.title else ""
         description = f"{embed.description or ''}\n\n"
-        return (title + description + f"-# لعبة المافيا • كازينو الحفرة • {config.BRAND}")[:4000]
+        return (
+            title + description
+            + f"**تمديدات متاحة:** {self.extensions_left}\n\n"
+            + f"-# لعبة المافيا • كازينو الحفرة • {config.BRAND}"
+        )[:4000]
 
     def _refresh_panel(self, embed=None):
         self._panel_text.content = self._panel_content(embed)
+        self._sync_extension_control()
 
     def _disable_buttons(self):
         for button in self._buttons:
             button.disabled = True
 
     async def _private_notice(self, interaction, title, description):
-        await interaction.response.send_message(
-            view=StatusPanel(title, description, "warning"),
-            ephemeral=True,
-        )
+        return await private_status(interaction, title, description, "warning")
 
     async def run_timer(self):
         while self.time_left > 0 and not self.game_started:
@@ -336,13 +474,13 @@ class MafiaLobbyView(LayoutView):
             )
             self._refresh_panel(cancel_embed)
             self._disable_buttons()
-            if self.message: await self.message.edit(view=self)
+            await try_edit_view(self.message, self, context="mafia_lobby_cancelled")
             return
 
         self.game_started = True
         self._panel_text.content = "# المافيا بدأت\nاللوبي اتقفل. بيتم توزيع الأدوار السرية."
         self._disable_buttons()
-        if self.message: await self.message.edit(view=self)
+        await try_edit_view(self.message, self, context="mafia_lobby_start")
         
         task = self.ctx.bot.loop.create_task(self.start_game(self.ctx, self.players))
         if not register_game_task(self.ctx.bot, self.ctx.channel.id, task, self.ctx.author.id, "Mafia", replace_task=self.timer_task):
@@ -351,19 +489,19 @@ class MafiaLobbyView(LayoutView):
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game_started:
             embed = discord.Embed(
-                description="اللعبة بدأت خلاص!",
+                description="اللعبة بدأت بالفعل. لا يمكن الانضمام بعد إغلاق التسجيل.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if len(self.players) >= 25:
             embed = discord.Embed(
-                description="الحد الأقصى 25 لاعب!",
+                description="اكتمل اللوبي؛ الحد الأقصى 25 لاعب.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
         if interaction.user in self.players:
             embed = discord.Embed(
-                description="أنت سجلت اسمك ياعم!",
+                description="أنت مسجل بالفعل في اللوبي.",
                 color=discord.Color.red()
             )
             await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
@@ -385,7 +523,7 @@ class MafiaLobbyView(LayoutView):
             await interaction.response.edit_message(view=self)
         else:
             embed = discord.Embed(
-                description="أنت مش في اللعبة أصلاً!",
+                description="أنت مش مسجل في اللوبي، فلازم تنضم الأول قبل المغادرة.",
                 color=discord.Color.red()
             )
             await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
@@ -393,21 +531,48 @@ class MafiaLobbyView(LayoutView):
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
             embed = discord.Embed(
-                description="للأدمن فقط!",
+                description="صاحب اللوبي فقط يقدر يتحكم في بدء الجولة.",
                 color=discord.Color.red()
             )
             return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         await interaction.response.defer()
+        if self.game_started:
+            return await private_status(
+                interaction,
+                "اللوبي اتقفل",
+                "الجولة بدأت بالفعل؛ ضغطة البداية التانية ما غيّرتش حالة اللعبة.",
+                "warning",
+            )
         self.time_left = 0
         await self.auto_start()
 
     async def add_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.ctx.author:
-            embed = discord.Embed(
-                description="للأدمن فقط!",
-                color=discord.Color.red()
+            return await self._private_notice(
+                interaction,
+                "التحكم مش متاح",
+                "صاحب اللوبي فقط يقدر يمدد وقت التسجيل.",
             )
-            return await self._private_notice(interaction, embed.title or "تنبيه", embed.description or "الطلب غير متاح.")
+        if self.game_started:
+            return await self._private_notice(
+                interaction,
+                "اللوبي اتقفل",
+                "المافيا بدأت بالفعل؛ مفيش تمديدات بعد إغلاق التسجيل.",
+            )
+        if self.extensions_left <= 0:
+            return await self._private_notice(
+                interaction,
+                "وصلنا للحد الأقصى",
+                "استخدمت كل تمديدات الوقت المتاحة. ابدأ الجولة أو استنى العدّ التنازلي.",
+            )
+        self.extensions_left -= 1
         self.time_left += 10
         self._refresh_panel()
         await interaction.response.edit_message(view=self)
@@ -422,7 +587,6 @@ class RoleRevealView(LayoutView):
         )
         self.button = discord.ui.Button(
             label="اعرف دورك السري",
-            emoji="👀",
             style=discord.ButtonStyle.secondary,
             custom_id="mafia_reveal_role",
         )
@@ -436,11 +600,39 @@ class RoleRevealView(LayoutView):
             )
         )
 
+    async def close(self):
+        if self.is_finished():
+            return
+        self.button.disabled = True
+        self._panel_text.content = (
+            "# انتهت مرحلة كشف الأدوار\n"
+            "الأدوار اتوزعت بالفعل. حافظ على سرّك؛ تفاصيل المرحلة الحالية هتظهر في رسالة اللعبة."
+        )
+        if self.message is not None:
+            await try_edit_view(
+                self.message,
+                self,
+                context="mafia_role_reveal_closed",
+            )
+        self.stop()
+
+    async def on_timeout(self):
+        await self.close()
+
     async def reveal_btn(self, interaction: discord.Interaction):
+        if self.is_finished() or self.button.disabled:
+            return await private_status(
+                interaction,
+                "مرحلة كشف الأدوار انتهت",
+                "لو عرفت دورك بالفعل، احتفظ بيه سرًا وتابع لوحة اللعبة.",
+                "warning",
+            )
         if interaction.user not in self.alive:
-            return await interaction.response.send_message(
-                view=StatusPanel("مش في الجيم", "أنت مش مشارك في اللعبة دي.", "warning"),
-                ephemeral=True,
+            return await private_status(
+                interaction,
+                "مش في الجيم",
+                "أنت مش مشارك في اللعبة دي.",
+                "warning",
             )
         role = self.game_roles[interaction.user]
         role_label = (

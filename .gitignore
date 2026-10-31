@@ -23,3 +23,6 @@ bot_logs.txt
 .coverage
 coverage.xml
 htmlcov/
+
+# Rotating local diagnostics; never commit runtime logs.
+data/logs/

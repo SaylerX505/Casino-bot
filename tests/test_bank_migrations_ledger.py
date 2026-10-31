@@ -25,22 +25,22 @@ class BankMigrationsAndLedgerTests(unittest.TestCase):
 
     def test_schema_is_versioned_and_migrations_are_idempotent(self):
         bank.set_balance(10, 100)
-        self.assertEqual(bank.schema_version(), 2)
+        self.assertEqual(bank.schema_version(), 6)
         connection = bank._connect()
         versions = [
             int(row["version"])
             for row in connection.execute("SELECT version FROM schema_migrations ORDER BY version")
         ]
-        self.assertEqual(versions, [1, 2])
+        self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
 
         bank.close_database()
         self.assertEqual(bank.get_balance(10), 100)
-        self.assertEqual(bank.schema_version(), 2)
+        self.assertEqual(bank.schema_version(), 6)
         self.assertEqual(
             [row["version"] for row in bank._connect().execute(
                 "SELECT version FROM schema_migrations ORDER BY version"
             )],
-            [1, 2],
+            [1, 2, 3, 4, 5, 6],
         )
 
     def test_migrations_adopt_legacy_tables_without_discarding_data(self):
@@ -58,7 +58,7 @@ class BankMigrationsAndLedgerTests(unittest.TestCase):
             connection.close()
 
         self.assertEqual(bank.get_balance(99), 321)
-        self.assertEqual(bank.schema_version(), 2)
+        self.assertEqual(bank.schema_version(), 6)
         self.assertEqual(bank.get_economy_ledger(user_id=99), [])
 
     def test_balance_operations_write_ledger_entries_atomically(self):
