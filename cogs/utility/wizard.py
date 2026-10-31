@@ -5,7 +5,6 @@ from discord import app_commands
 from discord.ext import commands
 
 import config
-
 from cogs.casino import bank
 from cogs.utility.wizard_common import (
     WizardLayout,
@@ -13,8 +12,8 @@ from cogs.utility.wizard_common import (
     _configured_ai_enabled,
     _configured_log_channel,
     _global_ai_enabled,
-    _guild_ai_enabled,
     _guard_interaction,
+    _guild_ai_enabled,
     _is_discord_admin,
     configured_ai_role_ids,
 )
@@ -67,8 +66,8 @@ __all__ = [
     "_configured_ai_enabled",
     "_configured_log_channel",
     "_global_ai_enabled",
-    "_guild_ai_enabled",
     "_guard_interaction",
+    "_guild_ai_enabled",
     "_is_discord_admin",
     "bank",
     "config",

@@ -264,7 +264,7 @@ class HiLoView(InteractiveSoloWagerView):
             if self.receipt is not None and self.receipt.get("status") != "refunded"
             else None
         )
-        return _render_live_art(
+        return _advanced._render_live_art(
             "hilo",
             current_rank=self.current_rank,
             previous_rank=self.previous_rank if self.receipt is not None else None,

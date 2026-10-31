@@ -17,22 +17,17 @@ from discord.ui import (
 import config
 from cogs.casino import bank
 from cogs.casino.permissions import ai_enabled_setting_key, ai_role_setting_key
+from cogs.utility import wizard as _wizard
 from cogs.utility.theme import StatusPanel
 from cogs.utility.wizard_common import (
     LOG_TYPE_LABELS,
     WizardLayout,
-    _configured_log_channel,
     _configured_manager_roles,
     _configured_roles,
     _games_channel_policy,
-    _global_ai_enabled,
-    _guild_ai_enabled,
     games_channel_setting_key,
-    _guard_interaction,
-    _is_discord_admin,
     manager_role_setting_key,
     staff_role_setting_key,
-    configured_ai_role_ids,
     log_channel_setting_key,
 )
 
@@ -116,9 +111,9 @@ class WizardHomeView(WizardLayout):
         )
 
     async def open_manager_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
-        if not _is_discord_admin(interaction):
+        if not _wizard._is_discord_admin(interaction):
             return await interaction.response.send_message(
                 "تغيير رولات إدارة البوت متاح للمالك أو Administrator فقط.",
                 ephemeral=True,
@@ -537,7 +532,7 @@ class LogChannelWizardView(WizardLayout):
     def __init__(self, guild, owner, *, selected_type="economy", notice=None):
         super().__init__(guild, owner, notice=notice)
         self.selected_type = selected_type if selected_type in LOG_TYPE_LABELS else "economy"
-        current_id = _configured_log_channel(guild.id, self.selected_type)
+        current_id = _wizard._configured_log_channel(guild.id, self.selected_type)
         current = f"<#{current_id}>" if current_id else "متوقف"
 
         self.type_select = Select(
@@ -700,9 +695,9 @@ class AISettingsWizardView(WizardLayout):
 
     def __init__(self, guild, owner, *, notice=None):
         super().__init__(guild, owner, notice=notice)
-        enabled = _guild_ai_enabled(guild.id)
-        global_enabled = _global_ai_enabled()
-        roles = sorted(configured_ai_role_ids(guild.id))
+        enabled = _wizard._guild_ai_enabled(guild.id)
+        global_enabled = _wizard._global_ai_enabled()
+        roles = sorted(_wizard.configured_ai_role_ids(guild.id))
         role_summary = ", ".join(f"<@&{role_id}>" for role_id in roles) or "لا توجد رولات إضافية"
         api_state = "مفتاح API مضبوط" if config.DEEPSEEK_API_KEY else "مفتاح API غير مضبوط"
         state = (
@@ -909,7 +904,7 @@ class WizardReviewView(WizardLayout):
         lines.extend(
             [
                 "",
-                f"**محسن في السيرفر:** {'شغال' if _configured_ai_enabled(guild.id) else 'متوقف'} — {'مفتاح API مضبوط' if config.DEEPSEEK_API_KEY else 'مفتاح API ناقص'}",
+                f"**محسن في السيرفر:** {'شغال' if _wizard._configured_ai_enabled(guild.id) else 'متوقف'} — {'مفتاح API مضبوط' if config.DEEPSEEK_API_KEY else 'مفتاح API ناقص'}",
                 f"**رولات الوصول الإضافية لمحسن:** {ai_role_summary}",
                 "",
                 "**قنوات السجلات:**",
