@@ -31,6 +31,7 @@ from cogs.utility.theme import (
     send_status,
 )
 
+
 async def _settle_wager(game_id, winner_id=None):
     """Settle idempotently, retrying transient database failures before failing closed."""
     logger = logging.getLogger(__name__)
