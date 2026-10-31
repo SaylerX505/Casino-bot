@@ -211,9 +211,6 @@ def _schedule_wager_recovery(game_id, winner_id=None, on_recovered=None):
     return task
 
 
-from cogs.casino.rps_views import RPSView
-
-
 class RPS(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -380,6 +377,8 @@ class RPS(commands.Cog):
             )
 
         game_id = uuid.uuid4().hex
+        from cogs.casino.rps_views import RPSView
+
         view = RPSView(ctx, ctx.author, opponent, amount, game_id)
         task = asyncio.current_task()
         if task is None or not register_game_task(

@@ -350,7 +350,7 @@ async def run_game_loop(ctx, players):
             # guessing board and keeping earlier maps/scores readable in chat.
             await asyncio.sleep(4)
 
-                description, winner_image, outcome = build_final_result(scores)
+        description, winner_image, outcome = build_final_result(scores)
 
         await ctx.send(
             view=GeoGuessrResultPanel(

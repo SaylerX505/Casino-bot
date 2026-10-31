@@ -7,8 +7,14 @@ import random
 import discord
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
+import config
 from cogs.casino import bank
-from cogs.casino.currency_catalog import DAILY_REWARD_MAX, DAILY_REWARD_MIN, fmt, get_coin_emoji
+from cogs.casino.currency_catalog import (
+    DAILY_REWARD_MAX,
+    DAILY_REWARD_MIN,
+    fmt,
+    get_coin_emoji,
+)
 from cogs.casino.currency_inventory import (
     InventoryView,
     _load_inventory_snapshot,
@@ -20,8 +26,6 @@ from cogs.casino.currency_inventory import (
 from cogs.casino.currency_shop import BuyForm, ShopDropdown, ShopView, build_shop_view
 from cogs.casino.currency_transfer import TransferModal
 from cogs.utility.theme import private_status
-
-import config
 
 logger = logging.getLogger(__name__)
 

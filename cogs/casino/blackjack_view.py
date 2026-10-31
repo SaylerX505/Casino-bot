@@ -16,6 +16,7 @@ from cogs.casino.blackjack_art import (
     _dealer_display_cards,
     render_blackjack_table,
 )
+from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.blackjack_core import (
     DEALER_STANDS_AT,
     NATURAL_PAYOUT,

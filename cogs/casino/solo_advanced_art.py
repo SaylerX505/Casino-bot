@@ -3,6 +3,7 @@
 import io
 from PIL import Image, ImageDraw
 
+from cogs.casino.solo_advanced_core import MINES_TILE_COUNT
 from cogs.casino.solo_betting_art import _art_font
 
 

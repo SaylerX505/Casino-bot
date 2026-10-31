@@ -397,7 +397,7 @@ class ChairsLobby(LayoutView):
                 )
             return False
 
-        async def run_game_loop(self):
+    async def run_game_loop(self):
         try:
             active_players = self.players.copy()
             round_num = 1
@@ -498,7 +498,7 @@ class ChairsLobby(LayoutView):
                 round_num += 1
                 await asyncio.sleep(3) 
 
-                        if len(active_players) == 1:
+            if len(active_players) == 1:
                 winner = active_players[0]
                 await self._publish_end_receipt(
                     last_round_message,

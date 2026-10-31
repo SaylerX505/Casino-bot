@@ -281,7 +281,7 @@ class RouletteLobby(LayoutView):
             )
             return False
 
-        async def run_game_loop(self):
+    async def run_game_loop(self):
         try:
             active_players = self.players.copy()
             round_num = 1
@@ -331,7 +331,7 @@ class RouletteLobby(LayoutView):
                     for kid in view.kicked_ids:
                         p = next((x for x in active_players if x.id == kid), None)
                         if p:
-                                                        if currency_cog and await asyncio.to_thread(
+                            if currency_cog and await asyncio.to_thread(
                                 currency_cog.remove_item,
                                 p.id,
                                 "shield",
@@ -344,7 +344,7 @@ class RouletteLobby(LayoutView):
                                     kicked_players.append(chosen_player)
                                     attacker_died = True
                             else:
-                                                                if currency_cog and await asyncio.to_thread(
+                                if currency_cog and await asyncio.to_thread(
                                     currency_cog.remove_item,
                                     p.id,
                                     "roulette_ins",
@@ -396,7 +396,7 @@ class RouletteLobby(LayoutView):
                 round_num += 1
                 await asyncio.sleep(2)
 
-                        if len(active_players) == 1:
+            if len(active_players) == 1:
                 winner = active_players[0]
                 final_description = f"الناجي الوحيد والأقوى في الحفرة!\n\nالفائز النهائي هو {winner.mention}."
                 if currency_cog:

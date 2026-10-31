@@ -76,7 +76,7 @@ async def run_mafia_game(ctx, players):
             
         alive = players.copy()
 
-                try:
+        try:
             _state = MafiaGameState()
             _state.alive = alive
             _state.mafias = mafias
@@ -361,7 +361,7 @@ async def run_mafia_game(ctx, players):
                 else:
                     hanged_player = next((p for p in alive if p.id == top_target_id), None)
                     if hanged_player:
-                                                try:
+                        try:
                             cur_cog = ctx.bot.get_cog('Currency')
                         except Exception:
                             logger.exception("Could not resolve the Currency cog for the Mafia item action")

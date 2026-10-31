@@ -3,6 +3,7 @@
 import asyncio
 import io
 import logging
+import secrets
 import uuid
 from collections.abc import Callable
 from functools import partial
@@ -11,6 +12,7 @@ import discord
 from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 
 from cogs.casino import bank
+from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.solo_betting_art import (
     _render_advanced_instant_art,
     _render_solo_game_art,

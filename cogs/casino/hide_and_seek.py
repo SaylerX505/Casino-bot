@@ -584,7 +584,7 @@ async def run_game_loop(ctx, players):
             )
             await asyncio.sleep(3)
 
-                if len(alive) == 1:
+        if len(alive) == 1:
             winner = alive[0]
             win_embed = result_embed(
                 title="🏆 بطل الغميضة!",
