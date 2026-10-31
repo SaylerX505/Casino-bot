@@ -10,6 +10,7 @@ import discord
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from cogs.casino import bank, rps as _rps
+from cogs.casino.rps_core import BEATS, COIN, MAX_BET, MIN_BET, MOVE_NAMES, PAYOUT_RATE
 from cogs.casino.game_registry import (
     is_active_game,
     register_game_task,
@@ -25,14 +26,6 @@ from cogs.utility.theme import (
     get_currency,
     send_status,
 )
-
-COIN = _rps.COIN
-MOVE_NAMES = _rps.MOVE_NAMES
-BEATS = _rps.BEATS
-MIN_BET = _rps.MIN_BET
-MAX_BET = _rps.MAX_BET
-PAYOUT_RATE = _rps.PAYOUT_RATE
-
 
 class RPSView(DiagnosticViewMixin, LayoutView):
     """A consent-first duel: reserve both stakes only after the invited player accepts."""

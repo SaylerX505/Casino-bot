@@ -16,6 +16,7 @@ from discord.ui import (
 
 import config
 from cogs.casino import bank
+from cogs.casino.permissions import ai_enabled_setting_key, ai_role_setting_key
 from cogs.utility.theme import StatusPanel
 from cogs.utility.wizard_common import (
     LOG_TYPE_LABELS,
@@ -32,8 +33,6 @@ from cogs.utility.wizard_common import (
     _is_discord_admin,
     manager_role_setting_key,
     staff_role_setting_key,
-    ai_role_setting_key,
-    ai_enabled_setting_key,
     configured_ai_role_ids,
     log_channel_setting_key,
 )

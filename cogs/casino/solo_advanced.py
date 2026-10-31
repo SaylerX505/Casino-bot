@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import secrets
 
 from discord.ext import commands
 
@@ -234,5 +235,6 @@ __all__ = [
     "_number_roulette",
     "_plinko_drop",
     "_render_live_art",
+    "secrets",
     "setup",
 ]

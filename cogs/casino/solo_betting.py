@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import secrets
 from collections.abc import Callable
 
 from discord.ext import commands
@@ -40,7 +41,7 @@ from cogs.casino.solo_betting_core import (
     release_solo_session,
 )
 from cogs.casino.solo_betting_view import SoloWagerView
-from cogs.utility.theme import StatusPanel
+from cogs.utility.theme import THEME, StatusPanel
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +318,8 @@ __all__ = [
     "MAX_BET",
     "MIN_BET",
     "SIDES",
+    "THEME",
+    "secrets",
     "SLOT_CHOICES",
     "SLOT_SYMBOLS",
     "SLOT_TRIPLE_PAYOUTS",

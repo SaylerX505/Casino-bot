@@ -8,6 +8,8 @@ from discord.ext import commands
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
+from cogs.casino.rps_core import BEATS, COIN, MAX_BET, MIN_BET, MOVE_NAMES, PAYOUT_RATE
+from cogs.casino.rps_views import RPSView
 from cogs.casino.game_registry import (
     is_active_game,
     register_game_task,
@@ -21,14 +23,6 @@ from cogs.utility.theme import (
     get_currency,
     send_status,
 )
-
-COIN = "<:ckrcoin:1513743032124575784>"
-MOVE_NAMES = {"🪨": "حجر", "📄": "ورقة", "✂️": "مقص"}
-BEATS = {"🪨": "✂️", "📄": "🪨", "✂️": "📄"}
-MIN_BET = 10
-MAX_BET = 5000
-PAYOUT_RATE = 0.95
-
 
 async def _settle_wager(game_id, winner_id=None):
     """Settle idempotently, retrying transient database failures before failing closed."""
@@ -377,8 +371,6 @@ class RPS(commands.Cog):
             )
 
         game_id = uuid.uuid4().hex
-        from cogs.casino.rps_views import RPSView
-
         view = RPSView(ctx, ctx.author, opponent, amount, game_id)
         task = asyncio.current_task()
         if task is None or not register_game_task(

@@ -565,7 +565,7 @@ def refund_orphaned_rps_wagers():
     pending = 0
     for game_id in game_ids:
         try:
-            result = settle_rps_wager(game_id)
+            result = _bank.settle_rps_wager(game_id)
         except Exception:
             pending += 1
             logger.exception(
