@@ -415,6 +415,7 @@ def close_database():
 
 
 from cogs.casino.bank_rps import (
+    _close_rps_challenge,
     accept_rps_challenge,
     active_rps_wager_ids,
     active_rps_wager_records,
@@ -433,7 +434,16 @@ from cogs.casino.bank_rps import (
     settle_rps_wager,
 )
 from cogs.casino.bank_settings import get_setting, set_setting
-from cogs.casino.bank_wallet import (
+from cogs.casino.bank_wagers import (
+    active_casino_wager_ids,
+    active_casino_wager_records,
+    casino_wager_status,
+    create_casino_wager,
+    double_down_casino_wager,
+    play_casino_wager,
+    refund_orphaned_casino_wagers,
+    settle_casino_wager,
+)from cogs.casino.bank_wallet import (
     add_guild_admin,
     add_item,
     charge_up_to,
@@ -454,16 +464,7 @@ from cogs.casino.bank_wallet import (
     whitelist_add,
     whitelist_remove,
 )
-from cogs.casino.bank_wagers import (
-    active_casino_wager_ids,
-    active_casino_wager_records,
-    casino_wager_status,
-    create_casino_wager,
-    double_down_casino_wager,
-    play_casino_wager,
-    refund_orphaned_casino_wagers,
-    settle_casino_wager,
-)
+
 
 __all__ = [
     "DB_FILE",

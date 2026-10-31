@@ -10,6 +10,7 @@ import discord
 from discord.ui import ActionRow, Container, LayoutView, MediaGallery, Separator, TextDisplay
 
 from cogs.casino import bank
+from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.solo_advanced_art import _render_live_art
 from cogs.casino.solo_advanced_core import _RECOVERY_DELAYS_SECONDS
 from cogs.casino.solo_betting import (

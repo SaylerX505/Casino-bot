@@ -2,11 +2,14 @@
 
 import asyncio
 import logging
+import secrets
+from functools import partial
 
 import discord
 
 from cogs.casino import bank
-from cogs.utility.theme import StatusPanel
+from cogs.casino.currency_catalog import get_coin_emoji
+from cogs.utility.theme import StatusPanel, THEME
 
 logger = logging.getLogger(__name__)
 

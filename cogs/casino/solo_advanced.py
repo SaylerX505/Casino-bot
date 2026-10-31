@@ -2,12 +2,13 @@
 
 import asyncio
 import logging
-import secrets as secrets
+import secrets
 
 from discord.ext import commands
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
+from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.solo_advanced_art import _hilo_rank_label, _render_live_art
 from cogs.casino.solo_advanced_base import InteractiveSoloWagerView
 from cogs.casino.solo_advanced_core import (
@@ -214,6 +215,12 @@ async def setup(bot):
 
 
 __all__ = [
+    "_hilo_rank_label",
+    "_mines_multiplier",
+    "_number_roulette",
+    "_plinko_drop",
+    "_RECOVERY_DELAYS_SECONDS",
+    "_render_live_art",
     "AdvancedSoloGames",
     "COIN",
     "HILO_MAX_MULTIPLIER",
@@ -228,11 +235,5 @@ __all__ = [
     "MinesView",
     "PLINKO_MULTIPLIERS",
     "PLINKO_WEIGHTS",
-    "_RECOVERY_DELAYS_SECONDS",
-    "_hilo_rank_label",
-    "_mines_multiplier",
-    "_number_roulette",
-    "_plinko_drop",
-    "_render_live_art",
     "setup",
 ]
