@@ -322,7 +322,7 @@ def play_casino_wager(
 
             reason = None
             if won and balance_after_stake > _bank.SQLITE_MAX_INT - win_payout:
-                # Do not partially settle a winning round when the wallet is full.
+                # Avoid partial wallet settlement.
                 balance_after = balance
                 c.execute(
                     "UPDATE users SET balance=? WHERE user_id=?",

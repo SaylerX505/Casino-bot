@@ -58,7 +58,7 @@ class TransferModal(discord.ui.Modal, title="💸 تحويل العملات"):
                 ephemeral=True,
             )
 
-        # Acknowledge before the uncached-member API lookup so this modal cannot expire.
+        # Acknowledge before member lookup.
         try:
             await interaction.response.defer(ephemeral=True, thinking=True)
         except (discord.HTTPException, discord.InteractionResponded):

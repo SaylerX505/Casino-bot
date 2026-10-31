@@ -1,4 +1,3 @@
-# --- BOT ENTRY POINT ---
 import asyncio
 import logging
 import os
@@ -29,8 +28,6 @@ logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-
-# --- BOT CONFIGURATION ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -73,13 +70,11 @@ bot = commands.Bot(
     case_insensitive=True,
     owner_ids=config.OWNER_IDS,
     tree_cls=HomeGuildCommandTree,
-    # Game recap mentions stay readable but do not notify an entire lobby.
-    # RPS challenge invitations explicitly allow only the invited opponent.
+    # Suppress broad lobby notifications.
+    # Allow invited challenge mentions.
     allowed_mentions=discord.AllowedMentions.none(),
 )
 bot.remove_command('help')
-
-# --- EVENT HANDLERS ---
 ERROR_LOG_CHANNEL_ID = config.LOG_CHANNELS.get("command_errors", 0)
 
 
@@ -142,8 +137,8 @@ def validate_slash_command_metadata(command_list) -> list[str]:
             if not isinstance(local_name, str) or not 1 <= len(local_name) <= 32:
                 problems.append(f"{name}: command name must contain 1–32 characters")
 
-            # Discord context-menu commands do not have descriptions; slash
-            # commands and groups do. Do not block valid user/message menus.
+            # Context menus omit descriptions.
+            # Keep context menus valid.
             if not isinstance(command, app_commands.ContextMenu):
                 if not _has_visible_text(description):
                     problems.append(
@@ -595,8 +590,6 @@ async def on_error(event_method, *args, **kwargs):
             "event_name": str(event_method),
         },
     )
-
-# --- EXTENSION LOADER ---
 CASINO_EXTENSION_ALLOWLIST = frozenset({
     "blackjack.py",
     "chairs.py",
@@ -652,8 +645,6 @@ async def load_cogs():
 
     if failures:
         raise RuntimeError("Required extensions failed to load:\n" + "\n".join(failures))
-
-# --- APPLICATION STARTUP ---
 async def main():
     logger = logging.getLogger("casino.startup")
     configure_file_logging()

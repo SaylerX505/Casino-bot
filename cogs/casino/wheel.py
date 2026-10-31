@@ -433,8 +433,8 @@ class WheelLobby(LayoutView):
         pending_receipts = []
 
         async def publish_panel(panel, file=None):
-            # Normal play posts a distinct message per spin; failures are preserved
-            # on the closed lobby, then re-emitted separately when sending recovers.
+            # Publish each spin separately.
+            # Preserve results after failures.
             return await publish_wheel_panel(
                 self.ctx,
                 panel,

@@ -429,8 +429,8 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
                     *wager_args,
                 )
         except asyncio.CancelledError:
-            # The database operation may have committed before cancellation arrived.
-            # Instant games never commit an active wager, so lookup cannot refund a win.
+            # Recover commits after cancellation.
+            # Instant games never hold wagers.
             self.cog._schedule_recovery(
                 game_id, force_refund=False, callback=self._recovered
             )
@@ -459,7 +459,7 @@ class SoloWagerView(DiagnosticViewMixin, LayoutView):
             return await self._finish_without_bet("# Bet declined\n" + message)
 
         if not receipt.get("settled"):
-            # Defensive fail-closed guard: an instant bet must return a terminal receipt.
+            # Require terminal instant receipts.
             self._panel_text.content = (
                 "# PROCESSING\n"
                 "Finalizing this transaction..."

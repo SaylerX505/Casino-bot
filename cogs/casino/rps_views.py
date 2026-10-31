@@ -78,8 +78,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 "RPS absolute deadline handler failed game_id=%s",
                 self.game_id,
             )
-            # If a deadline callback itself fails, never leave accepted escrow
-            # unattended. Settlement is idempotent; recovery retries safely.
+            # Retry failed escrow recovery safely.
             if self.accepted:
                 _rps._schedule_wager_recovery(
                     self.game_id,
@@ -254,7 +253,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                     message_id,
                 )
         except Exception:
-            # A missing optional message reference must never change money state.
+            # Keep message references nonfinancial.
             logging.getLogger(__name__).exception(
                 "Could not persist RPS challenge panel reference game_id=%s",
                 self.game_id,
@@ -295,9 +294,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                     )
                     return False
 
-        # A replacement is safe only when the original message was confirmed missing,
-        # or when this game has not published a panel yet. Generic edit failures are
-        # deliberately not treated as deletion because that used to duplicate panels.
+        # Replace only confirmed missing panels.
         try:
             self.message = await self.ctx.send(
                 view=self,
@@ -409,8 +406,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
 
             self.accepted = True
             self.resolving = False
-            # Acceptance starts a fresh, fixed round-selection window. Later
-            # component activity cannot extend it indefinitely.
+            # Keep selection deadlines fixed.
             self.schedule_deadline(60.0)
             self._refresh_panel()
             await self._update_live_panel()
@@ -614,14 +610,12 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         """Close the challenge board and publish a separate V2 receipt when possible."""
         self.done = True
         deferred_private_ack = interaction is not None and interaction.response.is_done()
-        # Build the complete result first. It stays available as a fallback until
-        # Discord confirms the separate receipt was actually sent.
+        # Preserve results until delivery.
         self._refresh_panel(embed, developer_credit=True)
 
         board_already_updated = False
         try:
-            # Acknowledge a still-open component interaction promptly. Deferred
-            # actions can wait for receipt delivery before updating the public board.
+            # Acknowledge before long delivery.
             if interaction is not None and not deferred_private_ack:
                 try:
                     await interaction.response.edit_message(view=self)
@@ -659,8 +653,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                     )
 
             if self.result_published:
-                # Normal UX: the full result has a dedicated message; the
-                # original challenge becomes a compact, closed history panel.
+                # Keep challenge history compact.
                 self._panel_text.content = (
                     "# انتهى تحدي حومص\n"
                     f"**الحالة النهائية:** {embed.title or 'التحدي انتهى'}\n"
@@ -672,8 +665,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 self._show_developer_credit = False
                 self._render_view()
 
-            # On a failed receipt send, keep/render the full result on the board;
-            # never leave a teaser claiming a message exists when it does not.
+            # Keep receipt failures visible.
             if not board_already_updated or self.result_published:
                 try:
                     if self.message is not None:
@@ -728,9 +720,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
             self.stop()
 
     async def finish(self, interaction=None):
-        # Serialize terminal state with acceptance and choice changes. A timeout
-        # may win this race after the final click has already deferred its reply;
-        # always close that deferred acknowledgement rather than leave it loading.
+        # Serialize terminal-state transitions.
         async with self._choice_lock:
             if self.done:
                 already_done = True
@@ -903,8 +893,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
         await self.publish_result(embed)
 
     async def choose(self, interaction: discord.Interaction, move: str):
-        # A second click may queue behind the first panel edit. Acknowledge it
-        # before waiting for the lock so its Discord interaction cannot expire.
+        # Acknowledge queued component clicks.
         if self._choice_lock.locked():
             try:
                 await interaction.response.defer(ephemeral=True, thinking=True)
@@ -936,8 +925,7 @@ class RPSView(DiagnosticViewMixin, LayoutView):
                 should_finish = True
                 if not interaction.response.is_done():
                     try:
-                        # Settlement may involve a busy SQLite lock and several
-                        # retries. Acknowledge the final move before starting it.
+                        # Acknowledge before settlement retries.
                         await interaction.response.defer(ephemeral=True, thinking=True)
                     except (discord.HTTPException, discord.InteractionResponded):
                         logging.getLogger(__name__).warning(

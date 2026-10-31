@@ -117,8 +117,7 @@ def set_rps_challenge_message_reference(game_id, channel_id, message_id):
                 (channel_id, message_id, _bank.now(), game_id),
             ).rowcount
             if changed == 1:
-                # If acceptance raced with the command's message-reference write,
-                # update the escrow record too so startup can always close it.
+                # Sync raced acceptance state.
                 c.execute(
                     "UPDATE rps_wagers SET channel_id=?,message_id=? "
                     "WHERE game_id=? AND status='active'",

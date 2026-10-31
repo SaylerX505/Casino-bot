@@ -181,8 +181,7 @@ async def run_game_loop(ctx, players):
             timer_state = {"end_time": time.monotonic() + 30.0}
             active_view = ActiveGameView(ctx.author, timer_state, round_num, total_rounds)
             try:
-                # Publish the playable round once; preparation errors and results
-                # are posted separately instead of replacing this message.
+                # Keep each round message separate.
                 msg = await ctx.send(view=active_view, file=file)
             except discord.HTTPException:
                 logger.exception("Could not publish GeoGuessr round=%s", round_num)
@@ -346,8 +345,7 @@ async def run_game_loop(ctx, players):
                 files=[map_file, board_file],
                 allowed_mentions=discord.AllowedMentions.none(),
             )
-            # Each round result gets its own message, preserving the closed
-            # guessing board and keeping earlier maps/scores readable in chat.
+            # Preserve closed maps and scores.
             await asyncio.sleep(4)
 
         description, winner_image, outcome = build_final_result(scores)

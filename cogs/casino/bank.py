@@ -66,7 +66,7 @@ from cogs.casino.bank_wallet import (
     whitelist_remove,
 )
 
-# Resolve storage from the project root, not the process working directory.
+# Use root-relative storage paths.
 DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
 _lock = threading.RLock()
 _conn = None

@@ -221,7 +221,7 @@ class RPS(commands.Cog):
     async def cog_load(self):
         logger = logging.getLogger(__name__)
         try:
-            # Capture panel references before the initial refund mutates escrow state.
+            # Save references before refunds.
             expired_challenges = await asyncio.to_thread(bank.expire_pending_rps_challenges)
             records = await asyncio.to_thread(bank.active_rps_wager_records)
             refunded = await asyncio.to_thread(bank.refund_orphaned_rps_wagers)
@@ -261,7 +261,7 @@ class RPS(commands.Cog):
                     _STARTUP_PANEL_TASKS.add(task)
                     task.add_done_callback(_STARTUP_PANEL_TASKS.discard)
 
-            # Defensive fallback if an older/partial schema yields active IDs without rows.
+            # Handle missing escrow rows.
             for game_id in pending_wagers:
                 if str(game_id) not in records_by_id:
                     _schedule_wager_recovery(game_id)
@@ -486,7 +486,7 @@ class RPS(commands.Cog):
                         game_id,
                     )
             except Exception:
-                # This reference is only for cleanup; acceptance/escrow remains guarded by DB state.
+                # Use this reference for cleanup.
                 logging.getLogger(__name__).exception(
                     "Could not persist pending RPS invitation panel reference game_id=%s",
                     game_id,

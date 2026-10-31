@@ -1,6 +1,5 @@
 .env
 .env.*
-!.env.example
 __pycache__/
 *.py[cod]
 data/backups/
@@ -10,8 +9,6 @@ data/backups/
 *.sqlite3
 *.sqlite-*
 bot_logs.txt
-
-# Runtime data, local databases, and diagnostic logs are never source files.
 data/ai_data.json
 data/state.json
 data/used_images.json
@@ -19,10 +16,4 @@ data/used_images.json.tmp
 data/currency.json
 archive-wrapper-files/data/
 archive-wrapper-files/bot_logs.txt
-bot_logs.txt
-.coverage
-coverage.xml
-htmlcov/
-
-# Rotating local diagnostics; never commit runtime logs.
 data/logs/

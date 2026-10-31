@@ -151,8 +151,7 @@ def _render_solo_game_art(
     draw.text((68, 48), "ÇUKUR  /  CASINO", font=_art_font(22, bold=True), fill=accent)
     title_size = 43
     title_font = _art_font(title_size, bold=True)
-    # Keep the full SLOT MACHINE label left of the cabinet instead of letting
-    # its final letter sit underneath the machine artwork.
+    # Keep the slot label visible.
     if is_slots:
         while draw.textbbox((0, 0), title, font=title_font)[2] > 300 and title_size > 28:
             title_size -= 1

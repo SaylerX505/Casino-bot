@@ -190,16 +190,15 @@ class InventoryView(LayoutView):
         )
 
     async def select_category(self, interaction: discord.Interaction):
-        # Mutate the same view. Replacing it leaves the old view's timeout alive,
-        # which could later overwrite the newer panel with stale controls/content.
+        # Reuse the active view instance.
         self.category = self.category_select.values[0]
         self._panel_text.content = self.make_description()
         self.refresh_buttons()
         await interaction.response.edit_message(view=self)
 
     async def redeem_consumable(self, interaction: discord.Interaction, item_id: str):
-        # Acknowledge before touching SQLite so lock contention cannot expire the
-        # component interaction. Atomic redemption remains the bank's source of truth.
+        # Acknowledge before database access.
+        # Keep redemption atomic.
         try:
             await interaction.response.defer()
         except (discord.HTTPException, discord.InteractionResponded):

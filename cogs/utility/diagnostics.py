@@ -243,8 +243,8 @@ class DiagnosticViewMixin:
                     error=recovery_error,
                 )
 
-        # Views without a domain recovery hook must fail closed. Replace their
-        # shared control panel instead of leaving buttons that can re-trigger a bad state.
+        # Disable views lacking recovery hooks.
+        # Replace unsafe shared panels.
         if not recovery_succeeded:
             for child in self.walk_children():
                 if hasattr(child, "disabled"):

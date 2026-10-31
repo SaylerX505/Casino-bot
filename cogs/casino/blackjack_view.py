@@ -397,8 +397,8 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
             if result.get("doubled"):
                 return result
 
-            # A prior call may have committed while its await was cancelled.
-            # The expected-stake guard makes this response a safe receipt check.
+            # Check commits after cancellation.
+            # Guard expected stakes before refunds.
             if (
                 result.get("reason") == "stake_changed"
                 and result.get("stake") == expected_stake * 2
@@ -522,7 +522,7 @@ class BlackjackView(DiagnosticViewMixin, LayoutView):
         self.amount = int(receipt["stake"])
         self.doubled_down = True
         self.notice = None
-        # Standard double-down rules: exactly one card, then the dealer plays out.
+        # Follow standard double-down rules.
         self.player_cards.append(self._draw())
         if _hand_value(self.player_cards) <= 21:
             while _hand_value(self.dealer_cards) < DEALER_STANDS_AT:

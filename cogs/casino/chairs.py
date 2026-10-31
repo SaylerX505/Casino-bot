@@ -427,8 +427,7 @@ class ChairsLobby(LayoutView):
                     round_type,
                     round_num=round_num,
                 )
-                # Keep the preparation board in the channel and publish the
-                # playable chair board as its own message.
+                # Separate setup and play boards.
                 action_msg = await self.ctx.send(view=action_view)
                 action_view.message = action_msg
                 set_game_view(self.ctx.bot, self.ctx.channel.id, asyncio.current_task(), action_view)

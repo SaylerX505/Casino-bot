@@ -19,8 +19,7 @@ def t(text: str) -> str:
 
 
 SLASH_COMMANDS = {
-    # Keys are the first command token shown in HELP_PAGES. Labels may also
-    # contain example arguments, which should never hide their slash command.
+    # Match visible command names.
     "رصيد": "bal",
     "تحويل": "تحويل",
     "يومية": "daily",

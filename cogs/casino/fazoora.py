@@ -86,7 +86,7 @@ async def publish_riddle_result(
                 )
             )
         except discord.HTTPException:
-            # The separate receipt is already public, so this edit is best-effort.
+            # Keep public receipt edits best-effort.
             logger.warning(
                 "Riddle result was published but the original question panel could not be closed context=%s",
                 context,

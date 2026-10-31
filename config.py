@@ -38,7 +38,7 @@ REMBG_API_KEY = os.getenv("REMBG_API_KEY", "")
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
-# Legacy role defaults apply only until the wizard persists a custom staff-role list.
+# Keep legacy role defaults temporary.
 STAFF_ROLE_IDS = [1528494324805927114]
 
 EMOJIS = {
@@ -46,7 +46,7 @@ EMOJIS = {
     "cross": "<:cross:1512824131232465076>",
 }
 
-# Logging is disabled until configured in the wizard or explicitly set on the host.
+# Enable logs only when configured.
 LOG_CHANNELS = {
     "command_errors": _read_int_setting("COMMAND_ERROR_LOG_CHANNEL_ID", 0),
 }

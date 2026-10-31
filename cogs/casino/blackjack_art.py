@@ -94,7 +94,7 @@ def render_blackjack_table(player_cards, dealer_cards, *, phase: str, amount: in
     image = Image.new("RGB", (_ART_WIDTH, _ART_HEIGHT), (13, 24, 23))
     draw = ImageDraw.Draw(image)
 
-    # Deep felt surface with a restrained gold frame.
+    # Use felt and gold styling.
     draw.rounded_rectangle(
         (20, 18, _ART_WIDTH - 20, _ART_HEIGHT - 18),
         radius=30,
@@ -139,7 +139,7 @@ def render_blackjack_table(player_cards, dealer_cards, *, phase: str, amount: in
         anchor="mm",
     )
 
-    # Dealer's cards: reveal only the up-card until the player's turn is over.
+    # Hide the dealer's hole card.
     dealer_row = _dealer_display_cards(dealer_cards, phase)
 
     player_row = [(card, False) for card in (player_cards or [])]

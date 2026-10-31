@@ -169,8 +169,7 @@ async def wait_for_view_fixed_timeout(view, timeout: float) -> bool:
         if waiter in done:
             return bool(await waiter)
 
-        # A component click can renew discord.py's native View timeout; stop the view
-        # explicitly at the gameplay deadline rather than letting activity extend a round.
+        # Keep gameplay deadlines fixed.
         view.stop()
         await waiter
         return True
@@ -220,8 +219,8 @@ async def report_game_failure(ctx, title: str, description: str, fallback_view=N
 
     if entry.get("failure_reported"):
         return False
-    # Reserve the failure receipt before the first await so concurrent exception
-    # handlers cannot publish duplicate warnings for one game.
+    # Reserve one failure receipt.
+    # Prevent duplicate game warnings.
     entry["failure_reported"] = "pending"
 
     active_view = entry.get("view") or fallback_view
@@ -320,7 +319,7 @@ def lobby_embed(
     if min_players > 1:
         metadata.append(f"**الحد الأدنى للبدء:** {min_players} لاعب")
 
-    # Rules should read like a short subtitle, not a multi-paragraph tutorial.
+    # Keep rules concise.
     rules_text = " ".join(line.strip() for line in (rules or "").splitlines() if line.strip())
     roster = f"**اللاعبون ({len(members)}/{max_players}):**\n{player_list}"
     countdown = f"⏳ يبدأ تلقائيًا خلال **{max(0, int(time_left))} ثانية**"

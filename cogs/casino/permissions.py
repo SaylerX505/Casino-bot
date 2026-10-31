@@ -10,7 +10,7 @@ from cogs.casino import bank
 
 logger = logging.getLogger(__name__)
 
-# Canonical game keys are also the persisted channel-setting keys.
+# Keep persisted game keys stable.
 GAME_LABELS = {
     "mafia": "المافيا",
     "roulette": "الروليت الروسي",
