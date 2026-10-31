@@ -8,13 +8,20 @@ from discord.ext import commands
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
-from cogs.casino.rps_core import BEATS, COIN, MAX_BET, MIN_BET, MOVE_NAMES, PAYOUT_RATE
-from cogs.casino.rps_views import RPSView
 from cogs.casino.game_registry import (
     is_active_game,
     register_game_task,
     release_game_task,
 )
+from cogs.casino.rps_core import (
+    BEATS,
+    COIN,
+    MAX_BET,
+    MIN_BET,
+    MOVE_NAMES,
+    PAYOUT_RATE,
+)
+from cogs.casino.rps_views import RPSView
 from cogs.utility.theme import (
     THEME,
     StatusPanel,
@@ -503,3 +510,13 @@ class RPS(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RPS(bot))
+
+
+__all__ = [
+    "BEATS",
+    "COIN",
+    "MAX_BET",
+    "MIN_BET",
+    "MOVE_NAMES",
+    "PAYOUT_RATE",
+]
