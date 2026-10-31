@@ -19,8 +19,6 @@ from cogs.casino.currency_inventory import (
     InventoryView,
     _load_inventory_snapshot,
     _load_profile_snapshot,
-    build_inventory_view,
-    build_profile_panel,
     render_profile_panel,
 )
 from cogs.casino.currency_shop import BuyForm, ShopDropdown, ShopView, build_shop_view
@@ -28,6 +26,23 @@ from cogs.casino.currency_transfer import TransferModal
 from cogs.utility.theme import private_status
 
 logger = logging.getLogger(__name__)
+
+
+async def build_inventory_view(cog, owner, category="all", notice=None):
+    inventory, balance = await asyncio.to_thread(_load_inventory_snapshot, cog, owner.id)
+    return InventoryView(
+        cog,
+        owner,
+        category=category,
+        notice=notice,
+        inventory=inventory,
+        balance=balance,
+    )
+
+
+async def build_profile_panel(cog, user):
+    balance, streak, inventory = await asyncio.to_thread(_load_profile_snapshot, cog, user.id)
+    return render_profile_panel(user, balance, streak, inventory)
 
 
 async def build_currency_hub_view(cog, requester=None):

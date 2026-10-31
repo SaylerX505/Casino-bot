@@ -21,7 +21,6 @@ from cogs.utility.theme import StatusPanel
 from cogs.utility.wizard_common import (
     LOG_TYPE_LABELS,
     WizardLayout,
-    _configured_ai_enabled,
     _configured_log_channel,
     _configured_manager_roles,
     _configured_roles,

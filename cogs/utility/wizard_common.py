@@ -9,6 +9,7 @@ import config
 from cogs.casino import bank
 from cogs.casino.permissions import (
     _parse_id_list,
+    ai_role_setting_key,
     configured_ai_enabled_for_guild,
     configured_log_channel_id,
     configured_manager_role_ids,
@@ -123,6 +124,16 @@ def _guild_ai_enabled(guild_id: int) -> bool:
 def _configured_ai_enabled(guild_id: int | None = None) -> bool:
     global_enabled = _global_ai_enabled()
     return global_enabled if guild_id is None else global_enabled and _guild_ai_enabled(guild_id)
+
+
+def configured_ai_role_ids(guild_id: int) -> set[int]:
+    """Read the AI responder role allowlist for one guild."""
+    try:
+        raw = bank.get_setting(ai_role_setting_key(guild_id), "[]")
+    except Exception:
+        logger.exception("Could not read AI role allowlist for guild=%s", guild_id)
+        return set()
+    return set(_parse_id_list(raw, fallback=[]) or [])
 
 def _authorized(interaction: discord.Interaction, owner_id: int) -> bool:
     return bool(

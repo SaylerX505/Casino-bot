@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 def _load_inventory_snapshot(cog, user_id):
     """Read a consistent-enough inventory screen snapshot off the event loop."""
-    inventory = dict(bank.get_inventory(user_id))
-    balance = int(bank.get_balance(user_id))
+    inventory = dict(cog.get_inventory(user_id))
+    balance = int(cog.get_balance(user_id))
     return inventory, balance
 
 

@@ -7,8 +7,8 @@ import secrets
 import discord
 from discord.ui import ActionRow
 
-from cogs.casino import bank
-from cogs.casino.solo_advanced_art import _hilo_rank_label, _render_live_art
+from cogs.casino import bank, solo_advanced as _advanced
+from cogs.casino.solo_advanced_art import _hilo_rank_label
 from cogs.casino.solo_advanced_base import InteractiveSoloWagerView
 from cogs.casino.solo_advanced_core import (
     HILO_MAX_MULTIPLIER,
@@ -81,7 +81,7 @@ class MinesView(InteractiveSoloWagerView):
             and self.receipt.get("status") != "refunded"
         )
         actual_result = show_mines
-        return _render_live_art(
+        return _advanced._render_live_art(
             "mines",
             revealed=self.revealed,
             mines=self.mines,
