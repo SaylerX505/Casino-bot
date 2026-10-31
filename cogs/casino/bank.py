@@ -8,11 +8,8 @@ from pathlib import Path
 
 from cogs.casino.bank_ledger import (
     read_entries as _read_ledger,
-)
-from cogs.casino.bank_ledger import (
     record_economy_event as _record_ledger,
 )
-from cogs.casino.bank_schema import run_migrations
 from cogs.casino.bank_rps import (
     _close_rps_challenge,
     accept_rps_challenge,
@@ -32,6 +29,7 @@ from cogs.casino.bank_rps import (
     set_rps_wager_message_reference,
     settle_rps_wager,
 )
+from cogs.casino.bank_schema import run_migrations
 from cogs.casino.bank_settings import get_setting, set_setting
 from cogs.casino.bank_wagers import (
     active_casino_wager_ids,
