@@ -597,25 +597,21 @@ async def on_error(event_method, *args, **kwargs):
     )
 
 # --- EXTENSION LOADER ---
-NON_COG_MODULES = frozenset({
-    "bank.py",
-    "bank_ledger.py",
-    "bank_schema.py",
-    "bet_validation.py",
-    "permissions.py",
-    "game_registry.py",
-    "game_assets.py",
-    "currency_catalog.py",
-    "currency_views.py",
-    "geoguessr_art.py",
-    "geoguessr_storage.py",
-    "geoguessr_views.py",
-    "mafia_art.py",
-    "mafia_views.py",
-    "roulette_art.py",
-    "roulette_views.py",
+CASINO_EXTENSION_ALLOWLIST = frozenset({
+    "blackjack.py",
+    "chairs.py",
+    "currency.py",
+    "fazoora.py",
+    "geoguessr.py",
+    "hide_and_seek.py",
+    "mafia.py",
+    "roulette.py",
+    "rps.py",
+    "solo_advanced.py",
+    "solo_betting.py",
+    "wheel.py",
 })
-UTILITY_EXTENSION_ALLOWLIST = frozenset({"help.py", "ai.py", "admin.py", "wizard.py"})
+UTILITY_EXTENSION_ALLOWLIST = frozenset({"admin.py", "ai.py", "help.py", "wizard.py"})
 
 
 def should_load_extension(directory: str, filename: str) -> bool:
@@ -623,14 +619,14 @@ def should_load_extension(directory: str, filename: str) -> bool:
     if not filename.endswith(".py") or filename.startswith("__"):
         return False
     if directory == "cogs.casino":
-        return filename not in NON_COG_MODULES
+        return filename in CASINO_EXTENSION_ALLOWLIST
     if directory == "cogs.utility":
         return filename in UTILITY_EXTENSION_ALLOWLIST
     return False
 
 
 async def load_cogs():
-    """Automatically loads all python files inside the cogs subfolders"""
+    """Load only the explicitly registered Discord extensions from the cogs folders."""
     import pathlib
     base_dir = pathlib.Path(__file__).parent
     cog_directories = ['cogs.casino', 'cogs.utility']
