@@ -123,28 +123,28 @@ class WizardHomeView(WizardLayout):
         )
 
     async def open_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,
             view=StaffRoleWizardView(interaction.guild, interaction.user)
         )
 
     async def open_channels(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,
             view=GameChannelWizardView(interaction.guild, interaction.user)
         )
 
     async def open_logs(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,
             view=LogChannelWizardView(interaction.guild, interaction.user)
         )
 
     async def open_ai_settings(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(
             interaction,
@@ -152,14 +152,14 @@ class WizardHomeView(WizardLayout):
         )
 
     async def open_review(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,
             view=WizardReviewView(interaction.guild, interaction.user)
         )
 
     async def close_wizard(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,
             view=StatusPanel(
@@ -204,9 +204,9 @@ class AdminRoleWizardView(WizardLayout):
         )
 
     async def save_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
-        if not _is_discord_admin(interaction):
+        if not _wizard._is_discord_admin(interaction):
             return await interaction.response.send_message(
                 "تغيير رولات إدارة البوت متاح للمالك أو Administrator فقط.",
                 ephemeral=True,
@@ -249,9 +249,9 @@ class AdminRoleWizardView(WizardLayout):
         )
 
     async def clear_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
-        if not _is_discord_admin(interaction):
+        if not _wizard._is_discord_admin(interaction):
             return await interaction.response.send_message(
                 "مسح رولات إدارة البوت متاح للمالك أو Administrator فقط.",
                 ephemeral=True,
@@ -274,7 +274,7 @@ class AdminRoleWizardView(WizardLayout):
         )
 
     async def go_home(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,
             view=WizardHomeView(interaction.guild, interaction.user)
@@ -315,7 +315,7 @@ class StaffRoleWizardView(WizardLayout):
         )
 
     async def save_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         role_ids = sorted({
             role.id
@@ -351,7 +351,7 @@ class StaffRoleWizardView(WizardLayout):
         )
 
     async def clear_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         try:
             bank.set_setting(staff_role_setting_key(self.guild_id), "[]")
@@ -375,7 +375,7 @@ class StaffRoleWizardView(WizardLayout):
         )
 
     async def go_home(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,view=WizardHomeView(interaction.guild, interaction.user))
 
@@ -425,7 +425,7 @@ class GameChannelWizardView(WizardLayout):
         )
 
     async def save_channel(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         selected = next(
             (
@@ -490,7 +490,7 @@ class GameChannelWizardView(WizardLayout):
         )
 
     async def allow_all_channels(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         try:
             bank.set_setting(games_channel_setting_key(self.guild_id), "all")
@@ -518,7 +518,7 @@ class GameChannelWizardView(WizardLayout):
         )
 
     async def go_home(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(
             interaction,
@@ -580,7 +580,7 @@ class LogChannelWizardView(WizardLayout):
         )
 
     async def choose_type(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         selected = self.type_select.values[0]
         await self._edit_message(interaction,
@@ -592,7 +592,7 @@ class LogChannelWizardView(WizardLayout):
         )
 
     async def save_channel(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         channel = next(
             (
@@ -649,7 +649,7 @@ class LogChannelWizardView(WizardLayout):
         )
 
     async def disable_log(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         try:
             bank.set_setting(
@@ -683,7 +683,7 @@ class LogChannelWizardView(WizardLayout):
         )
 
     async def go_home(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,
             view=WizardHomeView(interaction.guild, interaction.user)
@@ -739,7 +739,7 @@ class AISettingsWizardView(WizardLayout):
         )
 
     async def save_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         role_ids = sorted({
             int(role.id)
@@ -785,7 +785,7 @@ class AISettingsWizardView(WizardLayout):
         )
 
     async def clear_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         try:
             bank.set_setting(ai_role_setting_key(self.guild_id), "[]")
@@ -811,11 +811,11 @@ class AISettingsWizardView(WizardLayout):
         )
 
     async def toggle_ai(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
-        enabled = not _guild_ai_enabled(self.guild_id)
+        enabled = not _wizard._guild_ai_enabled(self.guild_id)
         ai_cog = interaction.client.get_cog("AI")
-        if enabled and not _global_ai_enabled():
+        if enabled and not _wizard._global_ai_enabled():
             return await interaction.response.send_message(
                 view=StatusPanel(
                     "محسن متوقف من الإعداد العام",
@@ -869,7 +869,7 @@ class AISettingsWizardView(WizardLayout):
         )
 
     async def go_home(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(
             interaction,
@@ -897,9 +897,9 @@ class WizardReviewView(WizardLayout):
             else (f"<#{games_channel_id}>" if games_channel_id is not None else "تعذر قراءة الإعداد")
         )
         lines.append(f"• **جميع الألعاب:** {channels}")
-        economy_log = _configured_log_channel(guild.id, "economy")
-        error_log = _configured_log_channel(guild.id, "command_errors")
-        ai_roles = sorted(configured_ai_role_ids(guild.id))
+        economy_log = _wizard._configured_log_channel(guild.id, "economy")
+        error_log = _wizard._configured_log_channel(guild.id, "command_errors")
+        ai_roles = sorted(_wizard.configured_ai_role_ids(guild.id))
         ai_role_summary = ", ".join(f"<@&{role_id}>" for role_id in ai_roles) or "لا توجد رولات إضافية"
         lines.extend(
             [
@@ -937,9 +937,9 @@ class WizardReviewView(WizardLayout):
         )
 
     async def open_manager_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
-        if not _is_discord_admin(interaction):
+        if not _wizard._is_discord_admin(interaction):
             return await interaction.response.send_message(
                 "تغيير رولات إدارة البوت متاح للمالك أو Administrator فقط.",
                 ephemeral=True,
@@ -949,24 +949,24 @@ class WizardReviewView(WizardLayout):
         )
 
     async def open_roles(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,view=StaffRoleWizardView(interaction.guild, interaction.user))
 
     async def open_channels(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,view=GameChannelWizardView(interaction.guild, interaction.user))
 
     async def open_logs(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,
             view=LogChannelWizardView(interaction.guild, interaction.user)
         )
 
     async def open_ai_settings(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(
             interaction,
@@ -974,6 +974,6 @@ class WizardReviewView(WizardLayout):
         )
 
     async def go_home(self, interaction: discord.Interaction):
-        if not await _guard_interaction(interaction, self.owner_id):
+        if not await _wizard._guard_interaction(interaction, self.owner_id):
             return
         await self._edit_message(interaction,view=WizardHomeView(interaction.guild, interaction.user))
