@@ -214,7 +214,6 @@ async def setup(bot):
 
 
 __all__ = [
-    "_RECOVERY_DELAYS_SECONDS",
     "COIN",
     "HILO_MAX_MULTIPLIER",
     "HILO_RTP",
@@ -233,6 +232,7 @@ __all__ = [
     "_mines_multiplier",
     "_number_roulette",
     "_plinko_drop",
+    "_RECOVERY_DELAYS_SECONDS",
     "_render_live_art",
     "setup",
 ]

@@ -13,6 +13,57 @@ from cogs.casino.bank_ledger import (
     record_economy_event as _record_ledger,
 )
 from cogs.casino.bank_schema import run_migrations
+from cogs.casino.bank_rps import (
+    _close_rps_challenge,
+    accept_rps_challenge,
+    active_rps_wager_ids,
+    active_rps_wager_records,
+    cancel_rps_challenge,
+    create_rps_challenge,
+    create_rps_wager,
+    decline_rps_challenge,
+    expire_pending_rps_challenges,
+    expire_rps_challenge,
+    place_bet,
+    refund_orphaned_rps_wagers,
+    rps_challenge_status,
+    rps_wager_status,
+    set_rps_challenge_message_reference,
+    set_rps_wager_message_reference,
+    settle_rps_wager,
+)
+from cogs.casino.bank_settings import get_setting, set_setting
+from cogs.casino.bank_wagers import (
+    active_casino_wager_ids,
+    active_casino_wager_records,
+    casino_wager_status,
+    create_casino_wager,
+    double_down_casino_wager,
+    play_casino_wager,
+    refund_orphaned_casino_wagers,
+    settle_casino_wager,
+)
+from cogs.casino.bank_wallet import (
+    add_guild_admin,
+    add_item,
+    charge_up_to,
+    claim_daily,
+    get_daily,
+    get_inventory,
+    get_item_count,
+    get_whitelist,
+    is_guild_admin,
+    list_guild_admins,
+    purchase_item,
+    redeem_item,
+    remove_guild_admin,
+    remove_item,
+    set_balance,
+    set_daily,
+    top_balances,
+    whitelist_add,
+    whitelist_remove,
+)
 
 # Resolve storage from the project root, not the process working directory.
 DB_FILE = os.getenv("BANK_DB_FILE", str(Path(__file__).resolve().parents[2] / "data" / "bank.db"))
@@ -413,58 +464,6 @@ def close_database():
             _conn.close()
             _conn = None
 
-
-from cogs.casino.bank_rps import (
-    _close_rps_challenge,
-    accept_rps_challenge,
-    active_rps_wager_ids,
-    active_rps_wager_records,
-    cancel_rps_challenge,
-    create_rps_challenge,
-    create_rps_wager,
-    decline_rps_challenge,
-    expire_pending_rps_challenges,
-    expire_rps_challenge,
-    place_bet,
-    refund_orphaned_rps_wagers,
-    rps_challenge_status,
-    rps_wager_status,
-    set_rps_challenge_message_reference,
-    set_rps_wager_message_reference,
-    settle_rps_wager,
-)
-from cogs.casino.bank_settings import get_setting, set_setting
-from cogs.casino.bank_wagers import (
-    active_casino_wager_ids,
-    active_casino_wager_records,
-    casino_wager_status,
-    create_casino_wager,
-    double_down_casino_wager,
-    play_casino_wager,
-    refund_orphaned_casino_wagers,
-    settle_casino_wager,
-)
-from cogs.casino.bank_wallet import (
-    add_guild_admin,
-    add_item,
-    charge_up_to,
-    claim_daily,
-    get_daily,
-    get_inventory,
-    get_item_count,
-    get_whitelist,
-    is_guild_admin,
-    list_guild_admins,
-    purchase_item,
-    redeem_item,
-    remove_guild_admin,
-    remove_item,
-    set_balance,
-    set_daily,
-    top_balances,
-    whitelist_add,
-    whitelist_remove,
-)
 
 
 __all__ = [

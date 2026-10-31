@@ -1,5 +1,7 @@
 """Persistent application setting accessors."""
 
+import time
+
 from cogs.casino import bank as _bank
 
 def get_setting(key, default=None):

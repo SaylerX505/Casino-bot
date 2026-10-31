@@ -310,9 +310,6 @@ async def setup(bot):
 
 
 __all__ = [
-    "_GAME_TITLES",
-    "_RECOVERY_DELAYS_SECONDS",
-    "_SOLO_GAME_ACCENTS",
     "COIN",
     "DICE_CHOICES",
     "GROSS_WIN_MULTIPLIER_DENOMINATOR",
@@ -328,10 +325,13 @@ __all__ = [
     "_art_font",
     "_draw_die",
     "_draw_slot_symbol",
+    "_GAME_TITLES",
     "_gross_payout",
     "_publish_interrupted_wager_panel",
+    "_RECOVERY_DELAYS_SECONDS",
     "_render_advanced_instant_art",
     "_render_solo_game_art",
+    "_SOLO_GAME_ACCENTS",
     "_spin_slots",
     "claim_solo_session",
     "has_active_solo_session",

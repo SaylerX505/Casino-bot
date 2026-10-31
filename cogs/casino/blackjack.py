@@ -38,6 +38,7 @@ from cogs.casino.solo_betting import (
     release_solo_session,
 )
 from cogs.utility.theme import StatusPanel
+
 logger = logging.getLogger(__name__)
 
 
