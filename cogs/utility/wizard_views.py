@@ -16,7 +16,7 @@ from discord.ui import (
 
 import config
 from cogs.casino import bank
-from cogs.casino.permissions import ai_enabled_setting_key, ai_role_setting_key
+from cogs.casino.permissions import ai_enabled_setting_key, ai_role_setting_key, log_channel_setting_key
 from cogs.utility import wizard as _wizard
 from cogs.utility.theme import StatusPanel
 from cogs.utility.wizard_common import (
@@ -28,7 +28,6 @@ from cogs.utility.wizard_common import (
     games_channel_setting_key,
     manager_role_setting_key,
     staff_role_setting_key,
-    log_channel_setting_key,
 )
 
 logger = logging.getLogger(__name__)
