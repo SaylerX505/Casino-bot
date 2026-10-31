@@ -1,4 +1,5 @@
 """SQLite bank facade; feature transactions live in focused modules."""
+
 import os
 import sqlite3
 import threading
