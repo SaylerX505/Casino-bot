@@ -443,7 +443,8 @@ from cogs.casino.bank_wagers import (
     play_casino_wager,
     refund_orphaned_casino_wagers,
     settle_casino_wager,
-)from cogs.casino.bank_wallet import (
+)
+from cogs.casino.bank_wallet import (
     add_guild_admin,
     add_item,
     charge_up_to,

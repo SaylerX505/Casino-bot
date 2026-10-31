@@ -7,7 +7,6 @@ from discord.ext import commands
 
 from cogs.casino import bank
 from cogs.casino.bet_validation import parse_bet_amount
-from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.blackjack_art import (
     BLACKJACK_ART_FILENAME,
     BLACKJACK_BRAND,
@@ -30,8 +29,8 @@ from cogs.casino.blackjack_core import (
     _new_shuffled_deck,
 )
 from cogs.casino.blackjack_view import BlackjackView
+from cogs.casino.currency_catalog import get_coin_emoji
 from cogs.casino.solo_betting import (
-    COIN,
     MAX_BET,
     MIN_BET,
     claim_solo_session,
@@ -39,7 +38,6 @@ from cogs.casino.solo_betting import (
     release_solo_session,
 )
 from cogs.utility.theme import StatusPanel
-
 logger = logging.getLogger(__name__)
 
 
@@ -189,6 +187,17 @@ async def setup(bot):
 
 
 __all__ = [
+    "BLACKJACK_ART_FILENAME",
+    "BLACKJACK_BRAND",
+    "DEALER_STANDS_AT",
+    "NATURAL_PAYOUT",
+    "PAYOUT_DENOMINATOR",
+    "RANKS",
+    "RECOVERY_DELAYS",
+    "REGULAR_PAYOUT",
+    "SUITS",
+    "Blackjack",
+    "BlackjackView",
     "_cards_text",
     "_dealer_display_cards",
     "_final_outcome",
@@ -196,17 +205,6 @@ __all__ = [
     "_initial_outcome",
     "_is_natural_blackjack",
     "_new_shuffled_deck",
-    "Blackjack",
-    "BLACKJACK_ART_FILENAME",
-    "BLACKJACK_BRAND",
-    "BlackjackView",
-    "DEALER_STANDS_AT",
-    "NATURAL_PAYOUT",
-    "PAYOUT_DENOMINATOR",
-    "RANKS",
-    "RECOVERY_DELAYS",
-    "REGULAR_PAYOUT",
     "render_blackjack_table",
     "setup",
-    "SUITS",
 ]

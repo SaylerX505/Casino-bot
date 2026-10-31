@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import config
 
 import discord
 from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
@@ -20,7 +21,6 @@ from cogs.casino.currency_inventory import (
 from cogs.casino.currency_shop import BuyForm, ShopDropdown, ShopView, build_shop_view
 from cogs.casino.currency_transfer import TransferModal
 from cogs.utility.theme import private_status
-import config
 
 logger = logging.getLogger(__name__)
 
